@@ -1,0 +1,560 @@
+@import url('https://fonts.cdnfonts.com/css/sf-pro-display');
+@import "tailwindcss";
+
+:root {
+  --font-sf-sans: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-sf-mono: 'SF Mono', -apple-system-monospaced, 'SF Pro Display', ui-monospace, Menlo, Monaco, Consolas, monospace;
+
+  --primary: #F97316;
+  --primary-dark: #EA580C;
+  --primary-deep: #C2410C;
+  --primary-bright: #FB923C;
+  --primary-light: #FFF7ED;
+  --primary-border: #FED7AA;
+
+  --background: #FAFAF9;
+  --surface: #FFFFFF;
+  --surface-soft: #FAFAF9;
+  --surface-orange: #FFF7ED;
+
+  --border: #E7E5E4;
+  --border-strong: #FED7AA;
+
+  --text-primary: #171717;
+  --text-secondary: #57534E;
+  --text-muted: #78716C;
+
+  --danger: #DC2626;
+  --success: #16A34A;
+  --warning: #F59E0B;
+
+  --warrior-gradient-primary: linear-gradient(135deg, #F97316 0%, #EA580C 55%, #C2410C 100%);
+  --warrior-gradient-hero: linear-gradient(135deg, #F97316 0%, #EA580C 55%, #9A3412 100%);
+  --warrior-gradient-btn: linear-gradient(135deg, #FB923C 0%, #EA580C 100%);
+}
+
+@theme {
+  --font-sans: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'SF Mono', -apple-system-monospaced, 'SF Pro Display', ui-monospace, Menlo, Monaco, Consolas, monospace;
+  --font-rowdies: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-poppins: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  --color-brand-primary: #f97316;
+  --color-brand-primary-hover: #ea580c;
+  --color-brand-primary-active: #c2410c;
+  --color-brand-primary-light: #fff7ed;
+  --color-brand-primary-soft: #fffaf5;
+
+  --color-brand-bg: #fafaf9;
+  --color-brand-bg-card: #ffffff;
+  --color-brand-border: #fed7aa;
+
+  --color-brand-orange: #f97316;
+  --color-brand-orange-deep: #ea580c;
+  --color-brand-orange-light: #fff7ed;
+  --color-brand-success: #16a34a;
+  --color-brand-warning: #f59e0b;
+  --color-brand-danger: #dc2626;
+
+  --color-brand-text-primary: #171717;
+  --color-brand-text-secondary: #57534e;
+  --color-brand-text-muted: #78716c;
+  
+  --color-background: #fafaf9;
+  --color-foreground: #171717;
+}
+
+/* Base Global San Francisco Typography */
+*, ::before, ::after {
+  font-family: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  font-family: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+  background-color: #fafaf9;
+  background-image: 
+    radial-gradient(circle at 10% 10%, rgba(249, 115, 22, 0.02) 0%, transparent 40%),
+    radial-gradient(circle at 90% 90%, rgba(234, 88, 12, 0.015) 0%, transparent 40%);
+  color: #171717;
+  min-height: 100vh;
+  overflow-x: hidden;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6, .font-display {
+  font-family: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+  letter-spacing: -0.02em;
+}
+
+/* Explicit Global Form Fields Typography Inheritance */
+input,
+select,
+textarea,
+button,
+optgroup,
+option,
+label,
+fieldset,
+legend {
+  font-family: 'SF Pro Display', 'SF Pro Text', 'SF Pro', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numeric & Financial Alignment Stack */
+.font-mono, .tabular-nums, table, [data-numeric="true"], .kpi-value {
+  font-family: "SF Mono", -apple-system-monospaced, "SF Pro Display", ui-monospace, Menlo, Monaco, Consolas, monospace;
+  font-feature-settings: "tnum" 1, "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(249, 115, 22, 0.02);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(249, 115, 22, 0.2);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ea580c;
+  box-shadow: 0 0 8px rgba(234, 88, 12, 0.3);
+}
+
+/* ─── Cards ───────────────────────────────────────── */
+.glass-card, .card {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 20px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03),
+              0 1px 3px rgba(0, 0, 0, 0.02);
+  color: #171717;
+}
+
+.glass-card:hover, .card:hover {
+  border-color: #f97316;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(234, 88, 12, 0.10),
+              0 0 0 1px rgba(249, 115, 22, 0.15);
+}
+
+.glass-card-no-hover {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  color: #171717;
+}
+
+/* ─── Inputs ─────────────────────────────────────── */
+.glass-input, .input-light {
+  background: #ffffff;
+  border: 1.5px solid #e7e5e4;
+  border-radius: 12px;
+  padding: 11px 16px;
+  font-size: 0.875rem;
+  color: #171717;
+  outline: none;
+  transition: all 0.2s ease-in-out;
+  width: 100%;
+}
+.glass-input:focus, .input-light:focus {
+  border-color: #f97316;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
+}
+.glass-input::placeholder, .input-light::placeholder {
+  color: #a8a29e;
+}
+
+/* ─── Buttons ────────────────────────────────────── */
+.btn-cyber-cyan, .btn-primary, .btn-warrior {
+  background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
+  color: #ffffff;
+  font-weight: 800;
+  border-radius: 14px;
+  padding: 11px 24px;
+  font-size: 0.875rem;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(234, 88, 12, 0.25);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+}
+.btn-cyber-cyan:hover, .btn-primary:hover, .btn-warrior:hover {
+  background: linear-gradient(135deg, #f97316 0%, #c2410c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(234, 88, 12, 0.35);
+}
+.btn-cyber-cyan:active, .btn-primary:active, .btn-warrior:active {
+  transform: scale(0.98);
+}
+
+.btn-cyber-outline, .btn-ghost-sm, .btn-secondary {
+  background: #ffffff;
+  border: 1.5px solid #fdba74;
+  color: #ea580c;
+  font-weight: 600;
+  border-radius: 14px;
+  padding: 10px 22px;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.btn-cyber-outline:hover, .btn-ghost-sm:hover, .btn-secondary:hover {
+  background: #fff7ed;
+  border-color: #ea580c;
+  color: #c2410c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.10);
+}
+
+/* ─── Badges ─────────────────────────────────────── */
+.badge-orange, .badge-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px solid #fed7aa;
+}
+.badge-green, .badge-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #ecfdf5;
+  color: #16a34a;
+  border: 1px solid #a7f3d0;
+}
+.badge-yellow, .badge-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+.badge-red, .badge-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+.badge-blue, .badge-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+.badge-gray {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #f5f5f4;
+  color: #78716c;
+  border: 1px solid #e7e5e4;
+}
+
+/* ─── Tables ─────────────────────────────────────── */
+.cyber-table, .light-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+.cyber-table thead, .light-table thead {
+  background: #1c1917;
+}
+.cyber-table th, .light-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  border-bottom: 2px solid #ea580c;
+  white-space: nowrap;
+}
+.cyber-table td, .light-table td {
+  padding: 13px 16px;
+  font-size: 0.85rem;
+  color: #171717;
+  border-bottom: 1px solid #f5f5f4;
+}
+.cyber-table tbody tr:hover td, .light-table tbody tr:hover td {
+  background: #fffaf5;
+}
+.cyber-table tr:last-child td, .light-table tr:last-child td {
+  border-bottom: none;
+}
+
+select option {
+  background-color: #ffffff;
+  color: #10233f;
+}
+
+/* Animations */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Phone Simulator styling */
+.phone-frame {
+  width: 375px;
+  height: 760px;
+  border-radius: 40px;
+  border: 12px solid #10233f;
+  background-color: #fdfdfd;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 25px 60px -15px rgba(11, 92, 190, 0.2), 0 0 0 1px rgba(11, 92, 190, 0.05);
+}
+
+.phone-notch {
+  width: 140px;
+  height: 24px;
+  background-color: #10233f;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+  z-index: 50;
+}
+
+/* ─── OFFICIAL UNIVERSAL INVOICE PRINT STYLES ───────────────────────── */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #printable-official-invoice, 
+  #printable-official-invoice *,
+  .official-invoice-print-area,
+  .official-invoice-print-area * {
+    visibility: visible !important;
+  }
+  #printable-official-invoice,
+  .official-invoice-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    background: white !important;
+    color: black !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+}
+
+/* ─── GLOBAL PREMIUM TOAST SYSTEM (WARRIOR GYM OS / SONNER) ─────────────── */
+[data-sonner-toaster] {
+  --normal-bg: #ffffff;
+  --normal-border: #e2e8f0;
+  --normal-text: #0f172a;
+  --success-bg: #ffffff;
+  --success-border: #e2e8f0;
+  --success-text: #0f172a;
+  --error-bg: #ffffff;
+  --error-border: #e2e8f0;
+  --error-text: #0f172a;
+  --warning-bg: #ffffff;
+  --warning-border: #e2e8f0;
+  --warning-text: #0f172a;
+  --info-bg: #ffffff;
+  --info-border: #e2e8f0;
+  --info-text: #0f172a;
+  font-family: var(--font-sans) !important;
+  z-index: 9999999 !important;
+}
+
+[data-sonner-toast] {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  padding: 12px 14px !important;
+  min-width: 320px !important;
+  max-width: 440px !important;
+  box-shadow: 0 16px 36px -6px rgba(15, 23, 42, 0.14), 0 4px 10px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.03) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Left Accent Status Borders */
+[data-sonner-toast].az-toast-success,
+[data-sonner-toast][data-type="success"] {
+  border-left: 4px solid #10b981 !important;
+}
+
+[data-sonner-toast].az-toast-error,
+[data-sonner-toast][data-type="error"] {
+  border-left: 4px solid #f43f5e !important;
+}
+
+[data-sonner-toast].az-toast-warning,
+[data-sonner-toast][data-type="warning"] {
+  border-left: 4px solid #f59e0b !important;
+}
+
+[data-sonner-toast].az-toast-info,
+[data-sonner-toast][data-type="info"],
+[data-sonner-toast].az-toast-loading,
+[data-sonner-toast][data-type="loading"] {
+  border-left: 4px solid #f97316 !important;
+}
+
+/* Proper sizing for Sonner internal slots */
+[data-sonner-toast] [data-icon] {
+  display: flex !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
+}
+
+[data-sonner-toast] [data-content] {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+  gap: 2px !important;
+}
+
+/* Icon Badges */
+.az-toast-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.az-badge-success {
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+}
+
+.az-badge-error {
+  background-color: #fff1f2;
+  border: 1px solid #fecdd3;
+}
+
+.az-badge-warning {
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.az-badge-info {
+  background-color: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+[data-sonner-toast] [data-title] {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.01em !important;
+  word-break: break-word !important;
+}
+
+[data-sonner-toast] [data-description] {
+  color: #64748b !important;
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  margin-top: 2px !important;
+  line-height: 1.4 !important;
+  word-break: break-word !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #94a3b8 !important;
+  border-radius: 8px !important;
+  padding: 3px !important;
+  top: 10px !important;
+  right: 10px !important;
+  left: auto !important;
+  transition: all 0.15s ease !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  cursor: pointer !important;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+

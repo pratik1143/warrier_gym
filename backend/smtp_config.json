@@ -1,0 +1,16 @@
+{
+  "host": "smtp.gmail.com",
+  "port": "587",
+  "secure": false,
+  "user": "pratikdc1111@gmail.com",
+  "pass": "trdb bxql krdo bicn",
+  "fromName": "The Warrior Gym",
+  "fromEmail": "pratikdc1111@gmail.com",
+  "triggers": {
+    "welcome": true,
+    "expiry7": true,
+    "expiry3": true,
+    "payment": true,
+    "expired": true
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "939171214881",
+    "project_id": "alphagym-2d861",
+    "storage_bucket": "alphagym-2d861.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:939171214881:android:d55c318eb9b31eca285560",
+        "android_client_info": {
+          "package_name": "com.alphagym2d861android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAn4MPtzWZkoIjrH0CHQRzpvJ9AnDc8DIM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

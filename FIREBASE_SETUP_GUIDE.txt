@@ -1,0 +1,81 @@
+FIREBASE SETUP GUIDE — THE WARRIOR GYM
+=====================================
+
+STEP 1: Firebase Console pe jao
+→ https://console.firebase.google.com
+→ "Add project" click karo
+→ Project name: warrior-gym-gym
+→ Google Analytics: Enable karo (recommended)
+→ "Create project" click karo
+
+STEP 2: Firestore Database enable karo
+→ Left sidebar: Build → Firestore Database
+→ "Create database" click karo
+→ Location: asia-south1 (Mumbai) select karo
+→ Start in "Production mode" select karo
+→ Enable karo
+
+STEP 3: Authentication enable karo
+→ Left sidebar: Build → Authentication
+→ "Get started" click karo
+→ Email/Password provider enable karo
+
+STEP 4: Service Account Key download karo (Backend ke liye)
+→ Project Settings (gear icon) → Service Accounts tab
+→ "Generate new private key" click karo
+→ JSON file download hogi
+→ Is file ko rename karo: serviceAccountKey.json
+→ Is file ko yahan rakhna hai:
+   C:\Users\defaultuser\Desktop\alpha gym zone\backend\serviceAccountKey.json
+
+STEP 5: Web Config copy karo (Frontend ke liye)
+→ Project Settings → General tab
+→ "Your apps" section mein "Add app" → Web (</>)
+→ App nickname: warrior-gym-web
+→ "Register app"
+→ Firebaseconfig object copy karo — yeh kuch aisa dikhega:
+
+const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "warrior-gym-gym.firebaseapp.com",
+  projectId: "warrior-gym-gym",
+  storageBucket: "warrior-gym-gym.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef"
+};
+
+→ Is config ko .env.local mein daalo (main kar dunga)
+
+STEP 6: Firestore Security Rules set karo
+→ Firestore Database → Rules tab
+→ Yeh rules paste karo:
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
+→ Publish karo
+
+STEP 7: Indexes create karo
+→ Firestore Database → Indexes tab
+→ Yeh composite indexes add karo:
+
+Collection: attendance
+Fields: branch (Asc), checkIn (Desc)
+
+Collection: payments
+Fields: gymId (Asc), createdAt (Desc)
+
+Collection: members
+Fields: status (Asc), expiryDate (Asc)
+
+=====================================
+JAB YEH SAB HO JAY, MUJHE BATAO:
+1. serviceAccountKey.json ki location
+2. firebaseConfig object values
+=====================================

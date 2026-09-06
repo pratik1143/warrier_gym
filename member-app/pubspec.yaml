@@ -1,0 +1,55 @@
+name: warrior_gym_member_app
+description: The Warrior Gym Member Super App — Premium fitness companion connected to The Warrior Gym CRM.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.19.0
+  cloud_firestore: ^4.15.0
+  firebase_messaging: ^14.7.19
+  firebase_storage: ^11.6.10
+
+  # UI & Animations
+  google_fonts: ^6.1.0
+  lottie: ^3.1.0
+  flutter_animate: ^4.5.0
+  shimmer: ^3.0.0
+  fl_chart: ^0.67.0
+  percent_indicator: ^4.2.3
+  
+  # Navigation
+  go_router: ^13.2.0
+
+  # State Management
+  provider: ^6.1.2
+  
+  # Utilities
+  intl: ^0.19.0
+  qr_flutter: ^4.1.0
+  image_picker: ^1.0.7
+  shared_preferences: ^2.2.2
+  url_launcher: ^6.2.5
+  cached_network_image: ^3.3.1
+  
+  # Icons
+  cupertino_icons: ^1.0.6
+  iconsax: ^0.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/animations/
+    - assets/images/
