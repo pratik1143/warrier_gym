@@ -8,20 +8,25 @@ import {
 import API from '@/services/api';
 
 export interface LatestPunchEvent {
-  status: 'granted' | 'already_inside' | 'expired' | 'frozen' | 'unmapped' | 'denied';
+  id?: string;
+  status: 'granted' | 'already_inside' | 'expired' | 'frozen' | 'unmapped' | 'denied' | string;
   memberName: string;
   memberId?: string | null;
   memberCode?: string;
   biometricId?: string;
+  hikvisionUserId?: string | number;
   deviceUserId?: string;
   avatarUrl?: string;
   verificationMethod?: string;
+  authenticationType?: string;
+  accessResult?: string;
   timestamp: string;
   gateOpened?: boolean;
   doorNo?: number;
   deviceId?: string;
   rawEventId?: string;
   source?: string;
+  [key: string]: any;
 }
 
 // Synthetic Web Audio API Sound Synthesizer (No external MP3 dependencies)
