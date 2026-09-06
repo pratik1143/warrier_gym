@@ -37,6 +37,18 @@ app.use((req, res, next) => {
 // API route middleware mounting
 app.use('/api', router);
 
+// Root welcome endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Warrior Gym OS API Backend',
+    status: 'online',
+    version: '1.0.0',
+    health: '/health',
+    apiRoot: '/api',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'warrior-gym-os-api', timestamp: new Date().toISOString() });
