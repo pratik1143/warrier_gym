@@ -17,10 +17,11 @@ const PORT = process.env.PORT || 5000;
 
 // Enable Cross-Origin Resource Sharing
 app.use(cors({
-  origin: '*', // Allow all origins for local testing and dev
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: '*', // Allow all origins for production and dev
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
+app.options('*', cors());
 
 // Body parsing middleware (50mb limit for batch excel migration)
 app.use(express.json({ limit: '50mb' }));

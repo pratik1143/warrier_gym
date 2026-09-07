@@ -1,8 +1,13 @@
 import axios from 'axios';
 import { auth } from '../lib/firebase';
 
+// Ensure baseURL always properly points to the /api endpoint
+// Handles both 'https://domain.com' and 'https://domain.com/api' (with or without trailing slash)
+const rawBaseURL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').trim().replace(/\/+$/, '');
+const baseURL = rawBaseURL.endsWith('/api') ? rawBaseURL : `${rawBaseURL}/api`;
+
 const API = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api',
+  baseURL,
   headers: {
     'Content-Type': 'application/json'
   }

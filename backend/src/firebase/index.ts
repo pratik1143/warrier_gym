@@ -269,6 +269,8 @@ export let mockDoorStatus: any[] = [
 ];
 export let mockEnquiries: any[] = [];
 
+import initialMockDb from './mockDb.json';
+
 const MOCK_DB_FILE = path.join(__dirname, 'mockDb.json');
 
 export const saveMockDb = () => {
@@ -301,10 +303,18 @@ export const saveMockDb = () => {
 
 export const loadMockDb = () => {
   try {
+    const seedData: any = initialMockDb || {};
+    let data = seedData;
     if (fs.existsSync(MOCK_DB_FILE)) {
-      const data = JSON.parse(fs.readFileSync(MOCK_DB_FILE, 'utf8'));
-      if (data.mockMembers) { mockMembers.length = 0; mockMembers.push(...data.mockMembers); }
-      if (data.mockAttendance) { mockAttendance.length = 0; mockAttendance.push(...data.mockAttendance); }
+      try {
+        data = JSON.parse(fs.readFileSync(MOCK_DB_FILE, 'utf8'));
+      } catch (readErr) {
+        console.warn('Could not parse filesystem mockDb.json, using bundled seed:', readErr);
+        data = seedData;
+      }
+    }
+    if (data.mockMembers && data.mockMembers.length > 0) { mockMembers.length = 0; mockMembers.push(...data.mockMembers); }
+    if (data.mockAttendance) { mockAttendance.length = 0; mockAttendance.push(...data.mockAttendance); }
       if (data.mockPayments) {
         mockPayments.length = 0;
         data.mockPayments.forEach((p: any) => {
@@ -345,10 +355,7 @@ export const loadMockDb = () => {
       if (data.mockDoorStatus) { mockDoorStatus.length = 0; mockDoorStatus.push(...data.mockDoorStatus); }
       if (data.mockEnquiries) { mockEnquiries.length = 0; mockEnquiries.push(...data.mockEnquiries); }
       console.log(`[Offline Mock DB] Loaded ${mockMembers.length} members and ${mockEnquiries.length} enquiries from mockDb.json`);
-    } else {
-      saveMockDb();
-    }
-  } catch (e) {
+    } catch (e) {
     console.error('Failed to load mock database:', e);
   }
 };

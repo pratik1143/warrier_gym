@@ -256,7 +256,10 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen w-full flex font-poppins text-slate-800 bg-[#FAFAF9] relative">
       {/* ─── Column 1: Left Navigation Sidebar ─── */}
-      <aside className="fixed top-0 left-0 bottom-0 h-screen h-[100vh] w-[230px] lg:w-[240px] bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between z-40 select-none overflow-hidden">
+      <aside 
+        style={{ width: '240px' }}
+        className="fixed top-0 left-0 bottom-0 h-screen h-[100vh] bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between z-50 select-none overflow-hidden"
+      >
         {/* Sidebar Header Brand Area */}
         <div className="px-1 flex items-center justify-start border-b border-stone-100 pb-4 shrink-0">
           <Link href="/dashboard/overview" className="flex items-center gap-3 group no-underline">
@@ -348,7 +351,10 @@ export default function DashboardLayout({
       </aside>
 
       {/* ─── Main Workspace Content Area ─── */}
-      <main className="flex-1 min-w-0 w-full ml-[230px] lg:ml-[240px] p-4 sm:p-6 min-h-screen flex flex-col gap-4 text-left bg-[#FAFAF9]">
+      <main 
+        style={{ marginLeft: '240px', width: 'calc(100% - 240px)', minHeight: '100vh' }}
+        className="flex-1 min-w-0 p-4 sm:p-6 flex flex-col gap-4 text-left bg-[#FAFAF9] overflow-x-hidden"
+      >
         {/* Top Header Bar: Universal Search (Left/Center) + Live Time Card (Right) */}
         <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 pb-1">
           <div className="w-full sm:max-w-[460px] md:max-w-[500px]">
