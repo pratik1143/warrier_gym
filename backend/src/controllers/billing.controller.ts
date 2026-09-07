@@ -104,13 +104,27 @@ export const createInvoice = async (req: Request, res: Response) => {
       const newPaymentStatus = newOutstanding <= 0 ? 'paid' : (newTotalPaid > 0 ? 'partial' : 'pending');
 
       const finalExpiryTime = new Date(newExpiryString).getTime();
+      const existingHistory = Array.isArray(m.membershipHistory) ? m.membershipHistory : [];
+      const newHistoryEntry = {
+        plan: plan || m.plan || 'Standard',
+        startDate: req.body.startDate || m.startDate || todayYMD,
+        expiryDate: newExpiryString,
+        amount: finalNet,
+        paid: finalPaid,
+        invoiceId: invoice.invoiceNumber || invoice.id,
+        createdAt: new Date().toISOString(),
+      };
+
       await db.updateMember(m.id, {
+        plan: plan || m.plan || 'Standard',
+        startDate: m.startDate || req.body.startDate || todayYMD,
         expiryDate: newExpiryString,
         status: m.status === 'upcoming' ? 'upcoming' : (newExpiryString >= todayYMD ? 'active' : 'expired'),
         paymentStatus: newPaymentStatus,
         totalPaid: newTotalPaid,
         outstandingBalance: newOutstanding,
-        daysLeft: Math.ceil((finalExpiryTime - Date.now()) / (1000 * 60 * 60 * 24))
+        daysLeft: Math.ceil((finalExpiryTime - Date.now()) / (1000 * 60 * 60 * 24)),
+        membershipHistory: [...existingHistory, newHistoryEntry],
       });
 
       // Auto-resolve old stale renewal follow-ups

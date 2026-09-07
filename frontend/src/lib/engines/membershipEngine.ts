@@ -3,9 +3,9 @@
 
 export const membershipEngine = {
   calculateDaysLeft: (expiryDate: string | null | undefined): number => {
-    if (!expiryDate || expiryDate === 'N/A' || expiryDate === '—') return 999;
+    if (!expiryDate || expiryDate === 'N/A' || expiryDate === '—') return 0;
     const expiry = new Date(expiryDate);
-    if (isNaN(expiry.getTime())) return 999;
+    if (isNaN(expiry.getTime())) return 0;
 
     const today = new Date();
     
@@ -50,12 +50,15 @@ export const membershipEngine = {
   },
 
   calculateMembershipStatus: (daysLeftOrExpiry: number | string | null | undefined, startDateOrManual?: string | null, manualStatus?: string): string => {
-    const statusVal = (typeof startDateOrManual === 'string' && ['Blocked', 'Frozen', 'active', 'expired', 'frozen', 'blocked', 'upcoming'].includes(startDateOrManual))
+    const statusVal = (typeof startDateOrManual === 'string' && ['Blocked', 'Frozen', 'Hold', 'Inactive', 'active', 'expired', 'frozen', 'blocked', 'hold', 'inactive', 'upcoming'].includes(startDateOrManual))
       ? startDateOrManual 
       : manualStatus;
 
-    if (statusVal === 'Blocked' || statusVal === 'blocked') return 'Blocked';
-    if (statusVal === 'Frozen' || statusVal === 'frozen') return 'Frozen';
+    const cleanStatus = String(statusVal || '').trim().toLowerCase();
+    if (cleanStatus === 'blocked') return 'Blocked';
+    if (cleanStatus === 'frozen') return 'Frozen';
+    if (cleanStatus === 'hold') return 'Hold';
+    if (cleanStatus === 'inactive') return 'Inactive';
 
     const todayStr = new Date().toISOString().split('T')[0];
     let startStr = '';
@@ -86,6 +89,12 @@ export const membershipEngine = {
     }
     if (manualStatus === 'Frozen' || manualStatus === 'frozen') {
       return { granted: false, status: 'Frozen', reason: 'Membership is currently frozen', daysUntilStart: 0 };
+    }
+    if (manualStatus === 'Hold' || manualStatus === 'hold') {
+      return { granted: false, status: 'Hold', reason: 'Member is on HOLD awaiting billing and activation', daysUntilStart: 0 };
+    }
+    if (manualStatus === 'Inactive' || manualStatus === 'inactive') {
+      return { granted: false, status: 'Inactive', reason: 'Member account is inactive', daysUntilStart: 0 };
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -323,6 +332,9 @@ export const membershipEngine = {
 
   selfHealMemberData: async (member: any) => {
     if (!member || !member.id) return member;
+    if (String(member.status || '').trim().toUpperCase() === 'HOLD') {
+      return member;
+    }
     
     let needsUpdate = false;
     const updates: any = {};

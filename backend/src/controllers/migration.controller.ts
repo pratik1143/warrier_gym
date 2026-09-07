@@ -575,9 +575,9 @@ export const dryRunMigration = async (req: Request, res: Response) => {
         return;
       }
 
-      if (!clientId || !name || !phone) {
+      if (!clientId || !name) {
         errorsCount++;
-        errorsList.push(`Row #${idx + 1}: Missing critical identifiers (Client ID: ${clientId || 'Missing'}, Name: ${name || 'Missing'}, Phone: ${phone || 'Missing'})`);
+        errorsList.push(`Row #${idx + 1}: Missing critical identifiers (ID: ${clientId || 'Missing'}, Name: ${name || 'Missing'})`);
         return;
       }
 
@@ -716,8 +716,8 @@ export const migrateMembers = async (req: Request, res: Response) => {
         return;
       }
 
-      if (!clientId || !name || !phone) {
-        errors.push(`Row #${idx + 1}: Missing Client ID, Name, or Phone`);
+      if (!clientId || !name) {
+        errors.push(`Row #${idx + 1}: Missing Client ID or Name`);
         return;
       }
 
@@ -742,14 +742,85 @@ export const migrateMembers = async (req: Request, res: Response) => {
         warnings.push(`Member ${name} (ID ${clientId}): Expiry date (${eNorm}) is before Start date (${sNorm})`);
       }
 
-      // Dynamic membership status calculation
+      const isHoldMember = Boolean(
+        record.isHold ||
+        record.isMinimalTwoColumn ||
+        String(record.status || '').toUpperCase() === 'HOLD' ||
+        (!record.originalPackageName && !record.Package && !record.plan && (!record.packageName || record.packageName === 'General Membership')) ||
+        (!record.expiryDate && !record['Expiry Date'] && !record.startDate && !record['Start Date'] && amountPaid === 0 && balanceAmount === 0)
+      );
+
+      const memberId = `TWG-${clientId}`;
+
+      if (isHoldMember) {
+        const memberData = {
+          uid: docId,
+          id: docId,
+          clientId,
+          memberId,
+          name,
+          phone: phone || '',
+          email: record.email || (phone ? `${phone}@thewarriorgym.in` : `member_${clientId}@thewarriorgym.in`),
+          gender,
+          startDate: null,
+          joinDate: new Date().toISOString().split('T')[0],
+          createdAt: new Date().toISOString(),
+          expiryDate: null,
+          membershipStartDate: null,
+          membershipExpiryDate: null,
+          packageName: null,
+          originalPackageName: null,
+          plan: null,
+          membershipPlan: null,
+          amountPaid: 0,
+          balanceAmount: 0,
+          balance: 0,
+          totalBilled: 0,
+          price: 0,
+          amount: 0,
+          totalPackageAmount: 0,
+          paid: 0,
+          totalPaid: 0,
+          outstandingBalance: 0,
+          pendingBalance: 0,
+          paymentStatus: 'NOT_BILLED',
+          photoUrl: photoUrl || null,
+          avatarUrl: photoUrl || null,
+          avatar: photoUrl || null,
+          photo: photoUrl || null,
+          profilePhotoUrl: photoUrl || null,
+          status: 'HOLD',
+          membershipStatus: 'HOLD',
+          activationStatus: 'PENDING_ACTIVATION',
+          smartStatus: 'Hold',
+          daysLeft: null,
+          branch: record.branch || 'Mohali, Punjab',
+          trainer: record.trainer || '',
+          biometricId: clientId,
+          isImportedMember: true,
+          migrationSessionId,
+          billingHistory: [],
+          membershipHistory: [],
+          payments: [],
+          updatedAt: new Date().toISOString()
+        };
+
+        membersToSave.push(memberData);
+        importedList.push(memberData);
+        return; // Pure HOLD member - DO NOT create fake invoice!
+      }
+
+      // Dynamic membership status calculation for members with real packages
       const currentSmart = calculateSmartStatus(eNorm);
       if (currentSmart.status === 'active') activeCount++;
       else expiredCount++;
 
       const totalBilled = amountPaid + balanceAmount;
-      const memberId = `TWG-${clientId}`;
       const invNum = `INV-LEG-${clientId}`;
+
+      const computedPayStatus = totalBilled === 0
+        ? 'NOT_BILLED'
+        : (amountPaid >= totalBilled ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'));
 
       const invoiceObj = {
         id: `inv_${docId}`,
@@ -758,7 +829,7 @@ export const migrateMembers = async (req: Request, res: Response) => {
         memberId: docId,
         clientId,
         memberName: name,
-        memberPhone: phone,
+        memberPhone: phone || 'N/A',
         invoiceType: 'MEMBERSHIP',
         billingType: 'MEMBERSHIP',
         package: normalizedPkg,
@@ -771,8 +842,8 @@ export const migrateMembers = async (req: Request, res: Response) => {
         balanceAmount,
         outstandingAmount: balanceAmount,
         pendingAmount: balanceAmount,
-        paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
-        status: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
+        paymentStatus: computedPayStatus,
+        status: computedPayStatus,
         paymentMethod: 'Imported',
         method: 'Imported',
         transactionType: 'historical_import',
@@ -795,8 +866,8 @@ export const migrateMembers = async (req: Request, res: Response) => {
         clientId,
         memberId,
         name,
-        phone,
-        email: record.email || `${phone}@thewarriorgym.in`,
+        phone: phone || '',
+        email: record.email || (phone ? `${phone}@thewarriorgym.in` : `member_${clientId}@thewarriorgym.in`),
         gender,
         startDate: sNorm,
         joinDate: sNorm,
@@ -814,7 +885,7 @@ export const migrateMembers = async (req: Request, res: Response) => {
         paid: amountPaid,
         totalPaid: amountPaid,
         outstandingBalance: balanceAmount,
-        paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
+        paymentStatus: computedPayStatus,
         photoUrl: photoUrl || null,
         avatarUrl: photoUrl || null,
         avatar: photoUrl || null,
@@ -1891,6 +1962,125 @@ export const markAllBillsPaid = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * Production Audit & Sanitization Engine:
+ * Fixes existing imported HOLD members who wrongly display PAID ₹0, 999 days, or fake memberships.
+ * Only members with a real created bill/payment remain active.
+ */
+export const sanitizeHoldMembers = async (req?: Request, res?: Response) => {
+  try {
+    const existingMembers = await db.getMembers();
+    const firestoreDb = isFirebaseInitialized && admin ? admin.firestore() : null;
+
+    let fixedHoldCount = 0;
+    let deletedFakeInvoicesCount = 0;
+
+    // 1. Fetch real payments to cross-reference
+    let allPayments: any[] = [];
+    if (firestoreDb) {
+      try {
+        const snap = await firestoreDb.collection('payments').get();
+        allPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (e) {
+        console.warn('Could not read payments from Firestore:', e);
+      }
+    } else {
+      allPayments = (db as any).mockPayments || [];
+    }
+
+    for (const m of existingMembers) {
+      const docId = m.id || m.uid;
+      const statusUpper = String(m.status || m.membershipStatus || '').trim().toUpperCase();
+      const isCandidateHold =
+        statusUpper === 'HOLD' ||
+        m.activationStatus === 'PENDING_ACTIVATION' ||
+        (m.isImportedMember && (!m.plan || m.plan === 'General Membership') && (!m.totalPaid || m.totalPaid === 0));
+
+      if (isCandidateHold) {
+        // Look for genuine billing records (not zero-amount or auto-generated fake legacy records)
+        const memberPayments = allPayments.filter((p: any) => {
+          if (!p) return false;
+          const matchId = p.memberId === docId || p.memberId === m.memberId || p.clientId === m.clientId;
+          if (!matchId) return false;
+          // Genuine payment must have non-zero netPayable or amount and not be a fake 0-amount legacy import
+          const isFake = (p.isLegacyImport || p.isHistorical) && (Number(p.amount || 0) === 0 && Number(p.amountPaid || p.paid || 0) === 0);
+          return !isFake && (Number(p.netPayable || p.amount || 0) > 0 || Number(p.amountPaid || p.paid || 0) > 0);
+        });
+
+        if (memberPayments.length === 0) {
+          // Member has NO real bills. Pure HOLD member!
+          const holdUpdates = {
+            status: 'HOLD',
+            membershipStatus: 'HOLD',
+            activationStatus: 'PENDING_ACTIVATION',
+            plan: null,
+            packageName: null,
+            membershipPlan: null,
+            originalPackageName: null,
+            startDate: null,
+            expiryDate: null,
+            membershipStartDate: null,
+            membershipExpiryDate: null,
+            daysLeft: null,
+            totalPackageAmount: 0,
+            totalBilled: 0,
+            price: 0,
+            amount: 0,
+            totalPaid: 0,
+            amountPaid: 0,
+            paid: 0,
+            balance: 0,
+            balanceAmount: 0,
+            outstandingBalance: 0,
+            pendingBalance: 0,
+            paymentStatus: 'NOT_BILLED',
+            billingHistory: [],
+            membershipHistory: [],
+            payments: [],
+            updatedAt: new Date().toISOString()
+          };
+
+          if (firestoreDb && docId) {
+            try {
+              await firestoreDb.collection('members').doc(docId).set(holdUpdates, { merge: true });
+
+              // Clean up any fake auto-generated 0-amount invoice
+              const fakeInvId = `inv_${docId}`;
+              await firestoreDb.collection('payments').doc(fakeInvId).delete().catch(() => {});
+              deletedFakeInvoicesCount++;
+            } catch (_) {}
+          }
+
+          await db.updateMember(docId, holdUpdates);
+          fixedHoldCount++;
+        }
+      }
+    }
+
+    if ((db as any).invalidateMembersCache) {
+      (db as any).invalidateMembersCache();
+    }
+
+    const summary = {
+      success: true,
+      message: `Audit complete. Cleaned ${fixedHoldCount} HOLD members, removed ${deletedFakeInvoicesCount} fake zero-amount invoices.`,
+      fixedHoldCount,
+      deletedFakeInvoicesCount
+    };
+
+    if (res) {
+      return res.json(summary);
+    }
+    return summary;
+  } catch (error: any) {
+    console.error('Error in sanitizeHoldMembers:', error);
+    if (res) {
+      return res.status(500).json({ error: error.message });
+    }
+    throw error;
   }
 };
 

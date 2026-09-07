@@ -256,73 +256,71 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen w-full flex font-poppins text-slate-800 bg-[#FAFAF9] relative">
       {/* ─── Column 1: Left Navigation Sidebar ─── */}
-      <aside className="w-[230px] lg:w-[240px] flex-shrink-0 bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between h-screen sticky top-0 overflow-y-auto z-40">
-        <div className="space-y-6">
-          {/* Sidebar Header Brand Area */}
-          <div className="px-1 flex items-center justify-start border-b border-stone-100 pb-4">
-            <Link href="/dashboard/overview" className="flex items-center gap-3 group no-underline">
-              <img 
-                src="/gymlogo.png" 
-                alt="The Warrior Gym Logo" 
-                className="h-14 w-14 object-contain shrink-0 group-hover:scale-105 transition-transform drop-shadow-sm" 
-              />
-              <div className="flex flex-col justify-center leading-none">
-                <span className="font-rowdies font-extrabold text-[14px] tracking-tight uppercase text-slate-900 leading-tight">
-                  THE WARRIOR
-                </span>
-                <span className="font-rowdies font-black text-[14px] tracking-wider uppercase text-[#EA580C] leading-tight">
-                  GYM
-                </span>
-              </div>
-            </Link>
-          </div>
-
-          {/* Sidebar Navigation */}
-          <nav className="space-y-1 pr-1">
-            {[
-              { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
-              { to: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-              { to: '/dashboard/members', label: 'Members', icon: Users },
-              { to: '/dashboard/employees', label: 'Employees', icon: Briefcase, badge: 'NEW' },
-              { to: '/dashboard/enquiries', label: 'Enquiries', icon: ClipboardList },
-              { to: '/dashboard/messages', label: 'Web Messages', icon: MessageSquare, badge: 'LIVE' },
-              { to: '/dashboard/expired', label: 'Expired', icon: UserX },
-              { to: '/dashboard/trainers', label: 'Trainers', icon: UserCheck },
-              { to: '/dashboard/follow-up', label: 'Follow Up', icon: AlertTriangle },
-              { to: '/dashboard/inconsistent', label: 'Inconsistent', icon: UserX },
-              { to: '/dashboard/billing', label: 'Billing', icon: CreditCard },
-              { to: '/dashboard/automation', label: 'Email Automation', icon: Mail },
-              { to: '/dashboard/memberships', label: 'Memberships', icon: Award },
-              { to: '/dashboard/settings', label: 'Settings', icon: Settings }
-            ].map((item, idx) => {
-              const isActive = pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
-              return (
-                <Link
-                  key={idx}
-                  href={item.to}
-                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all ${
-                    isActive 
-                      ? 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] shadow-xs' 
-                      : 'text-slate-600 hover:text-[#EA580C] hover:bg-[#FFF7ED]/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <item.icon size={14} className={isActive ? 'text-[#EA580C]' : 'text-slate-400'} />
-                    <span>{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span className="bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white text-[8px] font-black px-1.5 py-0.5 rounded-full scale-90 border border-orange-300 animate-pulse">
-                      {item.badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
+      <aside className="fixed top-0 left-0 bottom-0 h-screen h-[100vh] w-[230px] lg:w-[240px] bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between z-40 select-none overflow-hidden">
+        {/* Sidebar Header Brand Area */}
+        <div className="px-1 flex items-center justify-start border-b border-stone-100 pb-4 shrink-0">
+          <Link href="/dashboard/overview" className="flex items-center gap-3 group no-underline">
+            <img 
+              src="/gymlogo.png" 
+              alt="The Warrior Gym Logo" 
+              className="h-14 w-14 object-contain shrink-0 group-hover:scale-105 transition-transform drop-shadow-sm" 
+            />
+            <div className="flex flex-col justify-center leading-none">
+              <span className="font-rowdies font-extrabold text-[14px] tracking-tight uppercase text-slate-900 leading-tight">
+                THE WARRIOR
+              </span>
+              <span className="font-rowdies font-black text-[14px] tracking-wider uppercase text-[#EA580C] leading-tight">
+                GYM
+              </span>
+            </div>
+          </Link>
         </div>
 
-        {/* Sidebar Bottom: User Profile + Sign Out */}
-        <div className="mt-4 border-t border-stone-100 pt-4 space-y-2">
+        {/* Sidebar Navigation - Scrollable inside sidebar only if viewport is small */}
+        <nav className="flex-1 overflow-y-auto my-2 pr-1 space-y-1 min-h-0 custom-scrollbar">
+          {[
+            { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
+            { to: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+            { to: '/dashboard/members', label: 'Members', icon: Users },
+            { to: '/dashboard/employees', label: 'Employees', icon: Briefcase, badge: 'NEW' },
+            { to: '/dashboard/enquiries', label: 'Enquiries', icon: ClipboardList },
+            { to: '/dashboard/messages', label: 'Web Messages', icon: MessageSquare, badge: 'LIVE' },
+            { to: '/dashboard/expired', label: 'Expired', icon: UserX },
+            { to: '/dashboard/trainers', label: 'Trainers', icon: UserCheck },
+            { to: '/dashboard/follow-up', label: 'Follow Up', icon: AlertTriangle },
+            { to: '/dashboard/inconsistent', label: 'Inconsistent', icon: UserX },
+            { to: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+            { to: '/dashboard/automation', label: 'Email Automation', icon: Mail },
+            { to: '/dashboard/memberships', label: 'Memberships', icon: Award },
+            { to: '/dashboard/settings', label: 'Settings', icon: Settings }
+          ].map((item, idx) => {
+            const isActive = pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
+            return (
+              <Link
+                key={idx}
+                href={item.to}
+                className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all ${
+                  isActive 
+                    ? 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] shadow-xs' 
+                    : 'text-slate-600 hover:text-[#EA580C] hover:bg-[#FFF7ED]/60'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <item.icon size={14} className={isActive ? 'text-[#EA580C]' : 'text-slate-400'} />
+                  <span>{item.label}</span>
+                </div>
+                {item.badge && (
+                  <span className="bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white text-[8px] font-black px-1.5 py-0.5 rounded-full scale-90 border border-orange-300 animate-pulse">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Sidebar Bottom: User Profile + Sign Out - Always pinned at bottom */}
+        <div className="mt-auto shrink-0 border-t border-stone-100 pt-3 space-y-2">
           {/* User Info */}
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-stone-50 border border-stone-100">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
@@ -350,7 +348,7 @@ export default function DashboardLayout({
       </aside>
 
       {/* ─── Main Workspace Content Area ─── */}
-      <main className="flex-1 min-w-0 w-full p-4 sm:p-6 overflow-y-auto flex flex-col gap-4 text-left bg-[#FAFAF9]">
+      <main className="flex-1 min-w-0 w-full ml-[230px] lg:ml-[240px] p-4 sm:p-6 min-h-screen flex flex-col gap-4 text-left bg-[#FAFAF9]">
         {/* Top Header Bar: Universal Search (Left/Center) + Live Time Card (Right) */}
         <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 pb-1">
           <div className="w-full sm:max-w-[460px] md:max-w-[500px]">

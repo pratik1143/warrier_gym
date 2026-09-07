@@ -66,6 +66,8 @@ import MembersTable from "./components/MembersTable";
 import AddMemberModal from "./components/AddMemberModal";
 import RenewalCenterModal from "./components/RenewalCenterModal";
 import RenewalWizardModal from "./components/RenewalWizardModal";
+import BulkImportModal from "./components/BulkImportModal";
+import CreateNewBillModal from "./components/CreateNewBillModal";
 import SmartPhotoCapture from "../components/SmartPhotoCapture";
 import { db as fDb, isFirebaseReady } from "@/lib/firebase";
 import API from "@/services/api";
@@ -161,6 +163,10 @@ export default function MembersPage() {
       if (derivedStatus === 'expiring soon' || derivedStatus === 'expiring') {
         derivedStatus = 'active';
       }
+      // Hold members must strictly retain hold status
+      if ((m.status || '').toLowerCase() === 'hold') {
+        derivedStatus = 'hold';
+      }
       return {
         ...m,
         expiryDate,
@@ -174,6 +180,8 @@ export default function MembersPage() {
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [createBillTargetMember, setCreateBillTargetMember] = useState<any | null>(null);
   const [activeProfile, setActiveProfile] = useState<any | null>(null);
   const [editingMember, setEditingMember] = useState<any | null>(null);
   const [addStep, setAddStep] = useState(1);
@@ -881,9 +889,9 @@ export default function MembersPage() {
         <div className="flex items-center gap-2.5">
           <button
             className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
-            onClick={() => router.push('/dashboard/import')}
+            onClick={() => setShowBulkImportModal(true)}
           >
-            <Upload size={15} className="text-[#0052FF]" />
+            <Upload size={15} className="text-[#EA580C]" />
             <span>Import Members</span>
           </button>
           <button
@@ -909,6 +917,7 @@ export default function MembersPage() {
         onSelectMember={(m) => router.push(`/dashboard/members/${encodeURIComponent(m.id)}`)}
         onEdit={(m) => setEditingMember(m)}
         onRenew={(m) => setRenewWizardMember(m)}
+        onCreateBill={(m) => setCreateBillTargetMember(m)}
         onFreeze={async (m) => {
           try {
             await toggleFreeze(m.id);
@@ -938,6 +947,27 @@ export default function MembersPage() {
         isOpen={!!renewWizardMember}
         member={renewWizardMember}
         onClose={() => setRenewWizardMember(null)}
+      />
+
+      {/* Bulk Import Modal (Strict 2-Column Excel + Step 2 Hikvision Machine Mapping) */}
+      <BulkImportModal
+        isOpen={showBulkImportModal}
+        onClose={() => setShowBulkImportModal(false)}
+        onImportSuccess={(targetTab) => {
+          setStatusFilter(targetTab || 'hold');
+          fetchMembers();
+        }}
+      />
+
+      {/* Create New Bill Modal (Hold -> Active) */}
+      <CreateNewBillModal
+        isOpen={!!createBillTargetMember}
+        member={createBillTargetMember}
+        onClose={() => setCreateBillTargetMember(null)}
+        onSaved={() => {
+          fetchMembers();
+          setStatusFilter('active');
+        }}
       />
 
       {/* ─── Edit Member Modal ─── */}

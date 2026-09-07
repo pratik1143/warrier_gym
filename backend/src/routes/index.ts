@@ -4,7 +4,8 @@ import whatsappRoutes from './whatsapp.routes';
 import { loginUser } from '../controllers/auth.controller';
 import { 
   getMembers, getMembersPaginated, getMemberById, createMember, updateMember, 
-  deleteMember, toggleFreezeMember, resetMemberPassword, sendMemberCredentials 
+  deleteMember, toggleFreezeMember, resetMemberPassword, sendMemberCredentials,
+  importBulkHoldMembers
 } from '../controllers/member.controller';
 import { getAttendanceFeed, createCheckIn, checkoutLog, triggerGateUnlock, getAccessLogs, getDoorStatus, getDashboardAnalyticsFeed, getAttendanceSummaryFeed } from '../controllers/attendance.controller';
 import { 
@@ -15,7 +16,7 @@ import {
   getHikvisionStatus, triggerHikvisionDoorUnlock, getUnmappedDeviceUsers, mapDeviceUserToMember,
   testHikvisionConnection, syncHikvisionUsers, syncHikvisionEvents, getHikvisionEvents,
   getHikvisionDiagnostics, enrollHikvisionBiometrics, testHikvisionUserCreation,
-  getHikvisionCapabilitiesController
+  getHikvisionCapabilitiesController, getHikvisionTerminalUsers, bulkMapHikvisionUsers
 } from '../controllers/device.controller';
 import { getInvoices, createInvoice, updateInvoice, deleteInvoice, markPaymentPaid } from '../controllers/billing.controller';
 import { 
@@ -28,7 +29,7 @@ import {
 } from '../controllers/trainer.controller';
 import { getChatHistory, sendChatMessage } from '../controllers/chat.controller';
 import { getProgressTimeline, addProgressRecord, getReferralsByMember, createReferralInvitation } from '../controllers/progress.controller';
-import { nextBiometricId, migrateMembers, dryRunMigration, resumeMigration, rebuildAnalyticsAndIndex, auditVerification, rollbackMigration, mapBiometricUser, getDeviceUsers, getMigrations, seedDeviceUsers, purgeCRMData, repairImportedPhotos, repairImportedBilling, patchLegacyAmounts, markAllBillsPaid } from '../controllers/migration.controller';
+import { nextBiometricId, migrateMembers, dryRunMigration, resumeMigration, rebuildAnalyticsAndIndex, auditVerification, rollbackMigration, mapBiometricUser, getDeviceUsers, getMigrations, seedDeviceUsers, purgeCRMData, repairImportedPhotos, repairImportedBilling, patchLegacyAmounts, markAllBillsPaid, sanitizeHoldMembers } from '../controllers/migration.controller';
 import { getSmtpConfig, saveSmtpConfig, getTemplates, saveTemplatesController, sendTestEmail, getInvoicePreview } from '../controllers/automation.controller';
 import { getPlansController, createPlanController, updatePlanController, deletePlanController } from '../controllers/plan.controller';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, getEmployeeAttendance } from '../controllers/employee.controller';
@@ -55,6 +56,8 @@ router.use('/whatsapp', whatsappRoutes);
 // Member CRUD & Actions
 router.get('/members', getMembers);
 router.get('/members/paginated', getMembersPaginated);
+router.post('/members/import-bulk', importBulkHoldMembers);
+router.post('/members/sanitize-hold-members', sanitizeHoldMembers);
 router.get('/members/next-biometric-id', nextBiometricId);
 router.post('/members/migrate', migrateMembers);
 router.post('/members/dry-run-migration', dryRunMigration);
@@ -118,6 +121,8 @@ router.get('/devices/hikvision/events', getHikvisionEvents);
 router.post('/devices/hikvision/door/open', triggerHikvisionDoorUnlock);
 router.get('/devices/hikvision/unmapped-users', getUnmappedDeviceUsers);
 router.post('/devices/hikvision/map-user', mapDeviceUserToMember);
+router.get('/devices/hikvision/terminal-users', getHikvisionTerminalUsers);
+router.post('/devices/hikvision/bulk-map-members', bulkMapHikvisionUsers);
 
 // Smart Biometric Enrollment
 router.post('/devices/biometric/enroll-fingerprint', startEnrollFingerprint);

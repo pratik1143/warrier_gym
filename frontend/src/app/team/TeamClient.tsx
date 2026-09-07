@@ -136,7 +136,7 @@ export default function TeamClient() {
                     </div>
 
                     <div className="pt-2">
-                      <a href={`https://wa.me/919779333155?text=Hi! I am interested in personal training sessions with ${trainer.name}.`} target="_blank" rel="noopener noreferrer"
+                      <a href={`https://wa.me/919817023336?text=Hi! I am interested in personal training sessions with ${trainer.name}.`} target="_blank" rel="noopener noreferrer"
                         className="w-full bg-orange-50 border border-orange-200 hover:bg-gradient-to-r hover:from-[#FF5E14] hover:to-[#FF7A00] text-[#FF5E14] hover:text-white font-extrabold text-xs uppercase tracking-wider py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm"
                       >
                         <MessageSquare size={14} /> Book PT Session
@@ -168,7 +168,7 @@ export default function TeamClient() {
               <a href="/contact" className="bg-white text-orange-600 font-extrabold text-sm px-10 py-4 rounded-full hover:bg-orange-50 transition-all shadow-xl hover:scale-105">
                 Book Now
               </a>
-              <a href="tel:+919779333155" className="border-2 border-white/60 hover:border-white text-white font-bold text-sm px-10 py-4 rounded-full transition-all hover:bg-white/10 flex items-center gap-2 justify-center">
+              <a href="tel:+919817023336" className="border-2 border-white/60 hover:border-white text-white font-bold text-sm px-10 py-4 rounded-full transition-all hover:bg-white/10 flex items-center gap-2 justify-center">
                 <Phone size={14} /> Call Our Team
               </a>
             </div>

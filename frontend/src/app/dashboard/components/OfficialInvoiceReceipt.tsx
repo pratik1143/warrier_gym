@@ -74,11 +74,11 @@ export default function OfficialInvoiceReceipt({ invoice, member, onPrint, onWha
 
         {/* Gym Address Info */}
         <div className="text-right text-xs font-medium text-slate-800 leading-relaxed max-w-[340px]">
-          <p><span className="font-bold">Address:</span> MNB GROUP, SCO 16-17, 2ND FLOOR, LANDRAN, ROAD,</p>
-          <p>SOHANA, MOHALI, 140308</p>
-          <p><span className="font-bold">Phone:</span> +919779333155</p>
+          <p><span className="font-bold">Address:</span> The Warrior Gym, SCO 30, 31, Sector 89,</p>
+          <p>Mohali, 140308</p>
+          <p><span className="font-bold">Phone:</span> +91 9817023336</p>
           <p><span className="font-bold">Website:</span> thewarriorgym.in</p>
-          <p><span className="font-bold">E-Mail:</span> thewarriorgym@gmail.com</p>
+          <p><span className="font-bold">E-Mail:</span> Ramansingh6158@gmail.com</p>
         </div>
       </div>
 
@@ -186,7 +186,7 @@ export default function OfficialInvoiceReceipt({ invoice, member, onPrint, onWha
 
       {/* ── SECTION 7: Bottom Dark Footer Bar ── */}
       <div className="bg-[#1e293b] text-white py-3 px-4 text-center text-[10px] font-bold tracking-wider rounded-b uppercase">
-        MNB GROUP, SCO 16-17, 2ND FLOOR, LANDRAN, ROAD, SOHANA, MOHALI, 140308
+        THE WARRIOR GYM, SCO 30, 31, SECTOR 89, MOHALI, 140308
       </div>
     </div>
   );

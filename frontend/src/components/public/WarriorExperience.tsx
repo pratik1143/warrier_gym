@@ -150,7 +150,7 @@ export default function WarriorExperience() {
                     PRIME LOCATION
                   </div>
                   <div className="text-sm font-black text-white mt-0.5">
-                    Landran Road, Sohana, Mohali
+                    SCO 30, 31, Sector 89, Mohali
                   </div>
                 </div>
                 <a

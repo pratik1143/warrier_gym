@@ -44,7 +44,7 @@ export default function TermsClient() {
                 <span className="text-[#FF5E14]">1.</span> Membership Registration &amp; Verification
               </h2>
               <p className="text-slate-600">
-                All memberships are personal, non-transferable, and non-refundable. During onboarding, members must declare any pre-existing health conditions or injury records. Access to the gym workout floors requires a successful biometric punch-in or QR code verification at the Sohana branch lobby reception.
+                All memberships are personal, non-transferable, and non-refundable. During onboarding, members must declare any pre-existing health conditions or injury records. Access to the gym workout floors requires a successful biometric punch-in or QR code verification at the Sector 89 branch lobby reception.
               </p>
             </div>
 
@@ -101,8 +101,8 @@ export default function TermsClient() {
                 If you need clarification on fee structures, package freeze policies, or personal trainer regulations, contact the branch desk or mail our operations lead:
               </p>
               <div className="bg-orange-50/60 border border-orange-200/80 p-5 rounded-2xl space-y-2 text-sm text-slate-700">
-                <div><span className="text-slate-500">Call Support:</span> <span className="text-[#FF5E14] font-bold">+91 97793 33155</span></div>
-                <div><span className="text-slate-500">Support Mail:</span> <span className="text-slate-900 font-bold">thewarriorgym@gmail.com</span></div>
+                <div><span className="text-slate-500">Call Support:</span> <span className="text-[#FF5E14] font-bold">+91 98170 23336</span></div>
+                <div><span className="text-slate-500">Support Mail:</span> <span className="text-slate-900 font-bold">Ramansingh6158@gmail.com</span></div>
               </div>
             </div>
 

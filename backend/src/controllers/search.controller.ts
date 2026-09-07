@@ -20,17 +20,35 @@ function calculateScore(queryText: string, digitsOnly: string, item: any, nameFi
     item.employeeId,
     item.enquiryId,
     item.biometricId,
+    item.biometricUserId,
+    item.deviceUserId,
+    item.invoice,
+    item.invoiceNumber,
     item.customId,
     item.clientId,
     item.code,
     item.automationKey
   ].filter(Boolean).map(String).map(s => s.toLowerCase());
 
+  // Check invoice numbers in payments or history
+  if (Array.isArray(item.payments)) {
+    item.payments.forEach((p: any) => {
+      if (p?.invoiceNumber) idFields.push(String(p.invoiceNumber).toLowerCase());
+      if (p?.invoice) idFields.push(String(p.invoice).toLowerCase());
+    });
+  }
+  if (Array.isArray(item.membershipHistory)) {
+    item.membershipHistory.forEach((h: any) => {
+      if (h?.invoiceId) idFields.push(String(h.invoiceId).toLowerCase());
+      if (h?.invoiceNumber) idFields.push(String(h.invoiceNumber).toLowerCase());
+    });
+  }
+
   // 1. Exact Name match
   if (name === q) return 100;
 
-  // 2. Exact ID match
-  if (idFields.some(id => id === q || (id.startsWith('az-') && id === q) || (id.startsWith('emp-') && id === q) || (id.startsWith('enq-') && id === q))) {
+  // 2. Exact ID / Biometric / Invoice match
+  if (idFields.some(id => id === q || (id.startsWith('az-') && id === q) || (id.startsWith('emp-') && id === q) || (id.startsWith('enq-') && id === q) || (id.startsWith('inv-') && id === q))) {
     return 95;
   }
 

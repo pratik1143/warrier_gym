@@ -6,7 +6,7 @@ import {
   ArrowLeft, Edit3, Shield, Activity, Droplets, Calendar,
   Clock, DollarSign, MessageSquare, Phone, Mail, Printer, Download,
   Trash2, Snowflake, Repeat, Sparkles, AlertCircle, Bell, ChevronRight, Camera, User, Dumbbell,
-  MoreVertical, CheckCircle2, MapPin, Heart, Timer, CreditCard
+  MoreVertical, CheckCircle2, MapPin, Heart, Timer, CreditCard, Plus
 } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { db } from '@/lib/firebase';
@@ -22,6 +22,7 @@ import SmartPhotoCapture from '../../components/SmartPhotoCapture';
 import RenewalWizardModal from '../components/RenewalWizardModal';
 import TrainerSelectorDropdown from '../components/TrainerSelectorDropdown';
 import PtBillingModal from '../components/PtBillingModal';
+import CreateNewBillModal from '../components/CreateNewBillModal';
 
 // Tabs
 import ProfileTab from './components/ProfileTab';
@@ -47,6 +48,7 @@ export default function ClientProfileSystem() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showRenewalModal, setShowRenewalModal] = useState(false);
   const [showPtModal, setShowPtModal] = useState(false);
+  const [showCreateBillModal, setShowCreateBillModal] = useState(false);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
   const quickMenuRef = useRef<HTMLDivElement>(null);
 
@@ -147,27 +149,28 @@ export default function ClientProfileSystem() {
   }, [id, member]);
 
   // ── ENGINE DERIVED VALUES (Single Source of Truth) ──────────────
-  const effectiveAttendanceCount = realAttendanceCount || Number(member?.attendanceCount) || 0;
-  const daysLeft       = member ? membershipEngine.calculateDaysLeft(member.expiryDate) : 0;
-  const riskLevel      = membershipEngine.calculateRenewalRisk(daysLeft);
-  const attendancePct  = member ? calculateRealAttendance(member.joinDate, effectiveAttendanceCount) : 0;
-  const healthScore    = membershipEngine.calculateHealthScore(daysLeft, attendancePct);
+  const isHold = String(member?.status || '').trim().toUpperCase() === 'HOLD';
+  const effectiveAttendanceCount = isHold ? 0 : (realAttendanceCount || Number(member?.attendanceCount) || 0);
+  const daysLeft       = isHold || !member?.expiryDate ? 0 : membershipEngine.calculateDaysLeft(member.expiryDate);
+  const riskLevel      = isHold ? 'none' : membershipEngine.calculateRenewalRisk(daysLeft);
+  const attendancePct  = isHold || !member ? 0 : calculateRealAttendance(member.joinDate, effectiveAttendanceCount);
+  const healthScore    = isHold ? 0 : membershipEngine.calculateHealthScore(daysLeft, attendancePct);
 
   // Payment totals from invoices (Single Source of Truth)
-  const isMemberPaid = member?.paymentStatus === 'paid' || (member?.totalPaid && member?.totalPaid >= member?.totalBilled);
-  const totalInvoiced = memberInvoices.reduce((s, inv) => s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0), 0);
-  const totalPaid = isMemberPaid 
+  const isMemberPaid = !isHold && (member?.paymentStatus === 'paid' || (Number(member?.totalPaid) > 0 && member?.totalPaid >= member?.totalBilled));
+  const totalInvoiced = isHold ? 0 : memberInvoices.reduce((s, inv) => s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0), 0);
+  const totalPaid = isHold ? 0 : (isMemberPaid 
     ? (totalInvoiced || Number(member?.totalPaid) || Number(member?.price) || Number(member?.amount) || 0)
     : memberInvoices.reduce((s, inv) => {
         if (inv.status === 'paid' || inv.paymentStatus === 'paid') {
           return s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0);
         }
         return s + (Number(inv.paid) || Number(inv.amount) || 0);
-      }, 0);
+      }, 0));
 
-  const rawOutstanding = isMemberPaid ? 0 : paymentEngine.calculateOutstandingAmount(totalInvoiced, totalPaid);
+  const rawOutstanding = isHold ? 0 : (isMemberPaid ? 0 : paymentEngine.calculateOutstandingAmount(totalInvoiced, totalPaid));
   const outstanding = Math.max(0, rawOutstanding);
-  const payStatus = isMemberPaid ? 'PAID' : (outstanding <= 0 ? 'PAID' : paymentEngine.calculatePaymentStatus(totalInvoiced, totalPaid));
+  const payStatus = isHold ? 'NO INVOICES' : (isMemberPaid ? 'PAID' : (outstanding <= 0 && totalInvoiced > 0 ? 'PAID' : (totalInvoiced === 0 ? 'NO INVOICES' : paymentEngine.calculatePaymentStatus(totalInvoiced, totalPaid))));
 
   // ── SELF HEAL & FALLBACK member fetch ───────────────────────────
   useEffect(() => {
@@ -199,7 +202,8 @@ export default function ClientProfileSystem() {
       if (!isMounted) return;
       if (d.exists()) {
         let m: any = { id: d.id, ...d.data() };
-        if (m.plan && (!m.expiryDate || m.expiryDate === m.joinDate || m.expiryDate === new Date().toISOString().split('T')[0])) {
+        const isHoldMemberDoc = String(m?.status || '').trim().toUpperCase() === 'HOLD';
+        if (!isHoldMemberDoc && m.plan && (!m.expiryDate || m.expiryDate === m.joinDate || m.expiryDate === new Date().toISOString().split('T')[0])) {
           const rawJoin = m.joinDate || m.createdAt;
           const corrected = membershipEngine.calculatePlanExpiryDate(m.plan, rawJoin);
           if (corrected > (m.expiryDate || '')) {
@@ -344,7 +348,7 @@ export default function ClientProfileSystem() {
                 </div>
                 {/* Active status indicator dot with soft glow */}
                 <span className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center shadow-xs ${
-                  daysLeft > 7 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : daysLeft > 0 ? 'bg-amber-500' : 'bg-rose-500'
+                  isHold ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : daysLeft > 7 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : daysLeft > 0 ? 'bg-amber-500' : 'bg-rose-500'
                 }`} />
               </div>
 
@@ -355,128 +359,190 @@ export default function ClientProfileSystem() {
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight truncate">
                     {member.name || 'Member'}
                   </h1>
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                    member.isFrozen || member.status === 'frozen'
-                      ? 'bg-sky-50 text-sky-700 border-sky-200'
-                      : daysLeft > 7
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : daysLeft > 0
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${
+                  {isHold ? (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-black border bg-amber-50 text-amber-800 border-amber-300">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                      HOLD
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
                       member.isFrozen || member.status === 'frozen'
-                        ? 'bg-sky-500'
+                        ? 'bg-sky-50 text-sky-700 border-sky-200'
                         : daysLeft > 7
-                          ? 'bg-emerald-500 animate-pulse'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           : daysLeft > 0
-                            ? 'bg-amber-500'
-                            : 'bg-rose-500'
-                    }`} />
-                    {member.isFrozen || member.status === 'frozen'
-                      ? 'Frozen'
-                      : daysLeft > 7
-                        ? 'Active'
-                        : daysLeft > 0
-                          ? 'Expiring Soon'
-                          : 'Expired'}
-                  </span>
-                </div>
-
-                {/* Secondary Metadata: Phone · Location · Email */}
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 flex-wrap">
-                  {member.phone && (
-                    <span className="inline-flex items-center gap-1 text-slate-700">
-                      <Phone size={12} className="text-slate-400" />
-                      {member.phone}
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        member.isFrozen || member.status === 'frozen'
+                          ? 'bg-sky-500'
+                          : daysLeft > 7
+                            ? 'bg-emerald-500 animate-pulse'
+                            : daysLeft > 0
+                              ? 'bg-amber-500'
+                              : 'bg-rose-500'
+                      }`} />
+                      {member.isFrozen || member.status === 'frozen'
+                        ? 'Frozen'
+                        : daysLeft > 7
+                          ? 'Active'
+                          : daysLeft > 0
+                            ? 'Expiring Soon'
+                            : 'Expired'}
                     </span>
                   )}
-                  {member.phone && <span className="text-slate-300">·</span>}
-                  <span className="inline-flex items-center gap-1 text-slate-600">
-                    <MapPin size={12} className="text-slate-400" />
-                    {member.branch || 'Mohali, Punjab'}
-                  </span>
-                  {member.email && (
-                    <>
-                      <span className="text-slate-300">·</span>
-                      <span className="text-slate-500 truncate max-w-[180px]">{member.email}</span>
-                    </>
-                  )}
                 </div>
 
-                {/* Assigned Trainer Dropdown */}
-                <div className="pt-0.5">
-                  <TrainerSelectorDropdown
-                    member={member}
-                    onTrainerUpdated={({ trainerId, trainerName, trainerRole, trainerAvatar }) => {
-                      setMember((prev: any) => ({ ...prev, trainerId, trainerName, trainer: trainerName, trainerRole, trainerAvatar }));
-                    }}
-                  />
-                </div>
+                {/* Secondary Metadata */}
+                {isHold ? (
+                  <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
+                    <span className="inline-flex items-center gap-1 text-slate-800 font-mono">
+                      Biometric ID: {member.biometricId || member.biometricUserId || member.deviceUserId || '—'}
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      Hikvision Mapping:{' '}
+                      {member.hikvisionMapped ? (
+                        <span className="text-emerald-700 font-bold flex items-center gap-0.5">✓ Mapped</span>
+                      ) : (
+                        <span className="text-slate-500 font-medium">Not Mapped</span>
+                      )}
+                    </span>
+                    {member.phone && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span className="inline-flex items-center gap-1 text-slate-700">
+                          <Phone size={12} className="text-slate-400" />
+                          {member.phone}
+                        </span>
+                      </>
+                    )}
+                    {member.email && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-slate-500 truncate max-w-[180px]">{member.email}</span>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 flex-wrap">
+                    {member.phone && (
+                      <span className="inline-flex items-center gap-1 text-slate-700">
+                        <Phone size={12} className="text-slate-400" />
+                        {member.phone}
+                      </span>
+                    )}
+                    {member.phone && <span className="text-slate-300">·</span>}
+                    <span className="inline-flex items-center gap-1 text-slate-600">
+                      <MapPin size={12} className="text-slate-400" />
+                      {member.branch || 'Mohali, Punjab'}
+                    </span>
+                    {member.email && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-slate-500 truncate max-w-[180px]">{member.email}</span>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Assigned Trainer Dropdown (Only for non-hold members) */}
+                {!isHold && (
+                  <div className="pt-0.5">
+                    <TrainerSelectorDropdown
+                      member={member}
+                      onTrainerUpdated={({ trainerId, trainerName, trainerRole, trainerAvatar }) => {
+                        setMember((prev: any) => ({ ...prev, trainerId, trainerName, trainer: trainerName, trainerRole, trainerAvatar }));
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
             {/* ── ZONE 2: MEMBERSHIP CARD BLOCK (Span 5) ── */}
-            <div className="lg:col-span-5 bg-slate-50/90 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between gap-2.5">
-              <div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Membership</span>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Expires</span>
-                </div>
-
-                <div className="flex items-baseline justify-between gap-2 mt-0.5">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-base sm:text-lg font-black text-slate-900 tracking-tight">{member.plan || 'Standard Plan'}</span>
-                    {(member.amount || member.price || member.totalBilled) && (
-                      <span className="text-sm font-extrabold text-[#0066FF]">
-                        ₹{Number(member.amount || member.price || member.totalBilled || 0).toLocaleString('en-IN')}
-                      </span>
-                    )}
+            {isHold ? (
+              <div className="lg:col-span-5 bg-gradient-to-br from-amber-50/90 to-orange-50/50 border border-amber-200/90 rounded-2xl p-5 flex flex-col justify-between gap-3 shadow-xs">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-900/70">Membership</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100/80 text-amber-800 border border-amber-300/80">
+                      Awaiting Billing
+                    </span>
                   </div>
-                  <span className="text-xs sm:text-sm font-bold text-slate-800 shrink-0">
-                    {member.expiryDate
-                      ? new Date(member.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-                      : '—'}
-                  </span>
+                  <h3 className="text-base font-black text-slate-900 mt-2">No active membership</h3>
+                  <p className="text-xs text-slate-600 mt-1">This member is waiting for membership billing.</p>
                 </div>
+                <button
+                  onClick={() => setShowCreateBillModal(true)}
+                  className="w-full py-2.5 px-4 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm border-none cursor-pointer active:scale-[0.98]"
+                >
+                  <Plus size={14} /> + CREATE BILL
+                </button>
               </div>
-
-              {/* Dynamic Progress Bar */}
-              {(() => {
-                const totalDays = (() => {
-                  const plan = String(member.plan || '').toLowerCase();
-                  if (plan.includes('annual') || plan.includes('yearly') || plan.includes('12')) return 365;
-                  if (plan.includes('6') || plan.includes('semi')) return 180;
-                  if (plan.includes('3') || plan.includes('quarter')) return 90;
-                  if (plan.includes('2')) return 60;
-                  return 30;
-                })();
-                const pct = totalDays > 0 ? Math.max(0, Math.min(100, (daysLeft / totalDays) * 100)) : 0;
-                const barColor = daysLeft > 14 ? '#10b981' : daysLeft > 7 ? '#f59e0b' : '#ef4444';
-                return (
-                  <div className="space-y-1.5">
-                    <div className="h-2 bg-slate-200/80 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${pct}%`, backgroundColor: barColor }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] font-bold">
-                      <span className={daysLeft > 0 ? 'text-slate-600' : 'text-rose-600'}>
-                        {daysLeft > 0 ? `${daysLeft} days remaining` : 'Membership Expired'}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                        payStatus === 'PAID'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : 'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        {payStatus === 'PAID' ? '✓ Fully Paid' : `₹${outstanding.toLocaleString('en-IN')} Due`}
-                      </span>
-                    </div>
+            ) : (
+              <div className="lg:col-span-5 bg-slate-50/90 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Membership</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Expires</span>
                   </div>
-                );
-              })()}
-            </div>
+
+                  <div className="flex items-baseline justify-between gap-2 mt-0.5">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-base sm:text-lg font-black text-slate-900 tracking-tight">{member.plan || 'Membership'}</span>
+                      {(member.amount || member.price || member.totalBilled) && (
+                        <span className="text-sm font-extrabold text-[#0066FF]">
+                          ₹{Number(member.amount || member.price || member.totalBilled || 0).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs sm:text-sm font-bold text-slate-800 shrink-0">
+                      {member.expiryDate
+                        ? new Date(member.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                        : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Dynamic Progress Bar */}
+                {(() => {
+                  const totalDays = (() => {
+                    const plan = String(member.plan || '').toLowerCase();
+                    if (plan.includes('annual') || plan.includes('yearly') || plan.includes('12')) return 365;
+                    if (plan.includes('6') || plan.includes('semi')) return 180;
+                    if (plan.includes('3') || plan.includes('quarter')) return 90;
+                    if (plan.includes('2')) return 60;
+                    return 30;
+                  })();
+                  const pct = totalDays > 0 ? Math.max(0, Math.min(100, (daysLeft / totalDays) * 100)) : 0;
+                  const barColor = daysLeft > 14 ? '#10b981' : daysLeft > 7 ? '#f59e0b' : '#ef4444';
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="h-2 bg-slate-200/80 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${pct}%`, backgroundColor: barColor }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] font-bold">
+                        <span className={daysLeft > 0 ? 'text-slate-600' : 'text-rose-600'}>
+                          {daysLeft > 0 ? `${daysLeft} days remaining` : 'Membership Expired'}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          payStatus === 'PAID'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                          {payStatus === 'PAID' ? '✓ Fully Paid' : `₹${outstanding.toLocaleString('en-IN')} Due`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           {/* ── ROW 2: METRICS STRIP + ACTION BUTTONS ── */}
@@ -484,7 +550,32 @@ export default function ClientProfileSystem() {
             
             {/* 4-Metric Compact Strip */}
             <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-1 divide-y sm:divide-y-0 sm:divide-x divide-slate-200/70 flex-1">
-              {[
+              {(isHold ? [
+                {
+                  label: 'STATUS',
+                  value: 'HOLD',
+                  color: '#d97706',
+                  icon: '🟠',
+                },
+                {
+                  label: 'BIOMETRIC ID',
+                  value: member.biometricId || member.biometricUserId || member.deviceUserId || '—',
+                  color: '#0f172a',
+                  icon: '🆔',
+                },
+                {
+                  label: 'HIKVISION',
+                  value: member.hikvisionMapped ? 'Connected' : 'Not Mapped',
+                  color: member.hikvisionMapped ? '#10b981' : '#64748b',
+                  icon: '📡',
+                },
+                {
+                  label: 'BILLING',
+                  value: 'No Invoices',
+                  color: '#d97706',
+                  icon: '💳',
+                },
+              ] : [
                 {
                   label: 'HEALTH SCORE',
                   value: `${Math.max(0, 100 - healthScore)}%`,
@@ -505,11 +596,11 @@ export default function ClientProfileSystem() {
                 },
                 {
                   label: 'PAYMENT',
-                  value: payStatus === 'PAID' ? 'PAID' : 'DUE',
+                  value: payStatus === 'PAID' ? 'PAID' : (payStatus === 'NO INVOICES' ? 'NO INVOICE' : 'DUE'),
                   color: payStatus === 'PAID' ? '#10b981' : '#f59e0b',
                   icon: '💳',
                 },
-              ].map(m => (
+              ]).map(m => (
                 <div key={m.label} className="px-3.5 py-2 flex items-center gap-2.5">
                   <span className="text-base leading-none select-none">{m.icon}</span>
                   <div className="min-w-0">
@@ -522,13 +613,23 @@ export default function ClientProfileSystem() {
 
             {/* Action Buttons Group */}
             <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
-              <button
-                onClick={() => setShowPtModal(true)}
-                className="flex-1 sm:flex-none h-11 px-4 bg-[#0066FF] hover:bg-orange-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer shadow-xs hover:shadow-[0_4px_12px_rgba(0,102,255,0.3)] active:scale-[0.98] border-none"
-                title="Add Personal Training Bill"
-              >
-                <Dumbbell size={14} /> + Add PT Bill
-              </button>
+              {isHold ? (
+                <button
+                  onClick={() => setShowCreateBillModal(true)}
+                  className="flex-1 sm:flex-none h-11 px-5 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer shadow-sm hover:shadow-[0_4px_12px_rgba(234,88,12,0.3)] active:scale-[0.98] border-none"
+                  title="Create Membership & Bill"
+                >
+                  <Plus size={15} /> + Create Membership & Bill
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowPtModal(true)}
+                  className="flex-1 sm:flex-none h-11 px-4 bg-[#0066FF] hover:bg-orange-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer shadow-xs hover:shadow-[0_4px_12px_rgba(0,102,255,0.3)] active:scale-[0.98] border-none"
+                  title="Add Personal Training Bill"
+                >
+                  <Dumbbell size={14} /> + Add PT Bill
+                </button>
+              )}
 
               <button
                 onClick={() => {
@@ -565,25 +666,36 @@ export default function ClientProfileSystem() {
                 </button>
 
                 {showQuickMenu && (
-                  <div className="absolute right-0 bottom-full mb-2 sm:bottom-auto sm:top-full sm:mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95">
+                  <div className="absolute right-0 bottom-full mb-2 sm:bottom-auto sm:top-full sm:mt-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95">
                     <button
                       onClick={() => { setShowQuickMenu(false); setShowPhotoModal(true); }}
                       className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
                     >
                       <Camera size={13} className="text-slate-400" /> Change Photo
                     </button>
-                    <button
-                      onClick={() => { setShowQuickMenu(false); setShowRenewalModal(true); }}
-                      className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
-                    >
-                      <Repeat size={13} className="text-[#EA580C]" /> Renew Membership
-                    </button>
-                    <button
-                      onClick={() => { setShowQuickMenu(false); setShowPtModal(true); }}
-                      className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
-                    >
-                      <Dumbbell size={13} className="text-indigo-600" /> Add PT Bill
-                    </button>
+                    {isHold ? (
+                      <button
+                        onClick={() => { setShowQuickMenu(false); setShowCreateBillModal(true); }}
+                        className="w-full px-3 py-2 text-left hover:bg-orange-50 rounded-xl flex items-center gap-2 text-xs font-bold text-[#EA580C] transition-colors border-none bg-transparent cursor-pointer"
+                      >
+                        <Plus size={13} /> Create Membership & Bill
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => { setShowQuickMenu(false); setShowRenewalModal(true); }}
+                          className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
+                        >
+                          <Repeat size={13} className="text-[#EA580C]" /> Renew Membership
+                        </button>
+                        <button
+                          onClick={() => { setShowQuickMenu(false); setShowPtModal(true); }}
+                          className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
+                        >
+                          <Dumbbell size={13} className="text-indigo-600" /> Add PT Bill
+                        </button>
+                      </>
+                    )}
                     <div className="border-t border-slate-100 my-1" />
                     <button
                       onClick={() => { setShowQuickMenu(false); setActiveTab('Billing'); }}
@@ -633,8 +745,8 @@ export default function ClientProfileSystem() {
       <div className="w-full">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-            {activeTab === 'Profile' && <ProfileTab member={member} />}
-            {activeTab === 'Billing' && <BillingTab member={member} />}
+            {activeTab === 'Profile' && <ProfileTab member={member} onOpenCreateBill={() => setShowCreateBillModal(true)} />}
+            {activeTab === 'Billing' && <BillingTab member={member} onOpenCreateBill={() => setShowCreateBillModal(true)} />}
             {activeTab === 'Communication' && <CommunicationTab member={member} />}
             {activeTab === 'Attendance' && <AttendanceTab member={member} />}
           </motion.div>

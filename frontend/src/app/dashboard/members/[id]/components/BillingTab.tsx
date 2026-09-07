@@ -20,9 +20,10 @@ import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceRe
 import EditBillingModal from './EditBillingModal';
 import CreateNewBillModal from '../../components/CreateNewBillModal';
 
-export default function BillingTab({ member: initialMember }: { member: any }) {
+export default function BillingTab({ member: initialMember, onOpenCreateBill }: { member: any; onOpenCreateBill?: () => void }) {
   const { fetchMembers } = useGymStore();
   const [member, setMember] = useState(initialMember);
+  const isHold = String(member?.status || member?.membershipStatus || '').trim().toUpperCase() === 'HOLD' || member?.activationStatus === 'PENDING_ACTIVATION';
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [markingId, setMarkingId] = useState<string | null>(null);
@@ -100,40 +101,46 @@ export default function BillingTab({ member: initialMember }: { member: any }) {
 
       if (liveData.length > 0) {
         liveData.forEach((inv: any) => {
+          // If member is on HOLD, filter out fake zero-amount legacy invoices
+          if (isHold && Number(inv.amount || inv.netPayable || 0) === 0 && Number(inv.amountPaid || inv.paid || 0) === 0) {
+            return;
+          }
           const key = inv.id || inv.invoiceNumber || inv.invoice;
           combinedMap.set(key, inv);
         });
-      } else if (fallbackInvoices.length > 0) {
+      } else if (!isHold && fallbackInvoices.length > 0) {
         fallbackInvoices.forEach((inv: any, idx: number) => {
           const key = inv.id || inv.invoiceNumber || inv.invoice || `inv_${idx}`;
           combinedMap.set(key, inv);
         });
-      } else if (member) {
+      } else if (!isHold && member) {
         const amountPaid = Number(member.amountPaid !== undefined ? member.amountPaid : (member.paid ?? member.totalPaid ?? member.amount ?? member.price ?? 0));
         const balanceAmount = Number(member.balanceAmount !== undefined ? member.balanceAmount : (member.balance ?? member.outstandingBalance ?? 0));
         const totalBilled = Number(member.totalBilled !== undefined ? member.totalBilled : (amountPaid + balanceAmount));
-        const autoInv = {
-          id: `inv_auto_${member.id || Date.now()}`,
-          invoiceNumber: member.clientId ? `INV-LEG-${member.clientId}` : (member.memberId ? member.memberId.replace('TWG-2026-', '') : '670'),
-          invoice: member.clientId ? `INV-LEG-${member.clientId}` : (member.memberId ? member.memberId.replace('TWG-2026-', '') : '670'),
-          plan: member.packageName || member.plan || 'General Membership',
-          packageName: member.packageName || member.plan || 'General Membership',
-          amount: totalBilled,
-          totalBilled: totalBilled,
-          packagePrice: totalBilled,
-          paid: amountPaid,
-          amountPaid: amountPaid,
-          pendingAmount: balanceAmount,
-          balanceAmount: balanceAmount,
-          discount: 0,
-          method: member.paymentMethod || member.method || 'Imported',
-          status: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
-          paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
-          date: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
-          startDate: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
-          expiryDate: member.expiryDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        };
-        combinedMap.set(autoInv.id, autoInv);
+        if (totalBilled > 0 || amountPaid > 0) {
+          const autoInv = {
+            id: `inv_auto_${member.id || Date.now()}`,
+            invoiceNumber: member.clientId ? `INV-LEG-${member.clientId}` : (member.memberId ? member.memberId.replace('TWG-2026-', '') : '670'),
+            invoice: member.clientId ? `INV-LEG-${member.clientId}` : (member.memberId ? member.memberId.replace('TWG-2026-', '') : '670'),
+            plan: member.packageName || member.plan || 'General Membership',
+            packageName: member.packageName || member.plan || 'General Membership',
+            amount: totalBilled,
+            totalBilled: totalBilled,
+            packagePrice: totalBilled,
+            paid: amountPaid,
+            amountPaid: amountPaid,
+            pendingAmount: balanceAmount,
+            balanceAmount: balanceAmount,
+            discount: 0,
+            method: member.paymentMethod || member.method || 'Imported',
+            status: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
+            paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
+            date: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
+            startDate: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
+            expiryDate: member.expiryDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          };
+          combinedMap.set(autoInv.id, autoInv);
+        }
       }
 
       const sorted = Array.from(combinedMap.values()).sort((a: any, b: any) =>
@@ -413,7 +420,10 @@ export default function BillingTab({ member: initialMember }: { member: any }) {
             <p className="text-xs font-black mt-0.5">New Invoice</p>
           </div>
           <button
-            onClick={() => setShowNewBillModal(true)}
+            onClick={() => {
+              if (onOpenCreateBill) onOpenCreateBill();
+              else setShowNewBillModal(true);
+            }}
             className="mt-2 py-2 px-3 bg-white text-[#EA580C] hover:bg-[#FFF7ED] rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 shadow-xs border-none cursor-pointer"
           >
             <Plus size={14} /> + New Bill
@@ -482,7 +492,31 @@ export default function BillingTab({ member: initialMember }: { member: any }) {
               {filteredInvoices.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="py-16 text-center text-slate-400 font-bold text-sm">
-                    No {billingTypeFilter === 'all' ? 'billing' : billingTypeFilter.toUpperCase()} history recorded yet. Click "Create New Bill" or "+ Add PT Bill" to add an entry.
+                    {isHold ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-6">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
+                          <Receipt size={24} />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-black text-slate-800">No invoices yet</h4>
+                          <p className="text-xs text-slate-500 font-medium max-w-sm">
+                            This member is on HOLD waiting for membership billing. Create an official bill to activate their membership.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onOpenCreateBill) onOpenCreateBill();
+                            else setShowNewBillModal(true);
+                          }}
+                          className="mt-2 py-2.5 px-5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer shadow-md flex items-center gap-1.5"
+                        >
+                          <Plus size={14} /> + Create Bill
+                        </button>
+                      </div>
+                    ) : (
+                      `No ${billingTypeFilter === 'all' ? 'billing' : billingTypeFilter.toUpperCase()} history recorded yet. Click "Create New Bill" or "+ Add PT Bill" to add an entry.`
+                    )}
                   </td>
                 </tr>
               ) : (

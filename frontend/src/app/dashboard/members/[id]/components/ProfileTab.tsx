@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Camera, Edit2, MapPin, Phone, Mail, Droplet, Activity, User, Briefcase, HeartPulse, CreditCard, Calendar, Clock, Star, Dumbbell, Shield, BadgeCheck, CheckCircle2, AlertCircle, Snowflake, Repeat, Sparkles } from 'lucide-react';
+import { Camera, Edit2, MapPin, Phone, Mail, Droplet, Activity, User, Briefcase, HeartPulse, CreditCard, Calendar, Clock, Star, Dumbbell, Shield, BadgeCheck, CheckCircle2, AlertCircle, Snowflake, Repeat, Sparkles, Fingerprint, Cpu, XCircle, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { cleanPlanName, parsePlanSegments } from '@/lib/utils';
@@ -12,6 +12,8 @@ import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { resolveAvatarUrl, MALE_DEFAULT_AVATAR } from '@/lib/avatar';
 import toast from '@/lib/toast';
 import { z } from 'zod';
+
+import CreateNewBillModal from '../../components/CreateNewBillModal';
 
 // ── Production-grade Zod schema for Edit Personal Info ─────────────────────
 // Rules aligned with Indian gym member data requirements.
@@ -108,10 +110,21 @@ const healthSchema = z.object({
   medicalNotes: z.string().optional(),
 });
 
-export default function ProfileTab({ member }: { member: any }) {
+export default function ProfileTab({ member, onOpenCreateBill }: { member: any; onOpenCreateBill?: () => void }) {
   const router = useRouter();
   const { fetchMembers } = useGymStore();
   const plans = useGymStore(s => s.plans);
+
+  const [showCreateBillModal, setShowCreateBillModal] = useState(false);
+  const handleOpenBill = () => {
+    if (onOpenCreateBill) {
+      onOpenCreateBill();
+    } else {
+      setShowCreateBillModal(true);
+    }
+  };
+
+  const isHold = String(member?.status || member?.membershipStatus || '').trim().toUpperCase() === 'HOLD' || member?.activationStatus === 'PENDING_ACTIVATION';
 
   const [showEditExpiryModal, setShowEditExpiryModal] = useState(false);
   const [customExpiryDate, setCustomExpiryDate] = useState(member.expiryDate || new Date().toISOString().split('T')[0]);
@@ -248,12 +261,182 @@ export default function ProfileTab({ member }: { member: any }) {
 
   return (
     <div className="space-y-6 text-slate-800 text-left font-display">
-      
-      {/* TOP ROW: Membership Card & Personal Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Active Membership Card (Brand Deep Blue Gradient) */}
-        <div className="bg-gradient-to-br from-[#083f82] via-[#EA580C] to-[#9A3412] rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between border border-orange-400/30">
+      {isHold ? (
+        <div className="space-y-6">
+          {/* Top Row: Section 1 (MEMBERSHIP - HOLD) & Section 2 (PERSONAL INFORMATION) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* 1. MEMBERSHIP CARD (HOLD STATE) */}
+            <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-600/10 border-2 border-dashed border-amber-300 rounded-[32px] p-8 relative overflow-hidden flex flex-col justify-between shadow-xs">
+              <div className="space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest block mb-1">
+                      Membership Status
+                    </span>
+                    <h2 className="text-2xl font-black text-amber-950 tracking-tight">
+                      HOLD (No Active Plan)
+                    </h2>
+                  </div>
+                  <span className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider bg-amber-200 text-amber-900 border border-amber-300 shadow-xs">
+                    Pending Activation
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-white/80 border border-amber-200/80 space-y-2">
+                  <p className="text-xs font-bold text-amber-950 flex items-center gap-2">
+                    <AlertCircle size={16} className="text-amber-600 shrink-0" />
+                    No active membership
+                  </p>
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    This member was imported from biometric records and is waiting for membership billing. No active plan or billing records exist yet.
+                  </p>
+                </div>
+              </div>
+
+              <div className="pt-6">
+                <button
+                  type="button"
+                  onClick={handleOpenBill}
+                  className="w-full py-3.5 px-5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 active:scale-98"
+                >
+                  <CreditCard size={16} /> + Create Membership &amp; Bill
+                </button>
+              </div>
+            </div>
+
+            {/* 2. PERSONAL INFORMATION */}
+            <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-200 p-8 relative">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <User size={18} className="text-[#F97316]" /> Personal Information
+                </h3>
+                <button
+                  onClick={() => setShowEditPersonalInfoModal(true)}
+                  className="p-2 text-slate-400 hover:text-[#EA580C] hover:bg-orange-50 rounded-xl transition-all border-none bg-transparent cursor-pointer"
+                  title="Edit Personal Info"
+                >
+                  <Edit2 size={16} />
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                <Field icon={User} label="Member Name" value={member.name || '—'} />
+                <Field icon={Phone} label="Phone Number" value={member.phone || '—'} />
+                <Field icon={Mail} label="Email Address" value={member.email || '—'} />
+                <Field icon={Calendar} label="Date of Birth" value={member.dob ? new Date(member.dob).toLocaleDateString() : '—'} />
+                <Field icon={User} label="Gender" value={member.gender || '—'} />
+                <Field icon={Briefcase} label="Occupation" value={member.occupation || '—'} />
+                <Field icon={HeartPulse} label="Emergency Contact" value={member.emergencyContact || '—'} />
+                <Field icon={MapPin} label="Address" value={member.address || '—'} />
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Row: Section 3 (BIOMETRIC / IMPORT INFO) & Section 4 (BILLING OVERVIEW) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* 3. BIOMETRIC / IMPORT INFO */}
+            <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-200 p-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <Fingerprint size={18} className="text-[#EA580C]" /> Biometric &amp; Machine Mapping
+                </h3>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
+                  <BadgeCheck size={12} /> Biometric Linked
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                    Biometric / Device ID
+                  </span>
+                  <span className="text-base font-black text-slate-900 font-mono">
+                    {member.biometricId || member.bioId || member.enrollmentId || member.deviceUserId || '—'}
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                    Machine Mapping
+                  </span>
+                  <span className="text-xs font-black text-emerald-700 flex items-center gap-1 mt-0.5">
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                    Hikvision MinMoe Terminal
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                    Import Source
+                  </span>
+                  <span className="text-xs font-bold text-slate-700">
+                    Biometric / Excel Import
+                  </span>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                    Attendance Ready
+                  </span>
+                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                    <Sparkles size={12} /> Yes (Syncs to Bio ID)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. BILLING OVERVIEW */}
+            <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-200 p-8 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <CreditCard size={18} className="text-[#EA580C]" /> Billing &amp; Invoices
+                  </h3>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                    NOT BILLED
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Billed</span>
+                    <span className="text-lg font-black text-slate-900 font-mono">₹0</span>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Paid</span>
+                    <span className="text-lg font-black text-emerald-600 font-mono">₹0</span>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Balance</span>
+                    <span className="text-lg font-black text-slate-400 font-mono">₹0</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-500 font-medium mb-4">
+                  No invoices yet. Create an official membership bill to record payment and generate an invoice.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenBill}
+                className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Plus size={15} /> + Create Bill
+              </button>
+            </div>
+
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* TOP ROW: Membership Card & Personal Info */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Active Membership Card (Brand Deep Blue Gradient) */}
+            <div className="bg-gradient-to-br from-[#083f82] via-[#EA580C] to-[#9A3412] rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between border border-orange-400/30">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
           
           <div>
@@ -413,6 +596,77 @@ export default function ProfileTab({ member }: { member: any }) {
           </div>
         </div>
 
+        {/* Biometric & Hikvision Machine Card */}
+        <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <Fingerprint size={18} className="text-[#EA580C]" /> Biometric & Terminal Info
+            </h3>
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+              member.hikvisionMapped
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-slate-100 text-slate-500 border border-slate-200'
+            }`}>
+              {member.hikvisionMapped ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+              {member.hikvisionMapped ? 'Connected' : 'Not Mapped'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                Biometric User ID
+              </span>
+              <span className="text-xl font-black text-slate-900 font-mono">
+                {member.biometricId || member.biometricUserId || member.deviceUserId || '—'}
+              </span>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                Face Template
+              </span>
+              <div className="flex items-center gap-1.5 mt-1">
+                {member.hasFace ? (
+                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Enrolled
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-1">
+                    <XCircle size={12} /> None
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                Fingerprint
+              </span>
+              <div className="flex items-center gap-1.5 mt-1">
+                {member.hasFingerprint ? (
+                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Enrolled
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-1">
+                    <XCircle size={12} /> None
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                Mapping Source
+              </span>
+              <span className="text-xs font-black text-slate-700 bg-orange-50/70 border border-orange-200 px-2.5 py-1 rounded-lg inline-block mt-1 font-mono">
+                {member.mappingSource || (member.hikvisionMapped ? 'AUTO' : '—')}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Assigned Trainer Card (ONLY RENDERED IF TRAINER IS ASSIGNED) */}
         {hasTrainer && (
           <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-[#FED7AA] p-8 flex flex-col items-center text-center justify-between">
@@ -504,8 +758,9 @@ export default function ProfileTab({ member }: { member: any }) {
             </div>
           </div>
         )}
-
       </div>
+      </>
+      )}
 
       {/* ── EDIT PERSONAL INFO MODAL ── */}
       {showEditPersonalInfoModal && (
@@ -648,6 +903,14 @@ export default function ProfileTab({ member }: { member: any }) {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── CREATE NEW BILL MODAL ── */}
+      <CreateNewBillModal
+        isOpen={showCreateBillModal}
+        member={member}
+        onClose={() => setShowCreateBillModal(false)}
+        onSaved={() => fetchMembers()}
+      />
 
     </div>
   );

@@ -99,9 +99,9 @@ export default function PrivacyClient() {
                 If you have queries regarding this privacy notice, data retention, or cookie settings, please contact our privacy compliance desk:
               </p>
               <div className="bg-orange-50/60 border border-orange-200/80 p-5 rounded-2xl space-y-2 mt-2 text-sm text-slate-700">
-                <div><span className="text-slate-500">Support Desk:</span> <span className="text-[#FF5E14] font-bold">+91 97793 33155</span></div>
-                <div><span className="text-slate-500">Direct Email:</span> <span className="text-slate-900 font-bold">thewarriorgym@gmail.com</span></div>
-                <div><span className="text-slate-500">Address:</span> <span className="text-slate-800">2nd Floor, MNB Group, SCO 16-17, Landran Road, Sohana, Mohali, Punjab 140308</span></div>
+                <div><span className="text-slate-500">Support Desk:</span> <span className="text-[#FF5E14] font-bold">+91 98170 23336</span></div>
+                <div><span className="text-slate-500">Direct Email:</span> <span className="text-slate-900 font-bold">Ramansingh6158@gmail.com</span></div>
+                <div><span className="text-slate-500">Address:</span> <span className="text-slate-800">The Warrior Gym, SCO 30, 31, Sector 89, Mohali, Punjab 140308</span></div>
               </div>
             </div>
 

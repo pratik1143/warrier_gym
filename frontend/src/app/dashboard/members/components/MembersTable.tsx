@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import {
   Search, Filter, MoreHorizontal, Phone, MessageSquare, MapPin, Edit,
   RefreshCw, Snowflake, Trash2, Eye, Fingerprint, ChevronLeft, ChevronRight,
-  X, AlertCircle, CheckCircle2, User, Sliders, Calendar, RotateCcw
+  X, AlertCircle, CheckCircle2, User, Sliders, Calendar, RotateCcw, Receipt
 } from 'lucide-react';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { paymentEngine } from '@/lib/engines/paymentEngine';
@@ -29,8 +29,12 @@ export interface FilterState {
 }
 
 const getDynamicStatus = (m: any) => {
-  if (m.status === 'blocked' || m.status === 'blacklisted') return 'blocked';
-  if (m.status === 'frozen') return 'frozen';
+  const st = String(m.status || m.membershipStatus || '').trim().toLowerCase();
+  if (st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION') return 'hold';
+  if (st === 'inactive') return 'inactive';
+  if (st === 'blocked' || st === 'blacklisted') return 'blocked';
+  if (st === 'frozen') return 'frozen';
+  if (!m.expiryDate) return 'hold';
   const days = membershipEngine.calculateDaysLeft(m.expiryDate);
   if (days <= 0) return 'expired';
   if (days <= 7) return 'urgent';
@@ -64,6 +68,7 @@ interface MembersTableProps {
   onFreeze?: (m: any) => void;
   onDelete?: (m: any) => void;
   onMapBiometric?: (m: any) => void;
+  onCreateBill?: (m: any) => void;
 }
 
 // Memoized individual row component for smooth 60fps rendering
@@ -72,16 +77,20 @@ const MemberTableRow = memo(function MemberTableRow({
   isSelected,
   onRowClick,
   onOpenActions,
+  onCreateBill,
 }: {
   member: any;
   isSelected: boolean;
   onRowClick: () => void;
   onOpenActions: (m: any, rect: DOMRect) => void;
+  onCreateBill?: (m: any) => void;
 }) {
-  const attScore = calculateRealAttendance(member.joinDate, member.attendanceCount || 0);
-  const hasPunched = (member.attendanceCount && member.attendanceCount > 0);
+  const isHold = String(member.status || member.membershipStatus || '').toLowerCase() === 'hold' || member.activationStatus === 'PENDING_ACTIVATION';
+
+  const attScore = isHold ? 0 : calculateRealAttendance(member.joinDate, member.attendanceCount || 0);
+  const hasPunched = !isHold && (member.attendanceCount && member.attendanceCount > 0);
   
-  const attColor = !hasPunched 
+  const attColor = isHold || !hasPunched 
     ? '#cbd5e1'
     : attScore > 75 
       ? '#10b981'
@@ -89,16 +98,37 @@ const MemberTableRow = memo(function MemberTableRow({
         ? '#f59e0b'
         : '#ef4444';
 
-  const amountPaidVal = Number(member.amountPaid !== undefined ? member.amountPaid : (member.paid ?? member.totalPaid ?? member.amount ?? member.price ?? 0));
-  const balanceVal = Number(member.balanceAmount !== undefined ? member.balanceAmount : (member.balance ?? member.outstandingBalance ?? 0));
-  const isPaid = balanceVal === 0 || member.paymentStatus === 'paid';
-  const payStatus = isPaid ? 'PAID' : (amountPaidVal > 0 ? 'PARTIAL' : 'PENDING');
+  const rawAmountPaid = Number(member.amountPaid !== undefined ? member.amountPaid : (member.paid ?? member.totalPaid ?? 0));
+  const rawBalance = Number(member.balanceAmount !== undefined ? member.balanceAmount : (member.balance ?? member.outstandingBalance ?? member.pendingBalance ?? 0));
+  const rawTotalBilled = Number(member.totalBilled !== undefined ? member.totalBilled : (member.amount ?? member.price ?? (rawAmountPaid + rawBalance)));
+
+  let amountPaidVal = rawAmountPaid;
+  let balanceVal = rawBalance;
+  let payStatus: 'NOT BILLED' | 'UNPAID' | 'PARTIAL' | 'PAID';
+
+  if (isHold || (!rawTotalBilled && rawAmountPaid === 0 && rawBalance === 0)) {
+    payStatus = 'NOT BILLED';
+    amountPaidVal = 0;
+    balanceVal = 0;
+  } else if (rawAmountPaid === 0 && (rawTotalBilled > 0 || rawBalance > 0)) {
+    payStatus = 'UNPAID';
+  } else if (rawBalance > 0 && rawAmountPaid > 0) {
+    payStatus = 'PARTIAL';
+  } else if (rawAmountPaid > 0 && rawBalance <= 0) {
+    payStatus = 'PAID';
+  } else {
+    payStatus = 'NOT BILLED';
+    amountPaidVal = 0;
+    balanceVal = 0;
+  }
 
   const payBadgeStyle = payStatus === 'PAID'
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
     : payStatus === 'PARTIAL'
       ? 'bg-amber-50 text-amber-700 border-amber-200'
-      : 'bg-rose-50 text-rose-700 border-rose-200';
+      : payStatus === 'UNPAID'
+        ? 'bg-rose-50 text-rose-700 border-rose-200'
+        : 'bg-slate-100 text-slate-600 border-slate-200';
 
   const displayClientId = member.clientId ? `TWG-${member.clientId}` : (member.memberId || member.id);
 
@@ -137,8 +167,13 @@ const MemberTableRow = memo(function MemberTableRow({
                 </span>
               )}
             </div>
-            <div className="text-xs text-slate-400 font-mono mt-0.5">
+            <div className="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
               <span className="font-bold text-slate-700">#{displayClientId}</span>
+              {member.biometricId && (
+                <span className="px-1 py-0.2 bg-orange-50 text-[#C2410C] font-mono text-[9px] font-black rounded border border-orange-200">
+                  BIO: {member.biometricId}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -177,11 +212,22 @@ const MemberTableRow = memo(function MemberTableRow({
 
       {/* 4. Membership Plan & Dates */}
       <td className="px-4 py-3.5 border-b border-slate-100">
-        <div className="font-bold text-slate-800 text-xs">{member.packageName || member.plan || 'Standard'}</div>
-        <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex flex-col gap-0.5">
-          {member.startDate && <span>Start: {formatDate(member.startDate)}</span>}
-          <span>Exp: {formatDate(member.expiryDate)}</span>
-        </div>
+        {isHold ? (
+          <div>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
+              HOLD (NO PLAN)
+            </span>
+            <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Pending Activation</div>
+          </div>
+        ) : (
+          <>
+            <div className="font-bold text-slate-800 text-xs">{member.packageName || member.plan || 'Standard'}</div>
+            <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex flex-col gap-0.5">
+              {member.startDate && <span>Start: {formatDate(member.startDate)}</span>}
+              <span>Exp: {formatDate(member.expiryDate)}</span>
+            </div>
+          </>
+        )}
       </td>
 
       {/* 5. Assigned Trainer */}
@@ -220,7 +266,9 @@ const MemberTableRow = memo(function MemberTableRow({
 
       {/* 7. Days Left */}
       <td className="px-4 py-3.5 text-center font-mono text-xs font-bold border-b border-slate-100">
-        {member.daysLeft < 0 ? (
+        {isHold ? (
+          <span className="text-amber-600 font-black">HOLD</span>
+        ) : member.daysLeft < 0 ? (
           <span className="text-rose-500 font-black">Expired {Math.abs(member.daysLeft)}d ago</span>
         ) : member.daysLeft === 0 ? (
           <span className="text-orange-500 font-black">Expires Today</span>
@@ -248,21 +296,36 @@ const MemberTableRow = memo(function MemberTableRow({
         </div>
       </td>
 
-      {/* 9. Single Actions Dropdown Button */}
+      {/* 9. Actions */}
       <td className="px-4 py-3.5 text-right border-b border-slate-100" onClick={e => e.stopPropagation()}>
-        <button 
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            const rect = e.currentTarget.getBoundingClientRect();
-            onOpenActions(member, rect);
-          }}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#FFF7ED] hover:text-[#EA580C] hover:border-[#FED7AA] text-slate-700 text-xs font-black uppercase tracking-wider transition-all border border-slate-200 cursor-pointer shadow-2xs active:scale-95"
-          title="Member Actions"
-        >
-          <MoreHorizontal size={14} />
-          <span>Actions</span>
-        </button>
+        <div className="inline-flex items-center gap-1.5 justify-end">
+          {isHold && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onCreateBill) onCreateBill(member);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white text-xs font-black transition-all border-none cursor-pointer shadow-xs active:scale-95"
+              title="Create Bill & Activate Member"
+            >
+              <span>Create Bill</span>
+            </button>
+          )}
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              onOpenActions(member, rect);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#FFF7ED] hover:text-[#EA580C] hover:border-[#FED7AA] text-slate-700 text-xs font-black uppercase tracking-wider transition-all border border-slate-200 cursor-pointer shadow-2xs active:scale-95"
+            title="Member Actions"
+          >
+            <MoreHorizontal size={14} />
+            <span>Actions</span>
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -270,7 +333,7 @@ const MemberTableRow = memo(function MemberTableRow({
 
 export default function MembersTable({ 
   members, search, setSearch, statusFilter, setStatusFilter, onSelectMember, selectedMemberId,
-  onEdit, onRenew, onFreeze, onDelete, onMapBiometric
+  onEdit, onRenew, onFreeze, onDelete, onMapBiometric, onCreateBill
 }: MembersTableProps) {
   const router = useRouter();
 
@@ -365,13 +428,17 @@ export default function MembersTable({
   const counts = useMemo(() => {
     let all = members.length;
     let active = 0;
+    let hold = 0;
     let expired = 0;
+    let inactive = 0;
     let frozen = 0;
     let pt = 0;
 
     members.forEach(m => {
       const ds = getDynamicStatus(m);
-      if (ds === 'active' || ds === 'expiring_soon' || ds === 'urgent') active++;
+      if (ds === 'hold') hold++;
+      else if (ds === 'inactive') inactive++;
+      else if (ds === 'active' || ds === 'expiring_soon' || ds === 'urgent') active++;
       else if (ds === 'expired') expired++;
       else if (ds === 'frozen') frozen++;
 
@@ -379,7 +446,7 @@ export default function MembersTable({
       if (isPtMember) pt++;
     });
 
-    return { all, active, expired, frozen, pt };
+    return { all, active, hold, expired, inactive, frozen, pt };
   }, [members]);
 
   // Combined Search & 9-Field Filtering Logic
@@ -396,7 +463,9 @@ export default function MembersTable({
           (m.id || '').toLowerCase().includes(q) ||
           (m.customId || '').toLowerCase().includes(q) ||
           (m.clientId || '').toLowerCase().includes(q) ||
-          (m.biometricId || '').toLowerCase().includes(q)
+          (m.biometricId || '').toLowerCase().includes(q) ||
+          (m.biometricUserId || '').toLowerCase().includes(q) ||
+          (m.deviceUserId || '').toLowerCase().includes(q)
         );
         const addressStr = `${m.address || ''} ${m.city || ''} ${m.locality || ''} ${m.location || ''} ${m.branch || ''}`.toLowerCase();
         const addressMatch = addressStr.includes(q);
@@ -425,6 +494,8 @@ export default function MembersTable({
 
       // 2. Status Tab Filter (from top tabs)
       const dynStatus = getDynamicStatus(m);
+      if (statusFilter === 'hold' && dynStatus !== 'hold') return false;
+      if (statusFilter === 'inactive' && dynStatus !== 'inactive') return false;
       if (statusFilter === 'active' && !(dynStatus === 'active' || dynStatus === 'expiring_soon' || dynStatus === 'urgent')) return false;
       if (statusFilter === 'expired' && dynStatus !== 'expired') return false;
       if (statusFilter === 'frozen' && m.status !== 'frozen') return false;
@@ -821,20 +892,29 @@ export default function MembersTable({
           {[
             { id: 'all', label: 'All Members', count: counts.all },
             { id: 'active', label: 'Active', count: counts.active },
+            { id: 'hold', label: 'Hold', count: counts.hold, isHold: true },
             { id: 'expired', label: 'Expired', count: counts.expired },
+            { id: 'inactive', label: 'Inactive', count: counts.inactive },
             { id: 'frozen', label: 'Frozen', count: counts.frozen },
             { id: 'pt', label: 'PT Members', count: counts.pt },
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setStatusFilter(tab.id)}
-              className={`px-4 py-3 text-sm font-black whitespace-nowrap border-b-2 transition-colors cursor-pointer ${
+              className={`px-4 py-3 text-sm font-black whitespace-nowrap border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
                 statusFilter === tab.id 
                   ? 'border-[#EA580C] text-[#EA580C]' 
                   : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
               }`}
             >
-              {tab.label} <span className="text-slate-400 font-bold">({tab.count})</span>
+              <span>{tab.label}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-xs ${
+                tab.isHold && tab.count > 0
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300 font-black'
+                  : 'text-slate-400 font-bold'
+              }`}>
+                ({tab.count})
+              </span>
             </button>
           ))}
         </div>
@@ -843,73 +923,192 @@ export default function MembersTable({
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm whitespace-nowrap border-separate border-spacing-0">
-          <thead className="bg-[#EA580C] text-[#fdfdfd] font-bold">
-            <tr className="bg-[#EA580C]">
-              <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] rounded-tl-[14px] border-b border-[#C2410C]">Member</th>
-              <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Phone</th>
-              <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Gender</th>
-              <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Membership</th>
-              <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Trainer</th>
-              <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Attendance</th>
-              <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Days Left</th>
-              <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Payment</th>
-              <th className="px-4 py-3.5 text-right text-[#fdfdfd] bg-[#EA580C] rounded-tr-[14px] border-b border-[#C2410C]">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {paginatedMembers.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-4 py-16 text-center text-slate-400">
-                  <div className="max-w-sm mx-auto space-y-3">
-                    <User className="w-12 h-12 text-slate-300 mx-auto" />
-                    <h3 className="text-base font-black text-slate-800">No members found</h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Try changing your search keywords or adjusting your selected filters.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLocalSearch('');
-                        setSearch('');
-                        setFilters(initialFilterState);
-                      }}
-                      className="px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-black rounded-xl transition-all cursor-pointer shadow-sm border-none"
-                    >
-                      Clear All Filters
-                    </button>
+      {/* HOLD MEMBERS DEDICATED CARDS VIEW (When Hold tab is selected) */}
+      {statusFilter === 'hold' ? (
+        <div className="p-5 bg-slate-50/50 min-h-[350px]">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#EA580C] text-white flex items-center justify-center font-black shadow-sm">
+                <Fingerprint size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  <span>HOLD MEMBERS ({filtered.length})</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-300">
+                    Awaiting Billing
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-600 font-medium mt-0.5">
+                  Members imported with Hikvision terminal Biometric IDs. Click &quot;Create Bill →&quot; to assign a package, record payment, and activate their profile.
+                </p>
+              </div>
+            </div>
+            <div className="text-xs font-bold text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-amber-200 shadow-2xs">
+              Search by <b className="text-[#EA580C]">Name</b> or <b className="text-[#EA580C]">Biometric ID</b> above
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8">
+              <User className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+              <h4 className="text-base font-black text-slate-800">No Hold members found</h4>
+              <p className="text-xs text-slate-500 mt-1">
+                All imported members have been activated, or no members match your search keyword.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {paginatedMembers.map(member => {
+                const bioId = member.biometricId || member.biometricUserId || member.deviceUserId || 'N/A';
+                return (
+                  <div 
+                    key={member.id}
+                    className="bg-white rounded-2xl border border-slate-200/90 hover:border-orange-400 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#EA580C] to-[#FB923C] text-white flex items-center justify-center font-black text-lg shadow-sm">
+                          {member.name?.charAt(0) || 'M'}
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-900">
+                            {member.name}
+                          </h4>
+                          <div className="inline-flex items-center gap-1.5 mt-0.5 px-2 py-0.5 rounded-lg bg-orange-50 border border-orange-200 text-[#C2410C] font-mono text-xs font-black">
+                            <Fingerprint size={12} />
+                            <span>Biometric ID: {bioId}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
+                        HOLD
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-xl p-3 text-xs space-y-1.5 font-medium text-slate-600 border border-slate-100">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[10px] uppercase font-bold">Source</span>
+                        <span className="font-bold text-slate-700">Imported from Excel</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[10px] uppercase font-bold">Phone</span>
+                        <span className="font-mono font-bold text-slate-700">{member.phone || '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[10px] uppercase font-bold">Status</span>
+                        <span className="text-amber-700 font-black">HOLD (Needs Bill)</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/dashboard/members/${encodeURIComponent(member.id)}`)}
+                        className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-all border-none cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Eye size={13} /> View Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onCreateBill) onCreateBill(member);
+                        }}
+                        className="flex-1 py-2.5 px-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer shadow-sm hover:shadow flex items-center justify-center gap-1.5 active:scale-95"
+                      >
+                        <span>Create Bill →</span>
+                      </button>
+                    </div>
                   </div>
-                </td>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Normal Table View */
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap border-separate border-spacing-0">
+            <thead className="bg-[#EA580C] text-[#fdfdfd] font-bold">
+              <tr className="bg-[#EA580C]">
+                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] rounded-tl-[14px] border-b border-[#C2410C]">Member</th>
+                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Phone</th>
+                <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Gender</th>
+                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Membership</th>
+                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Trainer</th>
+                <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Attendance</th>
+                <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Days Left</th>
+                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Payment</th>
+                <th className="px-4 py-3.5 text-right text-[#fdfdfd] bg-[#EA580C] rounded-tr-[14px] border-b border-[#C2410C]">Actions</th>
               </tr>
-            ) : (
-              paginatedMembers.map(member => (
-                <MemberTableRow
-                  key={member.id}
-                  member={member}
-                  isSelected={selectedMemberId === member.id}
-                  onRowClick={() => router.push(`/dashboard/members/${member.id}`)}
-                  onOpenActions={(m, rect) => setActionsMenu({ member: m, rect })}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paginatedMembers.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="px-4 py-16 text-center text-slate-400">
+                    <div className="max-w-sm mx-auto space-y-3">
+                      <User className="w-12 h-12 text-slate-300 mx-auto" />
+                      <h3 className="text-base font-black text-slate-800">No members found</h3>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Try changing your search keywords or adjusting your selected filters.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLocalSearch('');
+                          setSearch('');
+                          setFilters(initialFilterState);
+                        }}
+                        className="px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-black rounded-xl transition-all cursor-pointer shadow-sm border-none"
+                      >
+                        Clear All Filters
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                paginatedMembers.map(member => (
+                  <MemberTableRow
+                    key={member.id}
+                    member={member}
+                    isSelected={selectedMemberId === member.id}
+                    onRowClick={() => router.push(`/dashboard/members/${member.id}`)}
+                    onOpenActions={(m, rect) => setActionsMenu({ member: m, rect })}
+                    onCreateBill={onCreateBill}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Floating Actions Portal Dropdown (Never Clipped by Table Container) */}
       {actionsMenu && typeof document !== 'undefined' && createPortal(
         <div
-          className="actions-portal-menu fixed z-[99999] bg-white border border-slate-200 rounded-2xl shadow-[0_15px_40px_rgba(0,0,0,0.18)] py-1.5 w-48 text-left text-xs font-semibold text-slate-800 animate-in fade-in select-none"
+          className="actions-portal-menu fixed z-[99999] bg-white border border-slate-200 rounded-2xl shadow-[0_15px_40px_rgba(0,0,0,0.18)] py-1.5 w-52 text-left text-xs font-semibold text-slate-800 animate-in fade-in select-none"
           style={{
             top: (window.innerHeight - actionsMenu.rect.bottom < 240)
               ? Math.max(10, actionsMenu.rect.top - 230)
               : actionsMenu.rect.bottom + 4,
-            left: Math.max(10, Math.min(window.innerWidth - 200, actionsMenu.rect.right - 180)),
+            left: Math.max(10, Math.min(window.innerWidth - 220, actionsMenu.rect.right - 180)),
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {((actionsMenu.member.status || '').toLowerCase() === 'hold') && (
+            <button
+              type="button"
+              onClick={() => {
+                const m = actionsMenu.member;
+                setActionsMenu(null);
+                if (onCreateBill) onCreateBill(m);
+              }}
+              className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-[#EA580C] transition-colors font-black border-b border-orange-100"
+            >
+              <Receipt size={14} className="text-[#EA580C]" />
+              <span>Create Bill / Activate</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => {

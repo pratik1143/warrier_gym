@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'The Warrior Gym',
     short_name: 'The Warrior Gym',
-    description: 'Premium Fitness Center & Strength Destination in Sohana, Mohali',
+    description: 'Premium Fitness Center & Strength Destination in Sector 89, Mohali',
     start_url: '/',
     display: 'standalone',
     background_color: '#08080a',

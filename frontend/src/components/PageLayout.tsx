@@ -177,11 +177,11 @@ export default function PageLayout({ children }: { children: React.ReactNode }) 
               <div className="space-y-3 text-xs text-slate-600">
                 <div className="flex items-start gap-2">
                   <Phone size={14} className="text-[#FF5E14] shrink-0 mt-0.5" />
-                  <a href="tel:+919779333155" className="hover:text-slate-900 font-medium transition-colors">+91 97793 33155</a>
+                  <a href="tel:+919817023336" className="hover:text-slate-900 font-medium transition-colors">+91 98170 23336</a>
                 </div>
                 <div className="flex items-start gap-2">
                   <Mail size={14} className="text-[#FF5E14] shrink-0 mt-0.5" />
-                  <a href="mailto:thewarriorgym@gmail.com" className="hover:text-slate-900 font-medium transition-colors">thewarriorgym@gmail.com</a>
+                  <a href="mailto:Ramansingh6158@gmail.com" className="hover:text-slate-900 font-medium transition-colors">Ramansingh6158@gmail.com</a>
                 </div>
                 <div className="flex items-start gap-2">
                   <Globe size={14} className="text-[#FF5E14] shrink-0 mt-0.5" />
@@ -196,7 +196,7 @@ export default function PageLayout({ children }: { children: React.ReactNode }) 
               <div className="w-8 h-[2px] bg-[#FF5E14]" />
               <div className="flex items-start gap-2 text-xs text-slate-600">
                 <MapPin size={14} className="text-[#FF5E14] shrink-0 mt-0.5" />
-                <p className="leading-relaxed">2nd Floor, MNB Group, SCO 16-17, Landran Road, Sohana, Sahibzada Ajit Singh Nagar, Punjab 140308</p>
+                <p className="leading-relaxed">The Warrior Gym, SCO 30, 31, Sector 89, Mohali, Punjab 140308</p>
               </div>
               <div className="text-xs text-slate-500 space-y-1 pt-1">
                 <div className="font-bold text-slate-700">Working Hours</div>

@@ -7,11 +7,16 @@ export const paymentEngine = {
     return Math.max(0, outstanding); // Prevent negative outstanding
   },
 
-  calculatePaymentStatus: (invoiceAmount: number, paidAmount: number): 'PAID' | 'PARTIAL' | 'PENDING' => {
-    const outstanding = paymentEngine.calculateOutstandingAmount(invoiceAmount, paidAmount);
-    if (paidAmount === 0 && invoiceAmount > 0) return 'PENDING';
-    if (outstanding <= 0) return 'PAID';
-    return 'PARTIAL';
+  calculatePaymentStatus: (invoiceAmount: number, paidAmount: number, isHold?: boolean): 'NOT BILLED' | 'UNPAID' | 'PARTIAL' | 'PAID' => {
+    if (isHold) return 'NOT BILLED';
+    const invAmt = Number(invoiceAmount || 0);
+    const paidAmt = Number(paidAmount || 0);
+    if (invAmt === 0 && paidAmt === 0) return 'NOT BILLED';
+    const outstanding = paymentEngine.calculateOutstandingAmount(invAmt, paidAmt);
+    if (paidAmt === 0 && invAmt > 0) return 'UNPAID';
+    if (outstanding <= 0 && invAmt > 0) return 'PAID';
+    if (paidAmt > 0 && outstanding > 0) return 'PARTIAL';
+    return 'NOT BILLED';
   },
 
   selfHealPaymentData: async (invoice: any) => {

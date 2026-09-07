@@ -57,8 +57,8 @@ export default function SettingsGodLevelPage() {
   const { user, setUser } = useAuthStore();
   const [gymName, setGymName] = useState('The Warrior Gym');
   const [operatorName, setOperatorName] = useState(user?.name || 'Gym Owner');
-  const [contactEmail, setContactEmail] = useState(user?.email || 'admin@thewarriorgym.in');
-  const [contactPhone, setContactPhone] = useState('+91 98765 43210');
+  const [contactEmail, setContactEmail] = useState(user?.email || 'Ramansingh6158@gmail.com');
+  const [contactPhone, setContactPhone] = useState('+91 98170 23336');
   const [savingBranch, setSavingBranch] = useState(false);
   const [activeTab, setActiveTab] = useState<'system-health' | 'hardware' | 'logs' | 'branch' | 'security' | 'data-tools'>('system-health');
   const [showBiometricMappingModal, setShowBiometricMappingModal] = useState(false);

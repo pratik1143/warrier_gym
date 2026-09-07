@@ -50,7 +50,7 @@ const TEMPLATES: Record<string, { subject: string; html: string }> = {
       <p>Head to the gym and scan your ID at the biometric gate to start your fitness journey.</p>
       <a class="btn" href="#">View My Membership Portal</a>
     </div>
-    <div class="footer">The Warrior Gym · Mohali, Punjab · +91 98765 43210</div>
+    <div class="footer">The Warrior Gym · SCO 30, 31, Sector 89, Mohali · +91 98170 23336</div>
   </div>
 </body>
 </html>`,

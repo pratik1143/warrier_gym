@@ -68,7 +68,7 @@ const DEFAULT_TEMPLATES: Record<string, EmailTemplate> = {
       <p>Head to the gym and scan your ID at the biometric gate to start your fitness journey.</p>
       <a class="btn" href="#">View My Membership Portal</a>
     </div>
-    <div class="footer">The Warrior Gym · Mohali, Punjab · +91 98765 43210</div>
+    <div class="footer">The Warrior Gym · SCO 30, 31, Sector 89, Mohali · +91 98170 23336</div>
   </div>
 </body>
 </html>`
@@ -327,10 +327,10 @@ export const generateInvoicePdf = async (payment: any, member: any): Promise<Buf
     }
     
     doc.fillColor(textColor).fontSize(8).font('Helvetica');
-    doc.text('SCO 14-15, Phase 5, Sector 59', 40, 82);
-    doc.text('Mohali, Punjab, India - 160059', 40, 92);
+    doc.text('SCO 30, 31, Sector 89', 40, 82);
+    doc.text('Mohali, Punjab, India - 140308', 40, 92);
     doc.text('GSTIN: 27AAAAA0000A1Z5', 40, 102);
-    doc.text('Phone: +91 97793 33155 | info@thewarriorgym.in', 40, 112);
+    doc.text('Phone: +91 98170 23336 | Ramansingh6158@gmail.com', 40, 112);
 
     // Invoice Info Panel (Right side)
     doc.fillColor(primaryColor).fontSize(14).font('Helvetica-Bold').text('TAX INVOICE', 380, 40, { align: 'right', width: 175 });
@@ -599,7 +599,7 @@ export const triggerPtWelcomeEmail = async (member: any) => {
       <p>Your dedicated personal coach will connect with you shortly to build your customized diet plans and strength programs.</p>
       <p>Let's crush your fitness goals together!</p>
     </div>
-    <div class="footer">The Warrior Gym · Mohali, Punjab · +91 98765 43210</div>
+    <div class="footer">The Warrior Gym · SCO 30, 31, Sector 89, Mohali · +91 98170 23336</div>
   </div>
 </body>
 </html>`;

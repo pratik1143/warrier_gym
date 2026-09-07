@@ -113,10 +113,49 @@ export default function MemberImportWizard({
     }
   };
 
+  // ── Template Downloads ──
+  const handleDownloadTwoColumnTemplate = () => {
+    const templateData = [
+      { 'Employee ID': 101, 'Name': 'Rahul Sharma' },
+      { 'Employee ID': 102, 'Name': 'Simran Kaur' },
+      { 'Employee ID': 103, 'Name': 'Aman Verma' },
+      { 'Employee ID': 104, 'Name': 'Gurpreet Singh' },
+    ];
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    worksheet['!cols'] = [{ wch: 18 }, { wch: 28 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Members');
+    XLSX.writeFile(workbook, 'Warrior_Gym_ID_and_Name_Template.xlsx');
+    toast.success('Downloaded 2-column Excel template (ID & Name only)!');
+  };
+
+  const handleDownloadFullTemplate = () => {
+    const templateData = [
+      {
+        'Client ID': 101,
+        'Client name': 'Rahul Sharma',
+        'Number': '9876543210',
+        'Gender': 'Male',
+        'Start Date': '2026-01-01',
+        'Package': '3 Months',
+        'Expiry Date': '2026-04-01',
+        'Amount': 6000,
+        'Balance': 0,
+        'Photo': ''
+      }
+    ];
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Members');
+    XLSX.writeFile(workbook, 'Warrior_Gym_Full_Member_Template.xlsx');
+    toast.success('Downloaded full member Excel template!');
+  };
+
   // ── 2. METRICS & FILTERED PREVIEW DATA ────────────────────────────────────
   const warningsCount = useMemo(() => parsedRows.filter(r => r.warnings.length > 0).length, [parsedRows]);
   const errorsCount = useMemo(() => parsedRows.filter(r => r.errors.length > 0).length, [parsedRows]);
   const validCount = useMemo(() => parsedRows.filter(r => r.isValid && r.warnings.length === 0).length, [parsedRows]);
+  const isMinimalSheet = useMemo(() => parsedRows.length > 0 && parsedRows.some(r => r.isMinimalTwoColumn), [parsedRows]);
 
   const filteredRows = useMemo(() => {
     return parsedRows.filter(r => {
@@ -172,14 +211,17 @@ export default function MemberImportWizard({
           name: r.name,
           phone: r.phone,
           gender: r.gender,
-          startDate: r.startDate,
-          packageName: r.packageName,
-          originalPackageName: r.originalPackageName,
-          plan: r.packageName,
-          expiryDate: r.expiryDate,
-          amountPaid: r.amountPaid,
-          balanceAmount: r.balanceAmount,
+          startDate: r.startDate || null,
+          packageName: r.packageName || null,
+          originalPackageName: r.originalPackageName || null,
+          plan: r.packageName || null,
+          expiryDate: r.expiryDate || null,
+          amountPaid: r.amountPaid || 0,
+          balanceAmount: r.balanceAmount || 0,
           photoUrl: r.photoUrl,
+          isMinimalTwoColumn: r.isMinimalTwoColumn,
+          isHold: r.isMinimalTwoColumn || !r.packageName,
+          status: (r.isMinimalTwoColumn || !r.packageName) ? 'HOLD' : undefined,
         }));
 
         const res = await API.post('/members/migrate', {
@@ -268,10 +310,30 @@ export default function MemberImportWizard({
               <FileSpreadsheet size={32} />
             </div>
             <div>
-              <h2 className="text-xl font-extrabold text-slate-900">Upload Official Member Spreadsheet</h2>
+              <h2 className="text-xl font-extrabold text-slate-900">Upload Member Spreadsheet</h2>
               <p className="text-xs text-slate-500 mt-1">
-                Select <span className="font-semibold text-slate-700 font-mono">all members 23082026 (1).xlsx</span> or any standardized member Excel/CSV file.
+                Upload any Excel (.xlsx, .xls) or CSV file. Supports <strong className="text-slate-800">Quick 2-Column Sheets (ID & Name only)</strong> or full CRM member spreadsheets.
               </p>
+            </div>
+
+            {/* Template Download Buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleDownloadTwoColumnTemplate}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition-all shadow-2xs cursor-pointer"
+              >
+                <Download size={14} className="text-emerald-600" />
+                <span>Download ID & Name Template (2 Columns)</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadFullTemplate}
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-all shadow-2xs cursor-pointer"
+              >
+                <Download size={14} className="text-slate-500" />
+                <span>Download Full CRM Template</span>
+              </button>
             </div>
           </div>
 
@@ -300,37 +362,71 @@ export default function MemberImportWizard({
               <p className="text-sm font-bold text-slate-800">
                 Click to browse or drag and drop your spreadsheet here
               </p>
-              <p className="text-xs text-slate-400">
-                Supports Excel (.xlsx, .xls) and CSV format with all 431 member records
+              <p className="text-xs text-slate-500">
+                Supports any sheet with <strong className="text-emerald-700">ID & Name</strong>. Extra columns like Phone, Plan, Dates are completely optional!
               </p>
             </div>
           </div>
 
           {/* Schema Mapping Guarantee List */}
-          <div className="max-w-3xl mx-auto bg-slate-50 border border-slate-200/80 rounded-2xl p-5 text-left">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-              <Check size={14} className="text-emerald-500" />
-              <span>Automatic Source Column Mapping & Safety Rules</span>
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 text-xs">
-              {[
-                { src: 'Client ID', dest: 'clientId', note: 'Primary Key' },
-                { src: 'Client name', dest: 'name', note: 'Full Name' },
-                { src: 'Number', dest: 'phone', note: 'Contact Field' },
-                { src: 'Gender', dest: 'gender', note: 'Male / Female' },
-                { src: 'Start Date', dest: 'startDate', note: 'Normalized' },
-                { src: 'Package', dest: 'packageName', note: 'Casing Clean' },
-                { src: 'Expiry Date', dest: 'expiryDate', note: 'Exact Preserved' },
-                { src: 'Amount', dest: 'amountPaid', note: 'Numeric (₹)' },
-                { src: 'Balance', dest: 'balanceAmount', note: 'Numeric (₹)' },
-                { src: 'Photo', dest: 'photoUrl', note: 'Direct Link' }
-              ].map((col, idx) => (
-                <div key={idx} className="bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                  <div className="font-bold text-slate-800 truncate">{col.src}</div>
-                  <div className="text-[10px] text-[#0052FF] font-mono mt-0.5">→ {col.dest}</div>
-                  <div className="text-[9px] text-slate-400 mt-0.5 font-medium">{col.note}</div>
+          <div className="max-w-3xl mx-auto bg-slate-50 border border-slate-200/80 rounded-2xl p-5 text-left space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Check size={14} className="text-emerald-500" />
+                <span>Source Column Mapping & Requirements</span>
+              </h3>
+              <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                Only 2 Columns Required!
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Required in your file</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="bg-white p-3 rounded-xl border-2 border-emerald-400 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900">ID / Employee ID / Biometric ID</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">REQUIRED</span>
+                  </div>
+                  <div className="text-[11px] text-[#0052FF] font-mono mt-1">Headers: ID, Employee ID, Biometric ID, Client ID, No...</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Primary Key & Biometric Terminal Sync Key</div>
                 </div>
-              ))}
+
+                <div className="bg-white p-3 rounded-xl border-2 border-emerald-400 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900">Member Name</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">REQUIRED</span>
+                  </div>
+                  <div className="text-[11px] text-[#0052FF] font-mono mt-1">Headers: Name, Client name, Member Name, Full Name...</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Member's full display name</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-slate-200">
+              <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                <span>Optional Columns (Auto-filled with defaults if missing)</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
+                {[
+                  { src: 'Phone / Number', dest: 'phone', def: 'Optional (Blank)' },
+                  { src: 'Start Date', dest: 'startDate', def: 'Defaults to Today' },
+                  { src: 'Package / Plan', dest: 'packageName', def: 'General Membership' },
+                  { src: 'Expiry Date', dest: 'expiryDate', def: '+30 Days (Active)' },
+                  { src: 'Amount & Balance', dest: 'amountPaid', def: '₹0 / None' },
+                  { src: 'Gender', dest: 'gender', def: 'Unknown' },
+                  { src: 'Photo', dest: 'photoUrl', def: 'Default Avatar' }
+                ].map((col, idx) => (
+                  <div key={idx} className="bg-white p-2 rounded-xl border border-slate-200 text-[11px]">
+                    <div className="font-semibold text-slate-800 truncate">{col.src}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{col.def}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -339,6 +435,15 @@ export default function MemberImportWizard({
       {/* ── STEP 2: PREVIEW SCREEN ────────────────────────────────────────── */}
       {step === 'preview' && (
         <div className="space-y-6">
+          {isMinimalSheet && (
+            <div className="bg-emerald-50 border border-emerald-300/90 rounded-2xl p-4 flex items-center gap-3 text-emerald-900 shadow-2xs">
+              <Sparkles className="text-emerald-600 shrink-0" size={20} />
+              <div className="text-xs">
+                <span className="font-extrabold text-emerald-950">✨ Quick ID & Name Sheet Detected:</span> All {parsedRows.length} members were successfully recognized and mapped using their ID and Name. Non-provided fields (Phone, Plan, Dates, Payment) have been auto-assigned with standard active defaults. Your records are 100% valid and ready to import!
+              </div>
+            </div>
+          )}
+
           {/* Summary KPI Cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
@@ -465,7 +570,7 @@ export default function MemberImportWizard({
                             </div>
                           </td>
                           <td className="px-4 py-3 font-mono text-slate-600">
-                            {row.phone}
+                            {row.phone || <span className="text-slate-400 font-sans italic text-[10px]">Optional (blank)</span>}
                           </td>
                           <td className="px-4 py-3 text-slate-600">
                             {row.gender}
@@ -540,7 +645,7 @@ export default function MemberImportWizard({
                         {row.warnings.length > 0 && <AlertTriangle size={12} className="text-amber-500" />}
                       </div>
                       <div className="text-[11px] font-mono text-slate-400">
-                        #{row.clientId} • {row.phone}
+                        #{row.clientId} {row.phone ? `• ${row.phone}` : ''}
                       </div>
                     </div>
                   </div>
@@ -702,7 +807,7 @@ export default function MemberImportWizard({
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900">{selectedInspectRow.name}</h3>
                     <div className="text-xs font-mono text-slate-400">
-                      Client ID: #{selectedInspectRow.clientId} • Phone: {selectedInspectRow.phone}
+                      Client ID: #{selectedInspectRow.clientId} • Phone: {selectedInspectRow.phone || 'Not provided (Optional)'}
                     </div>
                   </div>
                 </div>

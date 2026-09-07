@@ -523,7 +523,7 @@ export default function CinematicHero() {
           <div className="relative z-20 text-center px-6 space-y-6 max-w-4xl mx-auto">
             <span className="inline-flex items-center gap-2 bg-[#FF5E14]/15 text-[#FF5E14] text-[9px] font-extrabold px-5 py-2 rounded-full uppercase tracking-[0.25em] border border-[#FF5E14]/40 backdrop-blur-md shadow-[0_0_20px_rgba(255,94,20,0.25)]">
               <span className="w-2 h-2 rounded-full bg-[#FF5E14] animate-pulse" />
-              THE WARRIOR GYM — SOHANA, MOHALI
+              THE WARRIOR GYM — SECTOR 89, MOHALI
             </span>
 
             <h1 className="font-rowdies text-5xl md:text-8xl font-bold tracking-tight text-white uppercase leading-none">

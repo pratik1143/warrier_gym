@@ -153,7 +153,7 @@ export default function WarriorNavbar({ onOpenJoinModal, onOpenLoginModal }: War
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-zinc-400">
                 <div className="flex items-center gap-2">
                   <MapPin size={14} className="text-[#F97316] shrink-0" />
-                  <span>Landran Rd, Sohana, Mohali</span>
+                  <span>SCO 30, 31, Sector 89, Mohali</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-[#F97316] shrink-0" />
@@ -185,7 +185,7 @@ export default function WarriorNavbar({ onOpenJoinModal, onOpenLoginModal }: War
                   </button>
 
                   <a
-                    href="https://wa.me/919779333155"
+                    href="https://wa.me/919817023336"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="py-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-black text-xs uppercase tracking-wider border border-emerald-500/30 cursor-pointer flex items-center justify-center gap-1.5 no-underline"

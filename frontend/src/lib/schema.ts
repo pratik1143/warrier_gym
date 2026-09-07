@@ -6,31 +6,29 @@ export const homeSchemas = {
       "@id": "https://thewarriorgym.in/#organization",
       "name": "The Warrior Gym",
       "url": "https://thewarriorgym.in/",
-      "email": "thewarriorgym@gmail.com",
-      "telephone": "+91-9779333155"
+      "email": "Ramansingh6158@gmail.com",
+      "telephone": "+91-9817023336"
     },
     {
       "@type": "Gym",
       "@id": "https://thewarriorgym.in/#gym",
       "name": "The Warrior Gym",
       "url": "https://thewarriorgym.in/",
-      "description": "The Warrior Gym is one of the best gyms in Mohali near Landran Road and Airport Road offering personal training, strength training, weight loss, CrossFit, cardio and functional fitness.",
-      "telephone": "+91-9779333155",
-      "email": "thewarriorgym@gmail.com",
+      "description": "The Warrior Gym is one of the best gyms in Mohali Sector 89 offering personal training, strength training, weight loss, CrossFit, cardio and functional fitness.",
+      "telephone": "+91-9817023336",
+      "email": "Ramansingh6158@gmail.com",
       "priceRange": "₹₹",
       "address": {
         "@type": "PostalAddress",
-        "streetAddress": "2nd Floor, MNB Group, SCO 16-17, Landran Road, Sohana",
-        "addressLocality": "Sahibzada Ajit Singh Nagar",
+        "streetAddress": "SCO 30, 31, Sector 89",
+        "addressLocality": "Mohali",
         "addressRegion": "Punjab",
         "postalCode": "140308",
         "addressCountry": "IN"
       },
       "areaServed": [
         "Mohali",
-        "Sohana",
-        "Landran Road",
-        "Airport Road",
+        "Sector 89",
         "Chandigarh",
         "Kharar"
       ]

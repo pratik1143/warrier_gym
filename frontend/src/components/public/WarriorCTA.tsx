@@ -69,7 +69,7 @@ export default function WarriorCTA({ onOpenJoinModal }: WarriorCTAProps) {
           </button>
 
           <a
-            href="https://wa.me/919779333155"
+            href="https://wa.me/919817023336"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-8 py-4 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 hover:text-white text-xs sm:text-sm font-black uppercase tracking-wider border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center justify-center gap-2 no-underline"
@@ -83,11 +83,11 @@ export default function WarriorCTA({ onOpenJoinModal }: WarriorCTAProps) {
         <div className="pt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-zinc-400 font-bold">
           <div className="flex items-center gap-1.5">
             <MapPin size={14} className="text-[#F97316]" />
-            <span>SCO 16-17, Landran Rd, Sohana, Mohali</span>
+            <span>SCO 30, 31, Sector 89, Mohali</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Phone size={14} className="text-[#F97316]" />
-            <span>+91 97793 33155</span>
+            <span>+91 98170 23336</span>
           </div>
         </div>
 

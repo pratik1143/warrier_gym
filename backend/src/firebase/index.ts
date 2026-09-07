@@ -613,10 +613,12 @@ export const db = {
     if (status && status !== 'all') {
       filtered = filtered.filter(m => {
         const mStatus = (m.status || '').toLowerCase();
-        if (status === 'active') return mStatus === 'active' || mStatus === 'expiring soon' || mStatus === 'expiring';
-        if (status === 'expired') return mStatus === 'expired';
+        if (status === 'hold') return mStatus === 'hold';
+        if (status === 'inactive') return mStatus === 'inactive' || mStatus === 'blocked' || mStatus === 'blacklisted';
+        if (status === 'active') return (mStatus === 'active' || mStatus === 'expiring soon' || mStatus === 'expiring') && mStatus !== 'hold';
+        if (status === 'expired') return mStatus === 'expired' && mStatus !== 'hold';
         if (status === 'frozen') return mStatus === 'frozen';
-        if (status === 'pt') return !!m.trainer;
+        if (status === 'pt') return !!m.trainer && mStatus !== 'hold';
         return mStatus === status;
       });
     }
@@ -625,7 +627,11 @@ export const db = {
       const digitsOnly = search.replace(/\D/g, '');
       filtered = filtered.filter(m => {
         const nameMatch = (m.name || '').toLowerCase().includes(search);
-        const idMatch = (m.memberId || '').toLowerCase().includes(search) || (m.id || '').toLowerCase().includes(search) || (m.biometricId || '').toLowerCase().includes(search);
+        const bioStr = String(m.biometricId || m.biometricUserId || m.deviceUserId || '').toLowerCase();
+        const idMatch = (m.memberId || '').toLowerCase().includes(search) || 
+          (m.id || '').toLowerCase().includes(search) || 
+          bioStr.includes(search) ||
+          bioStr === search;
         const phoneMatch = digitsOnly.length >= 3 && (m.phone || '').replace(/\D/g, '').includes(digitsOnly);
         const emailMatch = (m.email || '').toLowerCase().includes(search);
         return nameMatch || idMatch || phoneMatch || emailMatch;

@@ -1234,3 +1234,123 @@ export const getHikvisionDiagnostics = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+/**
+ * Fetch Live Terminal Users from Hikvision DS-K1T320EFWX (/api/devices/hikvision/terminal-users)
+ */
+export const getHikvisionTerminalUsers = async (req: Request, res: Response) => {
+  try {
+    const rootDir = process.cwd().endsWith('backend') ? path.dirname(process.cwd()) : process.cwd();
+    const scriptPath = path.resolve(rootDir, 'warrior-biometric-agent', 'fetch_terminal_users.py');
+
+    exec(`py "${scriptPath}"`, { cwd: rootDir, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      let resultData: any = null;
+      if (stdout) {
+        try {
+          resultData = JSON.parse(stdout.trim());
+        } catch (parseErr) {
+          console.warn('[Hikvision Terminal Users] Parse error:', parseErr);
+        }
+      }
+
+      if (resultData && resultData.success) {
+        return res.json({
+          success: true,
+          count: resultData.count,
+          totalMatches: resultData.totalMatches,
+          users: resultData.users,
+          endpoint: resultData.endpoint,
+          syncedAt: new Date().toISOString()
+        });
+      }
+
+      const errorMsg = resultData?.error || err?.message || 'Unable to connect to Hikvision terminal';
+      res.status(200).json({
+        success: false,
+        error: errorMsg,
+        endpoint: '/ISAPI/AccessControl/UserInfo/Search?format=json',
+        users: resultData?.users || [],
+        count: resultData?.users?.length || 0,
+        syncedAt: new Date().toISOString()
+      });
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Permanently Store Machine Mapping for Bulk Members (/api/devices/hikvision/bulk-map-members)
+ */
+export const bulkMapHikvisionUsers = async (req: Request, res: Response) => {
+  try {
+    const { mappings } = req.body;
+    if (!Array.isArray(mappings) || mappings.length === 0) {
+      return res.status(400).json({ error: 'mappings array is required' });
+    }
+
+    const firestore = getFirestoreDb();
+    const members = await db.getMembers();
+    const nowIso = new Date().toISOString();
+    let mappedCount = 0;
+
+    for (const item of mappings) {
+      const bioId = String(item.hikvisionUserId || item.biometricId || '').trim();
+      const memId = String(item.memberId || '').trim();
+      if (!bioId) continue;
+
+      const targetMember = members.find(m => 
+        (memId && (m.id === memId || m.memberId === memId)) ||
+        (String(m.biometricId || '').trim() === bioId)
+      );
+
+      const updatePayload = {
+        biometricId: bioId,
+        deviceUserId: bioId,
+        biometricUserId: bioId,
+        hikvisionUserId: bioId,
+        hikvisionMapped: true,
+        mappedAt: nowIso,
+        mappingSource: item.mappingSource || 'AUTO',
+        faceEnrollmentStatus: item.hasFace ? 'ENROLLED' : 'PENDING',
+        fingerprintEnrollmentStatus: item.hasFingerprint ? 'ENROLLED' : 'PENDING',
+        hasFace: Boolean(item.hasFace),
+        hasFingerprint: Boolean(item.hasFingerprint),
+        lastBiometricSync: nowIso,
+        updatedAt: nowIso
+      };
+
+      if (targetMember) {
+        await db.updateMember(targetMember.id, updatePayload);
+        mappedCount++;
+      } else if (firestore && memId) {
+        await firestore.collection('members').doc(memId).set(updatePayload, { merge: true });
+        mappedCount++;
+      }
+
+      if (firestore) {
+        try {
+          await firestore.collection('unmapped_device_users').doc(`hikvision-main-gate_${bioId}`).delete().catch(() => {});
+        } catch (e) {}
+      }
+    }
+
+    if (firestore) {
+      await firestore.collection('deviceLogs').add({
+        deviceId: 'hikvision-main-gate',
+        deviceName: 'Hikvision DS-K1T320EFWX',
+        level: 'SUCCESS',
+        message: `[Bulk Machine Mapping] Permanently mapped ${mappedCount} members with Hikvision terminal users.`,
+        timestamp: nowIso
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully mapped ${mappedCount} members with Hikvision terminal users.`,
+      mappedCount
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

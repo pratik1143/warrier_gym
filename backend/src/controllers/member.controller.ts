@@ -3,10 +3,48 @@ import { db, admin, isFirebaseInitialized } from '../firebase';
 import { triggerWelcomeEmail, triggerPaymentEmail, triggerPtWelcomeEmail } from '../services/automation.service';
 import { resolveStaleRenewalFollowups } from '../services/followupAutomation.service';
 
+export function sanitizeMemberResponse(m: any) {
+  if (!m) return m;
+  const isHold = String(m.status || m.membershipStatus || '').trim().toUpperCase() === 'HOLD' || m.activationStatus === 'PENDING_ACTIVATION';
+  if (isHold) {
+    return {
+      ...m,
+      status: 'HOLD',
+      membershipStatus: 'HOLD',
+      activationStatus: 'PENDING_ACTIVATION',
+      plan: null,
+      packageName: null,
+      membershipPlan: null,
+      originalPackageName: null,
+      startDate: null,
+      expiryDate: null,
+      membershipStartDate: null,
+      membershipExpiryDate: null,
+      daysLeft: null,
+      totalPackageAmount: 0,
+      totalBilled: 0,
+      price: 0,
+      amount: 0,
+      totalPaid: 0,
+      amountPaid: 0,
+      paid: 0,
+      balance: 0,
+      balanceAmount: 0,
+      outstandingBalance: 0,
+      pendingBalance: 0,
+      paymentStatus: 'NOT_BILLED',
+      billingHistory: [],
+      membershipHistory: [],
+    };
+  }
+  return m;
+}
+
 export const getMembers = async (req: Request, res: Response) => {
   try {
     const list = await db.getMembers();
-    res.json(list);
+    const sanitized = Array.isArray(list) ? list.map(sanitizeMemberResponse) : list;
+    res.json(sanitized);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -21,6 +59,9 @@ export const getMembersPaginated = async (req: Request, res: Response) => {
       search: typeof search === 'string' ? search : '',
       status: typeof status === 'string' ? status : 'all'
     });
+    if (result && Array.isArray(result.members)) {
+      result.members = result.members.map(sanitizeMemberResponse);
+    }
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -34,7 +75,7 @@ export const getMemberById = async (req: Request, res: Response) => {
     if (!member) {
       return res.status(404).json({ error: 'Member not found' });
     }
-    res.json(member);
+    res.json(sanitizeMemberResponse(member));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -484,5 +525,165 @@ export const sendMemberCredentials = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Failed to send credentials:', error);
     res.status(500).json({ error: error.message });
+  }
+};
+
+export const importBulkHoldMembers = async (req: Request, res: Response) => {
+  try {
+    const { members: incomingMembers, skipExisting = true } = req.body;
+
+    if (!Array.isArray(incomingMembers) || incomingMembers.length === 0) {
+      return res.status(400).json({ error: 'No members provided for import' });
+    }
+
+    const existingMembers = await db.getMembers();
+    const existingBioMap = new Map<string, any>();
+    const existingPhoneMap = new Map<string, any>();
+
+    existingMembers.forEach((m: any) => {
+      const bioId = String(m.biometricId || m.biometricUserId || m.deviceUserId || '').trim().toLowerCase();
+      if (bioId) {
+        existingBioMap.set(bioId, m);
+      }
+      const cleanPhone = String(m.phone || '').replace(/\D/g, '');
+      if (cleanPhone && cleanPhone.length >= 7) {
+        existingPhoneMap.set(cleanPhone, m);
+      }
+    });
+
+    const created: any[] = [];
+    const skipped: any[] = [];
+    const updated: any[] = [];
+    const invalid: any[] = [];
+
+    // Track duplicates inside the incoming batch itself
+    const batchSeenBioIds = new Set<string>();
+
+    for (let i = 0; i < incomingMembers.length; i++) {
+      const row = incomingMembers[i];
+      const rawName = String(row.name || row.memberName || '').trim();
+      const rawBioId = String(row.biometricId !== undefined ? row.biometricId : (row.employeeId !== undefined ? row.employeeId : (row.userId || row.id || ''))).trim();
+      const rawPhone = String(row.phone || row.mobile || '').trim();
+      const cleanPhone = rawPhone.replace(/\D/g, '');
+
+      if (!rawName || !rawBioId) {
+        invalid.push({ index: i + 1, row, reason: !rawName ? 'Missing Name' : 'Missing Biometric ID' });
+        continue;
+      }
+
+      const bioKey = rawBioId.toLowerCase();
+
+      // Check duplicate within incoming file
+      if (batchSeenBioIds.has(bioKey)) {
+        skipped.push({
+          biometricId: rawBioId,
+          name: rawName,
+          reason: 'Duplicate Biometric ID within spreadsheet batch'
+        });
+        continue;
+      }
+      batchSeenBioIds.add(bioKey);
+
+      // Check existing in database
+      const existingMember = existingBioMap.get(bioKey);
+
+      if (existingMember) {
+        if (skipExisting) {
+          skipped.push({
+            biometricId: rawBioId,
+            name: rawName,
+            existingName: existingMember.name,
+            reason: `Member with Biometric ID ${rawBioId} already exists in CRM (${existingMember.name})`
+          });
+          continue;
+        } else {
+          // Update existing member basic fields without touching membership/billing
+          const updatedDoc = await db.updateMember(existingMember.id, {
+            name: rawName,
+            ...(rawPhone ? { phone: rawPhone } : {}),
+            ...(row.gender ? { gender: row.gender } : {}),
+            ...(row.address ? { address: row.address } : {}),
+            updatedAt: new Date().toISOString()
+          });
+          updated.push({
+            id: existingMember.id,
+            biometricId: rawBioId,
+            name: rawName
+          });
+          continue;
+        }
+      }
+
+      // Create new HOLD member
+      // Note: NO membership, NO invoice, NO payment, status is strictly 'HOLD' / 'PENDING_ACTIVATION'
+      const todayStr = new Date().toISOString().split('T')[0];
+      const newMemberPayload = {
+        name: rawName,
+        biometricId: rawBioId,
+        biometricUserId: rawBioId,
+        deviceUserId: rawBioId,
+        status: 'HOLD',
+        membershipStatus: 'HOLD',
+        activationStatus: 'PENDING_ACTIVATION',
+        phone: rawPhone || '',
+        email: row.email || (rawPhone ? `${cleanPhone}@thewarriorgym.in` : ''),
+        gender: row.gender || 'Male',
+        branch: row.branch || 'Mohali, Punjab',
+        address: row.address || '',
+        plan: null,
+        packageName: null,
+        membershipPlan: null,
+        originalPackageName: null,
+        startDate: null,
+        expiryDate: null,
+        membershipStartDate: null,
+        membershipExpiryDate: null,
+        daysLeft: null,
+        joinDate: todayStr,
+        createdAt: new Date().toISOString(),
+        totalPackageAmount: 0,
+        totalBilled: 0,
+        price: 0,
+        amount: 0,
+        totalPaid: 0,
+        amountPaid: 0,
+        paid: 0,
+        balance: 0,
+        balanceAmount: 0,
+        outstandingBalance: 0,
+        pendingBalance: 0,
+        paymentStatus: 'NOT_BILLED',
+        source: 'excel_import',
+        importedAt: new Date().toISOString(),
+        membershipHistory: [],
+        payments: []
+      };
+
+      const added = await db.addMember(newMemberPayload);
+      existingBioMap.set(bioKey, added);
+      created.push({
+        id: added.id,
+        memberId: added.memberId,
+        biometricId: rawBioId,
+        name: rawName,
+        status: 'hold'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully processed ${incomingMembers.length} rows: ${created.length} created in HOLD status, ${skipped.length} skipped, ${updated.length} updated.`,
+      createdCount: created.length,
+      skippedCount: skipped.length,
+      updatedCount: updated.length,
+      invalidCount: invalid.length,
+      created,
+      skipped,
+      updated,
+      invalid
+    });
+  } catch (error: any) {
+    console.error('Failed to bulk import hold members:', error);
+    res.status(500).json({ error: error.message || 'Bulk import failed' });
   }
 };

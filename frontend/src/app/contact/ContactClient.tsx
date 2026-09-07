@@ -120,10 +120,10 @@ export default function ContactPage() {
                   Skip the form. Call or WhatsApp our team directly for instant answers.
                 </p>
                 <div className="flex flex-wrap gap-4 pt-2">
-                  <a href="tel:+919779333155" className="bg-gradient-to-r from-[#FF5E14] to-[#FF7A00] text-white font-extrabold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl hover:shadow-[0_8px_20px_rgba(255,94,20,0.3)] hover:scale-105 transition-all shadow-md flex items-center gap-1.5">
+                  <a href="tel:+919817023336" className="bg-gradient-to-r from-[#FF5E14] to-[#FF7A00] text-white font-extrabold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl hover:shadow-[0_8px_20px_rgba(255,94,20,0.3)] hover:scale-105 transition-all shadow-md flex items-center gap-1.5">
                     Call Now
                   </a>
-                  <a href="https://wa.me/919779333155" target="_blank" rel="noopener noreferrer" className="border-2 border-slate-200 hover:border-[#FF5E14] text-slate-800 hover:text-[#FF5E14] hover:bg-orange-50 font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl transition-all bg-white flex items-center gap-1.5">
+                  <a href="https://wa.me/919817023336" target="_blank" rel="noopener noreferrer" className="border-2 border-slate-200 hover:border-[#FF5E14] text-slate-800 hover:text-[#FF5E14] hover:bg-orange-50 font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl transition-all bg-white flex items-center gap-1.5">
                     WhatsApp Us
                   </a>
                 </div>
@@ -283,7 +283,7 @@ export default function ContactPage() {
                     <div>
                       <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">The Warrior Gym Location</h4>
                       <p className="text-xs text-slate-600 font-poppins leading-relaxed mt-1">
-                        2nd Floor, MNB Group, SCO 16-17, Landran Road, Sohana, Sahibzada Ajit Singh Nagar, Punjab 140308
+                        The Warrior Gym, SCO 30, 31, Sector 89, Mohali, Punjab 140308
                       </p>
                     </div>
                   </div>
@@ -292,7 +292,7 @@ export default function ContactPage() {
                     <Mail size={18} className="text-[#FF5E14] shrink-0 mt-0.5" />
                     <div>
                       <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Email Address</h4>
-                      <p className="text-xs text-slate-600 font-poppins mt-1">thewarriorgym@gmail.com</p>
+                      <p className="text-xs text-slate-600 font-poppins mt-1">Ramansingh6158@gmail.com</p>
                     </div>
                   </div>
                   <div className="h-px bg-slate-100" />
@@ -309,7 +309,7 @@ export default function ContactPage() {
                 </div>
 
                 <div className="pt-2">
-                  <a href="https://maps.google.com/?q=2nd+Floor+MNB+Group+SCO+16-17+Landran+Road+Sohana+Punjab+140308" target="_blank" rel="noopener noreferrer"
+                  <a href="https://maps.google.com/?q=The+Warrior+Gym+Sector+89+Mohali" target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 border-2 border-slate-200 hover:border-[#FF5E14] text-slate-800 hover:text-[#FF5E14] hover:bg-orange-50 font-bold text-xs tracking-wider uppercase px-6 py-3.5 rounded-xl transition-all bg-white shadow-sm">
                     Open in Google Maps
                   </a>

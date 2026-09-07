@@ -39,7 +39,7 @@ export default function WarriorFooter({ onOpenLoginModal }: WarriorFooterProps) 
 
             <div className="flex items-center gap-3 pt-2">
               <a
-                href="https://wa.me/919779333155"
+                href="https://wa.me/919817023336"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-4 py-2 rounded-xl bg-white/5 hover:bg-emerald-500/20 text-zinc-300 hover:text-emerald-400 text-xs font-bold transition-colors border border-white/10 flex items-center gap-2 no-underline"
@@ -87,14 +87,14 @@ export default function WarriorFooter({ onOpenLoginModal }: WarriorFooterProps) 
 
               <div className="flex items-center gap-2.5 pt-1">
                 <Phone size={14} className="text-[#F97316] shrink-0" />
-                <a href="tel:+919779333155" className="text-zinc-300 hover:text-white font-mono font-bold no-underline">
-                  +91 97793 33155
+                <a href="tel:+919817023336" className="text-zinc-300 hover:text-white font-mono font-bold no-underline">
+                  +91 98170 23336
                 </a>
               </div>
 
               <div className="flex items-center gap-2.5">
                 <Mail size={14} className="text-[#F97316] shrink-0" />
-                <span className="text-zinc-400">thewarriorgym@gmail.com</span>
+                <span className="text-zinc-400">Ramansingh6158@gmail.com</span>
               </div>
             </div>
           </div>
@@ -108,14 +108,14 @@ export default function WarriorFooter({ onOpenLoginModal }: WarriorFooterProps) 
               <MapPin size={14} className="text-[#F97316] shrink-0 mt-0.5" />
               <div className="text-zinc-300 leading-relaxed">
                 The Warrior Gym Mohali<br />
-                SCO 16-17, Landran Rd, Sohana<br />
-                SAS Nagar, Punjab 140308, India
+                SCO 30, 31, Sector 89<br />
+                Mohali, Punjab 140308, India
               </div>
             </div>
 
             <div className="pt-1">
               <a
-                href="https://maps.google.com/?q=The+Warrior+Gym+Sohana+Mohali"
+                href="https://maps.google.com/?q=The+Warrior+Gym+Sector+89+Mohali"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FB923C] hover:text-orange-400 transition-colors no-underline"

@@ -38,6 +38,9 @@ def main():
     elif cmd == "capabilities":
         res = provider.get_capabilities()
         print(json.dumps(res))
+    elif cmd in ("get_users", "list_users"):
+        users = provider.get_users()
+        print(json.dumps({"success": True, "users": users, "count": len(users)}))
     elif cmd == "test_connection":
         res = provider.test_connection_matrix()
         print(json.dumps(res))

@@ -233,7 +233,7 @@ export default function WarriorBookingModal({ isOpen, onClose }: WarriorBookingM
               <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-xs text-zinc-300 font-bold space-y-1 text-left max-w-sm mx-auto">
                 <div className="text-[10px] uppercase text-[#F97316] tracking-widest font-black">ARENA LOCATION:</div>
                 <div>The Warrior Gym Mohali</div>
-                <div className="text-zinc-400 text-[11px]">SCO 16-17, Landran Rd, Sohana (05:00 AM – 10:00 PM)</div>
+                <div className="text-zinc-400 text-[11px]">SCO 30, 31, Sector 89, Mohali (05:00 AM – 10:00 PM)</div>
               </div>
 
               <button

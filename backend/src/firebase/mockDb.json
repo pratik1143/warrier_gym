@@ -77,9 +77,9 @@
       "plan": "3 months",
       "paymentMethod": "Cash",
       "method": "Cash",
-      "transactionType": "membership_payment",
-      "isHistorical": false,
-      "imported": false,
+      "transactionType": "historical_import",
+      "isHistorical": true,
+      "imported": true,
       "paymentDate": "2026-08-25",
       "status": "paid",
       "invoiceNumber": "INV-MEM-789251",
@@ -91,7 +91,8 @@
       "expiryDate": "2026-11-24",
       "idempotencyKey": "add_mem_8585858588_2026-08-25_8910",
       "gst": 0,
-      "createdAt": "2026-08-25T11:19:53.059Z"
+      "createdAt": "2026-08-25T11:19:53.059Z",
+      "isLegacyImport": true
     }
   ],
   "mockTrainers": [],

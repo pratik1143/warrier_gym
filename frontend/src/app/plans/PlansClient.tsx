@@ -119,7 +119,7 @@ const commonQuestions = [
   },
   { 
     q: 'How can I join The Warrior Gym?', 
-    a: 'Simply visit our gym, call us, or contact us on WhatsApp (+91 97793 33155) to choose your membership plan and start your fitness journey today.' 
+    a: 'Simply visit our gym, call us, or contact us on WhatsApp (+91 98170 23336) to choose your membership plan and start your fitness journey today.' 
   }
 ];
 
@@ -212,7 +212,7 @@ export default function PlansPage() {
                   </div>
 
                   <div className="mt-7 pt-4">
-                    <a href={`https://wa.me/919779333155?text=Hi! I am interested in the ${plan.label} membership plan at The Warrior Gym.`} target="_blank" rel="noopener noreferrer"
+                    <a href={`https://wa.me/919817023336?text=Hi! I am interested in the ${plan.label} membership plan at The Warrior Gym.`} target="_blank" rel="noopener noreferrer"
                       className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-widest text-center transition-all block ${
                         plan.highlight 
                           ? 'bg-gradient-to-r from-[#FF5E14] to-[#FF7A00] text-white hover:shadow-[0_8px_25px_rgba(255,94,20,0.4)] shadow-[0_4px_15px_rgba(255,94,20,0.25)]' 
@@ -300,7 +300,7 @@ export default function PlansPage() {
               <a href="/contact" className="bg-white text-orange-600 font-extrabold text-sm px-10 py-4 rounded-full hover:bg-orange-50 transition-all shadow-xl hover:scale-105">
                 Book Now
               </a>
-              <a href="tel:+919779333155" className="border-2 border-white/60 hover:border-white text-white font-bold text-sm px-10 py-4 rounded-full transition-all hover:bg-white/10 flex items-center gap-2 justify-center">
+              <a href="tel:+919817023336" className="border-2 border-white/60 hover:border-white text-white font-bold text-sm px-10 py-4 rounded-full transition-all hover:bg-white/10 flex items-center gap-2 justify-center">
                 <Phone size={14} /> Call Now
               </a>
             </div>

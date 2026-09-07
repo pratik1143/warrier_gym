@@ -28,9 +28,9 @@ export const gymConfig: GymConfig = {
   currency: "INR",
   currencySymbol: "₹",
   country: "India",
-  supportEmail: "support@thewarriorgym.in",
-  supportPhone: "+91 98765 43210",
-  address: "The Warrior Gym Complex, Sector 70, Mohali, Punjab",
+  supportEmail: "Ramansingh6158@gmail.com",
+  supportPhone: "+91 98170 23336",
+  address: "The Warrior Gym, SCO 30, 31, Sector 89, Mohali, Punjab 140308",
   website: "https://thewarriorgym.in"
 };
 

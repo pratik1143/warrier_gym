@@ -4,7 +4,7 @@ import TermsClient from './TermsClient';
 
 export const metadata = getSEO({
   title: 'Terms and Conditions | The Warrior Gym Mohali',
-  description: 'Review the membership agreements, payment terms, and facility rules for training at The Warrior Gym in Sohana, Mohali.',
+  description: 'Review the membership agreements, payment terms, and facility rules for training at The Warrior Gym in Sector 89, Mohali.',
   path: '/terms'
 });
 
