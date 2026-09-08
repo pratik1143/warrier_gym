@@ -117,13 +117,6 @@ export default function OverviewCommandCenter() {
   const [folPriority, setFolPriority] = useState<"High" | "Medium" | "Low">("Medium");
   const [folSaving, setFolSaving] = useState(false);
 
-  // New Member Form State
-  const [memName, setMemName] = useState("");
-  const [memPhone, setMemPhone] = useState("");
-  const [memPlan, setMemPlan] = useState("3 Months");
-  const [memPaid, setMemPaid] = useState("6500");
-  const [memMethod, setMemMethod] = useState("UPI");
-  const [memSaving, setMemSaving] = useState(false);
 
   // Fetch enquiries on mount
   useEffect(() => {
@@ -319,88 +312,6 @@ export default function OverviewCommandCenter() {
     }
   };
 
-  const handleCreateMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!memName || !memPhone) {
-      toast.error("Name and Phone are required!");
-      return;
-    }
-    setMemSaving(true);
-    try {
-      const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-      const paidAmt = Number(memPaid) || 0;
-
-      const memberPayload = {
-        name: memName,
-        phone: memPhone,
-        plan: memPlan,
-        status: "active",
-        joinDate: todayStr,
-        price: paidAmt,
-        originalAmount: paidAmt,
-        discountAmount: 0,
-        netPayable: paidAmt,
-        amountPaid: paidAmt,
-        paid: paidAmt,
-        totalBilled: paidAmt,
-        totalPaid: paidAmt,
-        paymentStatus: "paid",
-        paymentMethod: memMethod,
-        method: memMethod,
-        invoiceNumber: invoiceNumber,
-        transactionType: "membership_payment",
-        isHistorical: false,
-        imported: false,
-        paymentDate: todayStr,
-        idempotencyKey: `overview_mem_${memPhone.replace(/\D/g, "")}_${todayStr}`,
-        isRealTimeToday: true,
-        createdAt: new Date().toISOString()
-      };
-
-      try {
-        await API.post("/members", memberPayload);
-      } catch (_) {
-        const docRef = await addDoc(collection(db, "members"), memberPayload);
-        await addDoc(collection(db, "payments"), {
-          memberId: docRef.id,
-          memberName: memName,
-          originalAmount: paidAmt,
-          discountAmount: 0,
-          netPayable: paidAmt,
-          amount: paidAmt,
-          amountPaid: paidAmt,
-          paid: paidAmt,
-          plan: memPlan,
-          method: memMethod,
-          paymentMethod: memMethod,
-          invoice: invoiceNumber,
-          invoiceNumber: invoiceNumber,
-          status: "paid",
-          transactionType: "membership_payment",
-          isHistorical: false,
-          imported: false,
-          date: todayStr,
-          paymentDate: todayStr,
-          isRealTimeToday: true,
-          createdAt: new Date().toISOString()
-        });
-      }
-
-      await fetchMembers();
-      await fetchPayments();
-
-      toast.success(`Member registered & Invoice ${invoiceNumber} issued! 📄✨`);
-      setShowNewMemberModal(false);
-      setMemName("");
-      setMemPhone("");
-      setMemPaid("6500");
-    } catch (err: any) {
-      toast.error("Failed to add member: " + err.message);
-    } finally {
-      setMemSaving(false);
-    }
-  };
-
   return (
     <div className="w-full space-y-5 pb-8 text-left font-sans">
       
@@ -419,7 +330,7 @@ export default function OverviewCommandCenter() {
           activeMembersCount={activeMembersCount}
           pendingEnquiriesCount={pendingEnquiriesCount}
           todaysRealCollection={todaysRealCollection}
-          onNewMember={() => setShowNewMemberModal(true)}
+          onNewMember={() => router.push("/dashboard/members?action=add")}
           onNewEnquiry={() => setShowNewEnquiryModal(true)}
           onFollowUp={() => setShowNewFollowupModal(true)}
           onAttendance={() => router.push("/dashboard/attendance")}
@@ -742,139 +653,6 @@ export default function OverviewCommandCenter() {
         )}
       </AnimatePresence>
 
-      {/* 3. NEW MEMBER MODAL */}
-      <AnimatePresence>
-        {showNewMemberModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setShowNewMemberModal(false)}
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden text-left z-10 font-sans"
-            >
-              <div className="bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] px-6 py-4 flex items-center justify-between text-white">
-                <h3 className="font-black text-sm uppercase tracking-wide flex items-center gap-2">
-                  <UserPlus size={17} /> Register New Gym Member
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowNewMemberModal(false)}
-                  className="text-white/80 hover:text-white border-none cursor-pointer bg-transparent"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateMember} className="p-6 space-y-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">
-                    Member Full Name <span className="text-[#EA580C]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Vikram Singh"
-                    value={memName}
-                    onChange={(e) => setMemName(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316]"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">
-                    Phone Number <span className="text-[#EA580C]">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="e.g. 9812345678"
-                    value={memPhone}
-                    onChange={(e) => setMemPhone(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Membership Plan</label>
-                    <select
-                      value={memPlan}
-                      onChange={(e) => {
-                        setMemPlan(e.target.value);
-                        if (e.target.value === "1 Month") setMemPaid("2500");
-                        if (e.target.value === "3 Months") setMemPaid("6500");
-                        if (e.target.value === "6 Months") setMemPaid("11500");
-                        if (e.target.value === "12 Months") setMemPaid("18000");
-                      }}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                    >
-                      <option value="1 Month">1 Month (₹2,500)</option>
-                      <option value="3 Months">3 Months (₹6,500)</option>
-                      <option value="6 Months">6 Months (₹11,500)</option>
-                      <option value="12 Months">12 Months (₹18,000)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Amount Paid (₹)</label>
-                    <input
-                      type="number"
-                      value={memPaid}
-                      onChange={(e) => setMemPaid(e.target.value)}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316]"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-600 block mb-1">Payment Method</label>
-                    <select
-                      value={memMethod}
-                      onChange={(e) => setMemMethod(e.target.value)}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                    >
-                      <option value="UPI">UPI / QR Code</option>
-                      <option value="Cash">Cash</option>
-                      <option value="Card">Credit / Debit Card</option>
-                      <option value="NetBanking">Net Banking</option>
-                    </select>
-                  </div>
-                  <div className="flex flex-col justify-end">
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center gap-2 text-[11px] font-bold text-emerald-700">
-                      <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
-                      Auto Invoice & Receipt
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2 flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowNewMemberModal(false)}
-                    className="px-5 py-2.5 rounded-xl border border-stone-200 text-slate-600 font-bold text-xs cursor-pointer hover:bg-stone-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={memSaving}
-                    className="px-6 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all border-none cursor-pointer disabled:opacity-50"
-                  >
-                    {memSaving ? "Registering..." : "Register Member"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* 4. PRESENT MEMBERS ROSTER MODAL */}
       <PresentMembersModal
