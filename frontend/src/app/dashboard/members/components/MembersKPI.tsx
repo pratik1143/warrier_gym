@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Users, CheckCircle2, Clock, Activity, IndianRupee } from 'lucide-react';
+import { Users, UserCheck, PauseCircle, AlertTriangle, IndianRupee, TrendingUp } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useGymStore } from '@/store';
 import { SYSTEM_CONFIG } from '@/config/system';
 import { useTodaysPayments } from '@/hooks/useTodaysPayments';
+import { membershipEngine } from '@/lib/engines/membershipEngine';
 
 export default function MembersKPI() {
   const { members, attendance } = useGymStore();
-
-  // Live payment data — single source of truth (same Firestore listener as Billing/Overview/Dashboard)
   const { allPayments } = useTodaysPayments();
 
   const stats = useMemo(() => {
-    // Current date in Asia/Kolkata timezone
     const now = new Date();
     const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: SYSTEM_CONFIG.timezone,
@@ -21,62 +20,44 @@ export default function MembersKPI() {
       month: '2-digit',
       day: '2-digit'
     });
-    const todayStr = formatter.format(now); // e.g. "2026-08-23"
-    const currentYearMonth = todayStr.substring(0, 7); // e.g. "2026-08"
+    const todayStr = formatter.format(now);
+    const currentYearMonth = todayStr.substring(0, 7);
 
-    let expiringThisMonth = 0;
-    let ptMembers = 0;
+    let activeCount = 0;
+    let holdCount = 0;
+    let expiringCount = 0;
 
     (members || []).forEach((m: any) => {
-      // Calculate expiring this month
-      if (m.expiryDate) {
-        const expStr = String(m.expiryDate).includes('T') ? m.expiryDate.split('T')[0] : m.expiryDate;
-        if (expStr.startsWith(currentYearMonth)) {
-          expiringThisMonth++;
-        }
-      }
+      const st = String(m.status || m.membershipStatus || '').toLowerCase();
+      const isHold = st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
 
-      // Calculate PT members
-      const hasTrainer = m.trainer && String(m.trainer).trim() !== '' && !String(m.trainer).toLowerCase().includes('unassigned');
-      const isPTPlan = m.plan && (m.plan.includes('PT') || m.plan.includes('Personal Training'));
-      if (hasTrainer || isPTPlan || m.isPT) {
-        ptMembers++;
-      }
-    });
-
-    // Calculate unique members who punched today
-    const todayPunches = new Set<string>();
-    const attendanceLogs = attendance || [];
-    attendanceLogs.forEach((log: any) => {
-      if (!log) return;
-      const checkInStr = String(log.checkIn || log.timestamp || log.createdAt || '');
-      const checkInYMD = checkInStr.includes('T') ? checkInStr.split('T')[0] : checkInStr;
-      if (checkInYMD === todayStr) {
-        const mKey = log.memberId || log.biometricId || log.memberName;
-        if (mKey && String(mKey).trim()) {
-          todayPunches.add(String(mKey).trim());
+      if (isHold) {
+        holdCount++;
+      } else {
+        const daysLeft = m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0;
+        if (daysLeft <= 0) {
+          // expired
+        } else if (daysLeft <= 15) {
+          expiringCount++;
+          activeCount++;
+        } else {
+          activeCount++;
         }
       }
     });
 
-    // Calculate REAL REVENUE THIS MONTH from live Firestore payment transactions.
-    // Uses allPayments from useTodaysPayments hook — same Firestore listener as Billing/Overview.
-    // Excludes: deleted, historical/imported, void, non-paid, outside current IST month.
+    // Real monthly revenue from live payments
     const seenPaymentKeys = new Set<string>();
     let revenueThisMonth = 0;
 
     (allPayments || []).forEach((p: any) => {
       if (!p || p.isSample || p.isMock) return;
-      // deleted filter is already applied in allPayments (hook filters deleted !== true)
-
-      // Exclude historical imported records from current month revenue
       const isHist = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
       if (isHist) return;
 
       const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
       if (status !== 'paid' && status !== 'partial') return;
 
-      // Payment date must fall within current IST calendar month
       const pDate = String(p.paymentDate || p.date || '').split('T')[0];
       if (!pDate || !pDate.startsWith(currentYearMonth) || pDate > todayStr) return;
 
@@ -90,119 +71,127 @@ export default function MembersKPI() {
 
     return {
       total: (members || []).length,
-      activeToday: todayPunches.size,
-      expiring: expiringThisMonth,
-      pt: ptMembers,
+      active: activeCount,
+      hold: holdCount,
+      expiring: expiringCount,
       revenue: revenueThisMonth
     };
-  }, [members, attendance, allPayments]);
+  }, [members, allPayments]);
+
+  const cards = [
+    {
+      id: 'total',
+      title: 'TOTAL MEMBERS',
+      value: stats.total,
+      subtext: 'Registered members',
+      icon: Users,
+      iconBg: 'bg-orange-50 text-[#EA580C] border border-orange-100',
+      badge: 'All-time',
+      badgeColor: 'bg-stone-100 text-stone-600',
+      sparkline: 'M0,15 Q25,8 50,14 T100,5',
+      strokeColor: '#EA580C',
+    },
+    {
+      id: 'active',
+      title: 'ACTIVE MEMBERS',
+      value: stats.active,
+      subtext: 'Currently active',
+      icon: UserCheck,
+      iconBg: 'bg-emerald-50 text-emerald-600 border border-emerald-100',
+      badge: 'Valid',
+      badgeColor: 'bg-emerald-50 text-emerald-700',
+      sparkline: 'M0,16 Q30,10 60,12 T100,4',
+      strokeColor: '#10B981',
+    },
+    {
+      id: 'hold',
+      title: 'ON HOLD',
+      value: stats.hold,
+      subtext: 'Pending activation',
+      icon: PauseCircle,
+      iconBg: 'bg-amber-50 text-amber-600 border border-amber-100',
+      badge: 'Action Needed',
+      badgeColor: 'bg-amber-50 text-amber-700',
+      sparkline: 'M0,10 Q35,16 70,8 T100,12',
+      strokeColor: '#F59E0B',
+    },
+    {
+      id: 'expiring',
+      title: 'EXPIRING SOON',
+      value: stats.expiring,
+      subtext: 'Renewal required',
+      icon: AlertTriangle,
+      iconBg: 'bg-rose-50 text-rose-600 border border-rose-100',
+      badge: '≤ 15 Days',
+      badgeColor: 'bg-rose-50 text-rose-700',
+      sparkline: 'M0,8 Q30,14 65,10 T100,16',
+      strokeColor: '#EF4444',
+    },
+    {
+      id: 'revenue',
+      title: 'MONTHLY REVENUE',
+      value: `₹${stats.revenue.toLocaleString('en-IN')}`,
+      subtext: 'Actual payments collected',
+      icon: IndianRupee,
+      iconBg: 'bg-gradient-to-br from-orange-50 to-amber-50 text-[#EA580C] border border-orange-200',
+      badge: 'This Month',
+      badgeColor: 'bg-orange-50 text-[#EA580C]',
+      sparkline: 'M0,18 Q20,12 45,15 T75,8 T100,2',
+      strokeColor: '#F04400',
+    },
+  ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-      {/* 1. Total Members */}
-      <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#FED7AA] flex flex-col justify-between hover:border-[#EA580C] transition-all">
-        <div className="flex justify-between items-start">
-          <span className="text-xs font-semibold text-slate-500">Total Members</span>
-          <div className="w-8 h-8 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#EA580C]">
-            <Users size={14} strokeWidth={2.5} />
-          </div>
-        </div>
-        <div className="mt-2">
-          <h3 className="text-2xl font-black text-[#10233f]">{stats.total}</h3>
-          <p className="text-[10px] font-bold text-[#EA580C] mt-1 flex items-center gap-1">
-            <span>Roster registered</span>
-          </p>
-        </div>
-        <div className="mt-4 h-6 w-full opacity-60">
-          <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,15 Q20,5 40,15 T80,10 T100,5" fill="none" stroke="#EA580C" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </div>
-      </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 mb-6">
+      {cards.map((c, i) => {
+        const Icon = c.icon;
+        return (
+          <motion.div
+            key={c.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: i * 0.04 }}
+            className="group relative bg-white rounded-2xl p-4 sm:p-4.5 border border-stone-200 hover:border-orange-300 hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+          >
+            {/* Top Bar: Title & Icon */}
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-bold tracking-wider text-stone-500 uppercase block">
+                  {c.title}
+                </span>
+                <div className="flex items-baseline gap-1.5 mt-1.5">
+                  <h3 className="text-2xl font-black tracking-tight text-stone-900 group-hover:text-[#EA580C] transition-colors">
+                    {c.value}
+                  </h3>
+                </div>
+              </div>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${c.iconBg} shadow-xs`}>
+                <Icon className="w-4 h-4" />
+              </div>
+            </div>
 
-      {/* 2. Active Today */}
-      <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#FED7AA] flex flex-col justify-between hover:border-[#EA580C] transition-all">
-        <div className="flex justify-between items-start">
-          <span className="text-xs font-semibold text-slate-500">Active Today</span>
-          <div className="w-8 h-8 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#EA580C]">
-            <CheckCircle2 size={14} strokeWidth={2.5} />
-          </div>
-        </div>
-        <div className="mt-2">
-          <h3 className="text-2xl font-black text-[#10233f]">{stats.activeToday}</h3>
-          <p className="text-[10px] font-bold text-emerald-600 mt-1 flex items-center gap-1">
-            <span>Punched in today</span>
-          </p>
-        </div>
-        <div className="mt-4 h-6 w-full opacity-60">
-          <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,15 Q20,10 40,15 T80,5 T100,10" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </div>
-      </div>
+            {/* Bottom Row: Subtext & Mini Sparkline */}
+            <div className="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium text-stone-500 truncate">
+                {c.subtext}
+              </span>
 
-      {/* 3. Expiring This Month */}
-      <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#FED7AA] flex flex-col justify-between hover:border-[#EA580C] transition-all">
-        <div className="flex justify-between items-start">
-          <span className="text-xs font-semibold text-slate-500">Expiring This Month</span>
-          <div className="w-8 h-8 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#EA580C]">
-            <Clock size={14} strokeWidth={2.5} />
-          </div>
-        </div>
-        <div className="mt-2">
-          <h3 className="text-2xl font-black text-[#10233f]">{stats.expiring}</h3>
-          <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1">
-            <span>Requires renewal</span>
-          </p>
-        </div>
-        <div className="mt-4 h-6 w-full opacity-60">
-          <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,10 Q20,15 40,5 T80,15 T100,10" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </div>
-      </div>
-
-      {/* 4. PT Members */}
-      <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#FED7AA] flex flex-col justify-between hover:border-[#EA580C] transition-all">
-        <div className="flex justify-between items-start">
-          <span className="text-xs font-semibold text-slate-500">PT Members</span>
-          <div className="w-8 h-8 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#EA580C]">
-            <Activity size={14} strokeWidth={2.5} />
-          </div>
-        </div>
-        <div className="mt-2">
-          <h3 className="text-2xl font-black text-[#10233f]">{stats.pt}</h3>
-          <p className="text-[10px] font-bold text-[#EA580C] mt-1 flex items-center gap-1">
-            <span>Personal training</span>
-          </p>
-        </div>
-        <div className="mt-4 h-6 w-full opacity-60">
-          <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,15 Q20,5 40,15 T80,10 T100,5" fill="none" stroke="#EA580C" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </div>
-      </div>
-
-      {/* 5. Revenue This Month */}
-      <div className="bg-white rounded-2xl p-5 shadow-xs border border-[#FED7AA] flex flex-col justify-between hover:border-[#EA580C] transition-all">
-        <div className="flex justify-between items-start">
-          <span className="text-xs font-semibold text-slate-500">Revenue This Month</span>
-          <div className="w-8 h-8 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#EA580C]">
-            <IndianRupee size={14} strokeWidth={2.5} />
-          </div>
-        </div>
-        <div className="mt-2">
-          <h3 className="text-2xl font-black text-[#10233f]">₹{stats.revenue.toLocaleString('en-IN')}</h3>
-          <p className="text-[10px] font-bold text-emerald-600 mt-1 flex items-center gap-1">
-            <span>Actual payments collected this month</span>
-          </p>
-        </div>
-        <div className="mt-4 h-6 w-full opacity-60">
-          <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,15 Q20,10 40,15 T80,5 T100,10" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </div>
-      </div>
+              {/* Sparkline */}
+              <div className="w-16 h-5 opacity-70 group-hover:opacity-100 transition-opacity shrink-0">
+                <svg viewBox="0 0 100 20" className="w-full h-full overflow-visible">
+                  <path
+                    d={c.sparkline}
+                    fill="none"
+                    stroke={c.strokeColor}
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+            </div>
+          </motion.div>
+        );
+      })}
     </div>
   );
 }

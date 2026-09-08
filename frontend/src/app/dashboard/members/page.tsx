@@ -68,6 +68,7 @@ import RenewalCenterModal from "./components/RenewalCenterModal";
 import RenewalWizardModal from "./components/RenewalWizardModal";
 import BulkImportModal from "./components/BulkImportModal";
 import CreateNewBillModal from "./components/CreateNewBillModal";
+import MemberDrawer from "./components/MemberDrawer";
 import SmartPhotoCapture from "../components/SmartPhotoCapture";
 import { db as fDb, isFirebaseReady } from "@/lib/firebase";
 import API from "@/services/api";
@@ -874,31 +875,90 @@ export default function MembersPage() {
     return days >= 0 && days <= 7;
   });
 
+  const headerStats = useMemo(() => {
+    let active = 0;
+    let hold = 0;
+    let expiring = 0;
+    let expired = 0;
+
+    (members || []).forEach((m: any) => {
+      const st = String(m.status || m.membershipStatus || '').toLowerCase();
+      const isHold = st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
+
+      if (isHold) {
+        hold++;
+      } else {
+        const days = m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0;
+        if (days <= 0) expired++;
+        else if (days <= 15) {
+          expiring++;
+          active++;
+        } else {
+          active++;
+        }
+      }
+    });
+
+    return { total: (members || []).length, active, hold, expiring, expired };
+  }, [members]);
+
   return (
-    <div className="space-y-6 pb-12 w-full text-slate-800 text-left">
-      {/* Clean Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+    <div className="space-y-6 pb-12 w-full text-slate-800 text-left font-sans">
+      {/* ── 1. POLISHED WARRIOR HEADER ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight font-display">
-            Members
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Manage your gym members, track attendance, and monitor renewals.
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
+              Members
+            </h1>
+            <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-orange-100 text-[#EA580C] border border-orange-200">
+              The Warrior Gym
+            </span>
+          </div>
+          <p className="text-xs text-stone-500 mt-1">
+            Manage your gym members, memberships, attendance and payments.
           </p>
+
+          {/* Small live statistics strip */}
+          <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-stone-100 text-stone-700 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />
+              Total: <strong>{headerStats.total}</strong>
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Active: <strong>{headerStats.active}</strong>
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              On Hold: <strong>{headerStats.hold}</strong>
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-50 text-rose-800 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+              Expiring: <strong>{headerStats.expiring}</strong>
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-stone-100 text-stone-600 font-medium">
+              Expired: <strong>{headerStats.expired}</strong>
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2.5">
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0">
           <button
-            className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+            type="button"
+            className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
             onClick={() => setShowBulkImportModal(true)}
           >
-            <Upload size={15} className="text-[#EA580C]" />
+            <Upload size={14} className="text-[#EA580C]" />
             <span>Import Members</span>
           </button>
           <button
-            className="flex items-center gap-2 px-5 py-2.5 bg-[#0052FF] hover:bg-orange-600 text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer border-none active:scale-95"
+            type="button"
+            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#F04400] hover:brightness-105 active:scale-98 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-orange-500/20 cursor-pointer border-none"
             onClick={() => setShowAddModal(true)}
           >
-            <Plus size={16} /> Add Member
+            <Plus size={15} /> <span>Add Member</span>
           </button>
         </div>
       </div>
@@ -906,7 +966,7 @@ export default function MembersPage() {
       {/* KPI Row */}
       <MembersKPI />
 
-      {/* Main Table */}
+      {/* Main Hybrid Table */}
       <MembersTable
         members={members}
         search={search}
@@ -915,6 +975,7 @@ export default function MembersPage() {
         setStatusFilter={setStatusFilter}
         selectedMemberId={null}
         onSelectMember={(m) => router.push(`/dashboard/members/${encodeURIComponent(m.id)}`)}
+        onQuickPreview={(m) => setActiveProfile(m)}
         onEdit={(m) => setEditingMember(m)}
         onRenew={(m) => setRenewWizardMember(m)}
         onCreateBill={(m) => setCreateBillTargetMember(m)}
@@ -929,6 +990,20 @@ export default function MembersPage() {
         }}
         onDelete={(m) => {
           setDeleteMemberTarget(m);
+        }}
+      />
+
+      {/* Quick-Preview Profile Drawer */}
+      <MemberDrawer
+        member={activeProfile}
+        onClose={() => setActiveProfile(null)}
+        onRenew={(m) => {
+          setActiveProfile(null);
+          setRenewWizardMember(m);
+        }}
+        onCreateBill={(m) => {
+          setActiveProfile(null);
+          setCreateBillTargetMember(m);
         }}
       />
 

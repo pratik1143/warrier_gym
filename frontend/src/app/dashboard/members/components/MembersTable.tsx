@@ -1,57 +1,33 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback, memo, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import {
-  Search, Filter, MoreHorizontal, Phone, MessageSquare, MapPin, Edit,
-  RefreshCw, Snowflake, Trash2, Eye, Fingerprint, ChevronLeft, ChevronRight,
-  X, AlertCircle, CheckCircle2, User, Sliders, Calendar, RotateCcw, Receipt
+import React, { useState, useMemo, useCallback, memo } from 'react';
+import { 
+  Search, Filter, SlidersHorizontal, ArrowUpDown, LayoutGrid, List, 
+  MoreHorizontal, Phone, MessageSquare, Edit, RotateCcw, Snowflake, 
+  Trash2, Eye, CreditCard, ChevronLeft, ChevronRight, Check, X, 
+  AlertTriangle, CheckCircle2, UserCheck, PauseCircle, Clock, 
+  ExternalLink, Sparkles, User, Dumbbell, Calendar, ChevronDown
 } from 'lucide-react';
-import { membershipEngine } from '@/lib/engines/membershipEngine';
-import { paymentEngine } from '@/lib/engines/paymentEngine';
-import { calculateRealAttendance, formatDaysLeft, calculateAge, formatDate } from '@/lib/utils';
-import { useGymStore } from '@/store';
-import toast from '@/lib/toast';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { membershipEngine } from '@/lib/engines/membershipEngine';
+import { calculateRealAttendance, formatDate } from '@/lib/utils';
 import MemberAvatar from '../../components/MemberAvatar';
+import toast from '@/lib/toast';
 
 export interface FilterState {
   gender: string;
-  memberType: string;
-  packagePlan: string;
+  plan: string;
   trainer: string;
-  branch: string;
-  membershipStatus: string;
   paymentStatus: string;
-  joinedFrom: string;
-  joinedTo: string;
   expiryStatus: string;
 }
 
-const getDynamicStatus = (m: any) => {
-  const st = String(m.status || m.membershipStatus || '').trim().toLowerCase();
-  if (st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION') return 'hold';
-  if (st === 'inactive') return 'inactive';
-  if (st === 'blocked' || st === 'blacklisted') return 'blocked';
-  if (st === 'frozen') return 'frozen';
-  if (!m.expiryDate) return 'hold';
-  const days = membershipEngine.calculateDaysLeft(m.expiryDate);
-  if (days <= 0) return 'expired';
-  if (days <= 7) return 'urgent';
-  if (days <= 30) return 'expiring_soon';
-  return 'active';
-};
-
 const initialFilterState: FilterState = {
   gender: 'all',
-  memberType: 'all',
-  packagePlan: 'all',
+  plan: 'all',
   trainer: 'all',
-  branch: 'all',
-  membershipStatus: 'all',
   paymentStatus: 'all',
-  joinedFrom: '',
-  joinedTo: '',
   expiryStatus: 'all',
 };
 
@@ -69,364 +45,50 @@ interface MembersTableProps {
   onDelete?: (m: any) => void;
   onMapBiometric?: (m: any) => void;
   onCreateBill?: (m: any) => void;
+  onQuickPreview?: (m: any) => void;
 }
 
-// Memoized individual row component for smooth 60fps rendering
-const MemberTableRow = memo(function MemberTableRow({
-  member,
-  isSelected,
-  onRowClick,
-  onOpenActions,
+export default function MembersTable({
+  members,
+  search,
+  setSearch,
+  statusFilter,
+  setStatusFilter,
+  onSelectMember,
+  selectedMemberId,
+  onEdit,
+  onRenew,
+  onFreeze,
+  onDelete,
   onCreateBill,
-}: {
-  member: any;
-  isSelected: boolean;
-  onRowClick: () => void;
-  onOpenActions: (m: any, rect: DOMRect) => void;
-  onCreateBill?: (m: any) => void;
-}) {
-  const isHold = String(member.status || member.membershipStatus || '').toLowerCase() === 'hold' || member.activationStatus === 'PENDING_ACTIVATION';
-
-  const attScore = isHold ? 0 : calculateRealAttendance(member.joinDate, member.attendanceCount || 0);
-  const hasPunched = !isHold && (member.attendanceCount && member.attendanceCount > 0);
-  
-  const attColor = isHold || !hasPunched 
-    ? '#cbd5e1'
-    : attScore > 75 
-      ? '#10b981'
-      : attScore > 40 
-        ? '#f59e0b'
-        : '#ef4444';
-
-  const rawAmountPaid = Number(member.amountPaid !== undefined ? member.amountPaid : (member.paid ?? member.totalPaid ?? 0));
-  const rawBalance = Number(member.balanceAmount !== undefined ? member.balanceAmount : (member.balance ?? member.outstandingBalance ?? member.pendingBalance ?? 0));
-  const rawTotalBilled = Number(member.totalBilled !== undefined ? member.totalBilled : (member.amount ?? member.price ?? (rawAmountPaid + rawBalance)));
-
-  let amountPaidVal = rawAmountPaid;
-  let balanceVal = rawBalance;
-  let payStatus: 'NOT BILLED' | 'UNPAID' | 'PARTIAL' | 'PAID';
-
-  if (isHold || (!rawTotalBilled && rawAmountPaid === 0 && rawBalance === 0)) {
-    payStatus = 'NOT BILLED';
-    amountPaidVal = 0;
-    balanceVal = 0;
-  } else if (rawAmountPaid === 0 && (rawTotalBilled > 0 || rawBalance > 0)) {
-    payStatus = 'UNPAID';
-  } else if (rawBalance > 0 && rawAmountPaid > 0) {
-    payStatus = 'PARTIAL';
-  } else if (rawAmountPaid > 0 && rawBalance <= 0) {
-    payStatus = 'PAID';
-  } else {
-    payStatus = 'NOT BILLED';
-    amountPaidVal = 0;
-    balanceVal = 0;
-  }
-
-  const payBadgeStyle = payStatus === 'PAID'
-    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-    : payStatus === 'PARTIAL'
-      ? 'bg-amber-50 text-amber-700 border-amber-200'
-      : payStatus === 'UNPAID'
-        ? 'bg-rose-50 text-rose-700 border-rose-200'
-        : 'bg-slate-100 text-slate-600 border-slate-200';
-
-  const displayClientId = member.clientId ? `TWG-${member.clientId}` : (member.memberId || member.id);
-
-  // Gender resolution (Strict - No guessing or random assigning)
-  const rawGender = String(member.gender || member.sex || '').trim().toLowerCase();
-  const isMale = rawGender === 'male' || rawGender === 'm';
-  const isFemale = rawGender === 'female' || rawGender === 'f';
-  const isOther = rawGender === 'other';
-
-  const phoneDisplay = member.phone || member.mobile || member.phoneNumber || null;
-
-  return (
-    <tr 
-      onClick={onRowClick}
-      className={`hover:bg-slate-50/80 transition-colors cursor-pointer border-b border-slate-100 ${
-        isSelected ? 'bg-indigo-50/40' : ''
-      }`}
-    >
-      {/* 1. Member Profile */}
-      <td className="px-4 py-3.5 border-b border-slate-100">
-        <div className="flex items-center gap-3">
-          <div className="relative shrink-0">
-            <MemberAvatar member={member} className="w-10 h-10 rounded-full border border-slate-200 shadow-2xs object-cover" size={40} />
-            {member.biometricId && (
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[8px] font-black shadow-xs" title={`Biometric ID Linked: #${member.biometricId}`}>
-                ✓
-              </span>
-            )}
-          </div>
-          <div>
-            <div className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
-              <span>{member.name}</span>
-              {member.isPt && (
-                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[9px] font-black rounded uppercase border border-amber-300">
-                  PT
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
-              <span className="font-bold text-slate-700">#{displayClientId}</span>
-              {member.biometricId && (
-                <span className="px-1 py-0.2 bg-orange-50 text-[#C2410C] font-mono text-[9px] font-black rounded border border-orange-200">
-                  BIO: {member.biometricId}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </td>
-
-      {/* 2. Dedicated Phone Number */}
-      <td className="px-4 py-3.5 font-mono text-xs border-b border-slate-100">
-        {phoneDisplay ? (
-          <div className="flex items-center gap-1.5 font-bold text-slate-800">
-            <Phone size={12} className="text-slate-400 shrink-0" />
-            <span>{phoneDisplay}</span>
-          </div>
-        ) : (
-          <span className="text-slate-400 font-mono font-bold text-xs">—</span>
-        )}
-      </td>
-
-      {/* 3. Dedicated Gender */}
-      <td className="px-4 py-3.5 text-center border-b border-slate-100">
-        {isMale ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#FFF7ED] text-[#C2410C] border border-orange-200/60">
-            <span>♂</span> Male
-          </span>
-        ) : isFemale ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-pink-50 text-pink-700 border border-pink-200/70">
-            <span>♀</span> Female
-          </span>
-        ) : isOther ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200/70">
-            Other
-          </span>
-        ) : (
-          <span className="text-slate-400 font-mono font-bold text-xs">—</span>
-        )}
-      </td>
-
-      {/* 4. Membership Plan & Dates */}
-      <td className="px-4 py-3.5 border-b border-slate-100">
-        {isHold ? (
-          <div>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
-              HOLD (NO PLAN)
-            </span>
-            <div className="text-[10px] text-slate-400 font-semibold mt-0.5">Pending Activation</div>
-          </div>
-        ) : (
-          <>
-            <div className="font-bold text-slate-800 text-xs">{member.packageName || member.plan || 'Standard'}</div>
-            <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex flex-col gap-0.5">
-              {member.startDate && <span>Start: {formatDate(member.startDate)}</span>}
-              <span>Exp: {formatDate(member.expiryDate)}</span>
-            </div>
-          </>
-        )}
-      </td>
-
-      {/* 5. Assigned Trainer */}
-      <td className="px-4 py-3.5 text-xs font-bold text-slate-700 border-b border-slate-100">
-        {member.trainer && member.trainer !== 'Unassigned' ? (
-          <span className="inline-flex items-center gap-1 text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-            <User size={12} className="text-indigo-600" />
-            <span>{member.trainer}</span>
-          </span>
-        ) : (
-          <span className="text-slate-400 italic">Unassigned</span>
-        )}
-      </td>
-
-      {/* 6. Attendance Circular Progress */}
-      <td className="px-4 py-3.5 text-center border-b border-slate-100">
-        <div className="inline-flex items-center justify-center relative">
-          <svg className="w-9 h-9">
-            <circle cx="18" cy="18" r="14" stroke="#f1f5f9" strokeWidth="3" fill="none" />
-            <circle 
-              cx="18" cy="18" r="14" 
-              stroke={attColor} 
-              strokeWidth="3" 
-              fill="none" 
-              strokeDasharray="88" 
-              strokeDashoffset={88 - (88 * Math.min(100, attScore)) / 100}
-              strokeLinecap="round"
-              className="transition-all duration-500 -rotate-90 origin-center"
-            />
-          </svg>
-          <span className="absolute text-[10px] font-black font-mono text-slate-700">
-            {attScore}%
-          </span>
-        </div>
-      </td>
-
-      {/* 7. Days Left */}
-      <td className="px-4 py-3.5 text-center font-mono text-xs font-bold border-b border-slate-100">
-        {isHold ? (
-          <span className="text-amber-600 font-black">HOLD</span>
-        ) : member.daysLeft < 0 ? (
-          <span className="text-rose-500 font-black">Expired {Math.abs(member.daysLeft)}d ago</span>
-        ) : member.daysLeft === 0 ? (
-          <span className="text-orange-500 font-black">Expires Today</span>
-        ) : (
-          <span className="text-slate-700">{member.daysLeft} Days</span>
-        )}
-      </td>
-
-      {/* 8. Payment / Balance */}
-      <td className="px-4 py-3.5 border-b border-slate-100">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase tracking-wider border ${payBadgeStyle}`}>
-              {payStatus}
-            </span>
-            <span className="text-xs font-bold text-slate-900 font-mono">
-              ₹{amountPaidVal.toLocaleString('en-IN')}
-            </span>
-          </div>
-          {balanceVal > 0 && (
-            <div className="text-[10px] font-bold text-rose-600 font-mono">
-              Due: ₹{balanceVal.toLocaleString('en-IN')}
-            </div>
-          )}
-        </div>
-      </td>
-
-      {/* 9. Actions */}
-      <td className="px-4 py-3.5 text-right border-b border-slate-100" onClick={e => e.stopPropagation()}>
-        <div className="inline-flex items-center gap-1.5 justify-end">
-          {isHold && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (onCreateBill) onCreateBill(member);
-              }}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white text-xs font-black transition-all border-none cursor-pointer shadow-xs active:scale-95"
-              title="Create Bill & Activate Member"
-            >
-              <span>Create Bill</span>
-            </button>
-          )}
-          <button 
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              const rect = e.currentTarget.getBoundingClientRect();
-              onOpenActions(member, rect);
-            }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#FFF7ED] hover:text-[#EA580C] hover:border-[#FED7AA] text-slate-700 text-xs font-black uppercase tracking-wider transition-all border border-slate-200 cursor-pointer shadow-2xs active:scale-95"
-            title="Member Actions"
-          >
-            <MoreHorizontal size={14} />
-            <span>Actions</span>
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-});
-
-export default function MembersTable({ 
-  members, search, setSearch, statusFilter, setStatusFilter, onSelectMember, selectedMemberId,
-  onEdit, onRenew, onFreeze, onDelete, onMapBiometric, onCreateBill
+  onQuickPreview,
 }: MembersTableProps) {
   const router = useRouter();
 
-  // Local search state with 250ms debounce
-  const [localSearch, setLocalSearch] = useState(search);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  // View mode: 'list' (compact hybrid rows) | 'grid' (cards)
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
-  // Floating Actions Dropdown Menu state
-  const [actionsMenu, setActionsMenu] = useState<{
-    member: any;
-    rect: DOMRect;
-  } | null>(null);
-
-  // Close floating actions menu on outside click or scroll
-  useEffect(() => {
-    if (!actionsMenu) return;
-    const handleClose = (e: MouseEvent | Event) => {
-      const target = e.target as HTMLElement;
-      if (target?.closest('.actions-portal-menu')) return;
-      setActionsMenu(null);
-    };
-    window.addEventListener('scroll', handleClose, true);
-    window.addEventListener('resize', handleClose);
-    window.addEventListener('mousedown', handleClose);
-    return () => {
-      window.removeEventListener('scroll', handleClose, true);
-      window.removeEventListener('resize', handleClose);
-      window.removeEventListener('mousedown', handleClose);
-    };
-  }, [actionsMenu]);
-
-  // Advanced 9-Field Filter State
+  // Filters state
+  const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<FilterState>(initialFilterState);
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
-  const filterPopoverRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setLocalSearch(search);
-  }, [search]);
+  // Sorting
+  const [sortField, setSortField] = useState<'name' | 'joinDate' | 'daysLeft' | 'amount'>('joinDate');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (localSearch !== search) {
-        setSearch(localSearch);
-        setPage(1);
-      }
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [localSearch, search, setSearch]);
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
 
-  // Reset page when filter or tab changes
-  useEffect(() => {
-    setPage(1);
-  }, [statusFilter, filters]);
+  // Bulk Selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Close popover when clicking outside
-  useEffect(() => {
-    const handleOutside = (e: MouseEvent) => {
-      if (filterPopoverRef.current && !filterPopoverRef.current.contains(e.target as Node)) {
-        setShowMoreFilters(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, []);
+  // Active Dropdown Menu target
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
-  // Dynamic Options Extracted from Real Members Data
-  const availableBranches = useMemo(() => {
-    const set = new Set<string>();
-    members.forEach(m => { if (m.branch) set.add(m.branch); });
-    const list = Array.from(set);
-    return list.length > 0 ? list : ['Mohali, Punjab', 'Chandigarh', 'Panchkula'];
-  }, [members]);
-
-  const availableTrainers = useMemo(() => {
-    const set = new Set<string>();
-    members.forEach(m => {
-      const tr = m.trainer || m.trainerName;
-      if (tr && tr !== 'Unassigned') set.add(tr);
-    });
-    return Array.from(set);
-  }, [members]);
-
-  const availablePackages = useMemo(() => {
-    const set = new Set<string>();
-    members.forEach(m => { if (m.plan) set.add(m.plan); });
-    return Array.from(set);
-  }, [members]);
-
-  // Real tab counts calculated from actual member data
+  // Derive counts for Status Tabs
   const counts = useMemo(() => {
-    let all = members.length;
+    let all = 0;
     let active = 0;
     let hold = 0;
     let expired = 0;
@@ -434,815 +96,901 @@ export default function MembersTable({
     let frozen = 0;
     let pt = 0;
 
-    members.forEach(m => {
-      const ds = getDynamicStatus(m);
-      if (ds === 'hold') hold++;
-      else if (ds === 'inactive') inactive++;
-      else if (ds === 'active' || ds === 'expiring_soon' || ds === 'urgent') active++;
-      else if (ds === 'expired') expired++;
-      else if (ds === 'frozen') frozen++;
+    (members || []).forEach((m: any) => {
+      all++;
+      const st = String(m.status || m.membershipStatus || '').toLowerCase();
+      const isHold = st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
 
-      const isPtMember = m.isPt === true || (m.ptHistory && m.ptHistory.length > 0) || (m.plan && String(m.plan).toLowerCase().includes('pt')) || (m.trainer && m.trainer !== 'Unassigned');
-      if (isPtMember) pt++;
+      if (isHold) {
+        hold++;
+      } else if (st === 'frozen') {
+        frozen++;
+      } else if (st === 'inactive') {
+        inactive++;
+      } else {
+        const days = m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0;
+        if (days <= 0) {
+          expired++;
+        } else {
+          active++;
+        }
+      }
+
+      const hasTrainer = m.trainer && String(m.trainer).trim() !== '' && !String(m.trainer).toLowerCase().includes('unassigned');
+      const isPTPlan = m.plan && (m.plan.includes('PT') || m.plan.includes('Personal Training'));
+      if (hasTrainer || isPTPlan || m.isPT) {
+        pt++;
+      }
     });
 
     return { all, active, hold, expired, inactive, frozen, pt };
   }, [members]);
 
-  // Combined Search & 9-Field Filtering Logic
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const digitsOnly = q.replace(/\D/g, '');
+  // Filtered & Sorted Members
+  const filteredMembers = useMemo(() => {
+    let list = members || [];
 
-    return members.filter(m => {
-      // 1. Text Search Filter
-      if (q) {
-        const nameMatch = (m.name || m.fullName || '').toLowerCase().includes(q);
-        const idMatch = (
-          (m.memberId || '').toLowerCase().includes(q) ||
-          (m.id || '').toLowerCase().includes(q) ||
-          (m.customId || '').toLowerCase().includes(q) ||
-          (m.clientId || '').toLowerCase().includes(q) ||
-          (m.biometricId || '').toLowerCase().includes(q) ||
-          (m.biometricUserId || '').toLowerCase().includes(q) ||
-          (m.deviceUserId || '').toLowerCase().includes(q)
-        );
-        const addressStr = `${m.address || ''} ${m.city || ''} ${m.locality || ''} ${m.location || ''} ${m.branch || ''}`.toLowerCase();
-        const addressMatch = addressStr.includes(q);
+    // 1. Status Tab Filter
+    if (statusFilter !== 'all') {
+      list = list.filter((m: any) => {
+        const st = String(m.status || m.membershipStatus || '').toLowerCase();
+        const isHold = st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
 
-        const computedAge = m.age ?? calculateAge(m.dob || m.dateOfBirth);
-        let ageMatch = false;
-        if (computedAge !== null && computedAge !== undefined) {
-          const ageStr = String(computedAge);
-          if (q === ageStr || q.startsWith(`age ${ageStr}`) || q.includes(`${ageStr} yr`) || q.includes(`${ageStr} year`)) {
-            ageMatch = true;
-          } else if (digitsOnly.length > 0 && digitsOnly.length <= 3 && digitsOnly === ageStr) {
-            ageMatch = true;
-          }
+        if (statusFilter === 'hold') return isHold;
+        if (statusFilter === 'frozen') return st === 'frozen';
+        if (statusFilter === 'inactive') return st === 'inactive';
+        if (statusFilter === 'pt') {
+          const hasTrainer = m.trainer && String(m.trainer).trim() !== '' && !String(m.trainer).toLowerCase().includes('unassigned');
+          return hasTrainer || (m.plan && (m.plan.includes('PT') || m.plan.includes('Personal Training'))) || m.isPT;
         }
 
-        let phoneMatch = false;
-        if (digitsOnly.length >= 2) {
-          const rawPhone = (m.phone || m.mobile || m.whatsapp || '').replace(/\D/g, '');
-          phoneMatch = rawPhone.includes(digitsOnly);
-        }
-        const emailMatch = (m.email || '').toLowerCase().includes(q);
-
-        const ms = nameMatch || idMatch || addressMatch || ageMatch || phoneMatch || emailMatch;
-        if (!ms) return false;
-      }
-
-      // 2. Status Tab Filter (from top tabs)
-      const dynStatus = getDynamicStatus(m);
-      if (statusFilter === 'hold' && dynStatus !== 'hold') return false;
-      if (statusFilter === 'inactive' && dynStatus !== 'inactive') return false;
-      if (statusFilter === 'active' && !(dynStatus === 'active' || dynStatus === 'expiring_soon' || dynStatus === 'urgent')) return false;
-      if (statusFilter === 'expired' && dynStatus !== 'expired') return false;
-      if (statusFilter === 'frozen' && m.status !== 'frozen') return false;
-      if (statusFilter === 'pt') {
-        const isPtMember = m.isPt === true || (m.ptHistory && m.ptHistory.length > 0) || (m.plan && String(m.plan).toLowerCase().includes('pt')) || (m.trainer && m.trainer !== 'Unassigned');
-        if (!isPtMember) return false;
-      }
-
-      // 3. Detailed Filters System
-
-      // A. Gender Filter
-      if (filters.gender !== 'all') {
-        if (filters.gender === 'Not Specified') {
-          if (m.gender && m.gender !== 'Not Specified') return false;
-        } else {
-          if (!m.gender || m.gender.toLowerCase() !== filters.gender.toLowerCase()) return false;
-        }
-      }
-
-      // B. Member Type Filter
-      const hasPt = m.isPt === true || (m.ptHistory && m.ptHistory.length > 0) || (m.plan && String(m.plan).toLowerCase().includes('pt'));
-      const hasGym = !hasPt || (m.plan && !String(m.plan).toLowerCase().includes('pt'));
-      if (filters.memberType === 'gym' && (hasPt && !hasGym)) return false;
-      if (filters.memberType === 'pt' && !hasPt) return false;
-      if (filters.memberType === 'gym_pt' && (!hasPt || !hasGym)) return false;
-
-      // C. Package Plan Filter
-      if (filters.packagePlan !== 'all') {
-        if ((m.plan || '').toLowerCase() !== filters.packagePlan.toLowerCase()) return false;
-      }
-
-      // D. Trainer Filter
-      if (filters.trainer !== 'all') {
-        if (filters.trainer === 'unassigned') {
-          if (m.trainer && m.trainer !== 'Unassigned' && m.trainerId) return false;
-        } else {
-          const trName = (m.trainer || m.trainerName || '').toLowerCase();
-          const trId = (m.trainerId || '').toLowerCase();
-          const target = filters.trainer.toLowerCase();
-          if (trName !== target && trId !== target) return false;
-        }
-      }
-
-      // E. Branch Filter
-      if (filters.branch !== 'all') {
-        if ((m.branch || 'Mohali, Punjab').toLowerCase() !== filters.branch.toLowerCase()) return false;
-      }
-
-      // F. Membership Status Filter
-      if (filters.membershipStatus !== 'all') {
-        const days = m.daysLeft !== undefined ? m.daysLeft : membershipEngine.calculateDaysLeft(m.expiryDate);
-        if (filters.membershipStatus === 'active' && (days < 0 || m.status === 'frozen')) return false;
-        if (filters.membershipStatus === 'expired' && days >= 0) return false;
-        if (filters.membershipStatus === 'frozen' && m.status !== 'frozen') return false;
-        if (filters.membershipStatus === 'expiring_soon' && (days < 0 || days > 7)) return false;
-      }
-
-      // G. Payment Status Filter
-      if (filters.paymentStatus !== 'all') {
-        const balance = Number(m.balanceAmount !== undefined ? m.balanceAmount : (m.balance ?? m.outstandingBalance ?? 0));
-        const paid = Number(m.amountPaid !== undefined ? m.amountPaid : (m.paid ?? m.totalPaid ?? 0));
-        const isPaid = (balance === 0 && (paid > 0 || m.paymentStatus === 'paid')) || m.paymentStatus === 'paid';
-        const isDue = balance > 0 || m.paymentStatus === 'partial' || m.paymentStatus === 'pending';
-
-        if (filters.paymentStatus === 'paid' && !isPaid) return false;
-        if ((filters.paymentStatus === 'due' || filters.paymentStatus === 'partial') && !isDue) return false;
-        if (filters.paymentStatus === 'pending' && paid > 0) return false;
-      }
-
-      // H. Date Joined Range Filter
-      const mJoin = m.joinDate || m.createdAt;
-      if (mJoin) {
-        const joinStr = typeof mJoin === 'string' ? (mJoin.includes('T') ? mJoin.split('T')[0] : mJoin) : '';
-        if (filters.joinedFrom && joinStr && joinStr < filters.joinedFrom) return false;
-        if (filters.joinedTo && joinStr && joinStr > filters.joinedTo) return false;
-      }
-
-      // I. Expiry Status Filter
-      if (filters.expiryStatus !== 'all') {
-        const days = m.daysLeft !== undefined ? m.daysLeft : membershipEngine.calculateDaysLeft(m.expiryDate);
-        if (filters.expiryStatus === 'expired' && days >= 0) return false;
-        if (filters.expiryStatus === 'today' && days !== 0) return false;
-        if (filters.expiryStatus === 'in_7_days' && (days < 0 || days > 7)) return false;
-        if (filters.expiryStatus === 'in_30_days' && (days < 0 || days > 30)) return false;
-        if (filters.expiryStatus === 'in_60_days' && (days < 0 || days > 60)) return false;
-        if (filters.expiryStatus === 'active_over_60' && days <= 60) return false;
-      }
-
-      return true;
-    });
-  }, [members, search, statusFilter, filters]);
-
-  // Active filter count
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (filters.gender !== 'all') count++;
-    if (filters.membershipStatus !== 'all') count++;
-    if (filters.paymentStatus !== 'all') count++;
-    if (filters.joinedFrom || filters.joinedTo) count++;
-    if (filters.expiryStatus !== 'all') count++;
-    return count;
-  }, [filters]);
-
-  const dateRangeError = useMemo(() => {
-    if (filters.joinedFrom && filters.joinedTo && filters.joinedTo < filters.joinedFrom) {
-      return 'Joined To date cannot be before Joined From date';
+        if (isHold) return false;
+        const days = m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0;
+        if (statusFilter === 'expired') return days <= 0;
+        if (statusFilter === 'active') return days > 0;
+        return true;
+      });
     }
-    return '';
-  }, [filters.joinedFrom, filters.joinedTo]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
+    // 2. Search Filter (Name, Phone, Biometric ID, Client ID, Email)
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      list = list.filter((m: any) => {
+        const name = String(m.name || '').toLowerCase();
+        const phone = String(m.phone || '').replace(/\D/g, '');
+        const bioId = String(m.biometricId || m.deviceUserId || '').toLowerCase();
+        const clientId = String(m.clientId || m.memberId || '').toLowerCase();
+        const email = String(m.email || '').toLowerCase();
+        return name.includes(q) || phone.includes(q) || bioId.includes(q) || clientId.includes(q) || email.includes(q);
+      });
+    }
+
+    // 3. Extended Drawer Filters
+    if (filters.gender !== 'all') {
+      list = list.filter((m: any) => String(m.gender || '').toLowerCase() === filters.gender);
+    }
+    if (filters.plan !== 'all') {
+      list = list.filter((m: any) => String(m.plan || '').toLowerCase().includes(filters.plan.toLowerCase()));
+    }
+    if (filters.paymentStatus !== 'all') {
+      list = list.filter((m: any) => {
+        const isHold = String(m.status || m.membershipStatus || '').toLowerCase() === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
+        const paid = Number(m.amountPaid ?? m.paid ?? 0);
+        const balance = Number(m.balanceAmount ?? m.balance ?? 0);
+        if (filters.paymentStatus === 'paid') return !isHold && paid > 0 && balance <= 0;
+        if (filters.paymentStatus === 'partial') return !isHold && paid > 0 && balance > 0;
+        if (filters.paymentStatus === 'pending') return isHold || (paid === 0 && balance > 0);
+        return true;
+      });
+    }
+
+    // 4. Sorting
+    return [...list].sort((a: any, b: any) => {
+      let valA: any = a[sortField];
+      let valB: any = b[sortField];
+
+      if (sortField === 'name') {
+        valA = String(a.name || '').toLowerCase();
+        valB = String(b.name || '').toLowerCase();
+        return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'daysLeft') {
+        valA = a.expiryDate ? membershipEngine.calculateDaysLeft(a.expiryDate) : -999;
+        valB = b.expiryDate ? membershipEngine.calculateDaysLeft(b.expiryDate) : -999;
+      }
+      if (sortField === 'amount') {
+        valA = Number(a.amountPaid ?? a.paid ?? 0);
+        valB = Number(b.amountPaid ?? b.paid ?? 0);
+      }
+      if (sortField === 'joinDate') {
+        valA = new Date(a.startDate || a.joinDate || 0).getTime();
+        valB = new Date(b.startDate || b.joinDate || 0).getTime();
+      }
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [members, statusFilter, search, filters, sortField, sortOrder]);
+
+  // Paginated Slice
+  const totalPages = Math.ceil(filteredMembers.length / pageSize) || 1;
   const paginatedMembers = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, currentPage, pageSize]);
+    return filteredMembers.slice(start, start + pageSize);
+  }, [filteredMembers, currentPage, pageSize]);
+
+  // Checkbox handlers
+  const handleSelectAll = () => {
+    if (selectedIds.size === paginatedMembers.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(paginatedMembers.map((m: any) => m.id)));
+    }
+  };
+
+  const handleToggleSelect = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const activeFilterCount = Object.values(filters).filter(v => v !== 'all').length;
+
+  const STATUS_TABS = [
+    { id: 'all', label: 'All Members', count: counts.all, dot: 'bg-stone-400' },
+    { id: 'active', label: 'Active', count: counts.active, dot: 'bg-emerald-500' },
+    { id: 'hold', label: 'Hold', count: counts.hold, dot: 'bg-amber-500' },
+    { id: 'expired', label: 'Expired', count: counts.expired, dot: 'bg-rose-500' },
+    { id: 'inactive', label: 'Inactive', count: counts.inactive, dot: 'bg-stone-400' },
+    { id: 'frozen', label: 'Frozen', count: counts.frozen, dot: 'bg-sky-500' },
+    { id: 'pt', label: 'PT Members', count: counts.pt, dot: 'bg-indigo-500' },
+  ];
 
   return (
-    <div className="bg-white rounded-2xl shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-slate-100 overflow-hidden relative">
-      
-      {/* Top Filter Bar */}
-      <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
-        <div className="relative flex-1 min-w-[240px]">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            value={localSearch} 
-            onChange={e => setLocalSearch(e.target.value)}
-            placeholder="Search by name, phone or member ID..." 
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 transition-colors" 
-          />
-        </div>
-
-        <div className="flex items-center gap-2 relative" ref={filterPopoverRef}>
-          {/* More Filters Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setShowMoreFilters(!showMoreFilters)}
-            className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeFilterCount > 0 || showMoreFilters
-                ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-sm'
-                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            <Filter size={14} className={activeFilterCount > 0 ? 'text-indigo-600' : 'text-slate-500'} />
-            <span>More Filters</span>
-            {activeFilterCount > 0 && (
-              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-black flex items-center justify-center">
-                {activeFilterCount}
-              </span>
+    <div className="space-y-4">
+      {/* ══════════════════════════════════════════════════════════════════
+          1. SMART SEARCH, FILTERS & CONTROL BAR
+         ══════════════════════════════════════════════════════════════════ */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-stone-200 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row items-center gap-2.5 justify-between">
+          {/* Large Search Input */}
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              placeholder="Search by name, phone, biometric ID, member ID, email..."
+              className="w-full pl-10 pr-10 py-2.5 text-sm bg-stone-50/70 hover:bg-stone-50 rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:bg-white focus:outline-hidden transition-all text-stone-900"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             )}
-          </button>
-
-          {/* ── MORE FILTERS POPOVER / MODAL ────────────────────────────────────── */}
-          {showMoreFilters && (
-            <div className="absolute right-0 top-12 w-full sm:w-[460px] bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 z-[999] space-y-4 text-left select-none animate-in fade-in">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <Sliders size={16} className="text-indigo-600" />
-                  <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">FILTER MEMBERS</h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowMoreFilters(false)}
-                  className="p-1 rounded-full text-slate-400 hover:bg-slate-100 border-none bg-transparent cursor-pointer"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* Filter Fields Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-bold text-slate-700">
-                {/* 1. Gender */}
-                <div>
-                  <label className="block mb-1 text-[10px] uppercase font-black text-slate-400 tracking-wider">Gender</label>
-                  <select
-                    value={filters.gender}
-                    onChange={e => setFilters(f => ({ ...f, gender: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
-                  >
-                    <option value="all">All Genders</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                    <option value="Not Specified">Not Specified</option>
-                  </select>
-                </div>
-
-                {/* 2. Membership Status */}
-                <div>
-                  <label className="block mb-1 text-[10px] uppercase font-black text-slate-400 tracking-wider">Membership Status</label>
-                  <select
-                    value={filters.membershipStatus}
-                    onChange={e => setFilters(f => ({ ...f, membershipStatus: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
-                  >
-                    <option value="all">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="expired">Expired</option>
-                    <option value="frozen">Frozen</option>
-                    <option value="expiring_soon">Expiring Soon (≤ 7 days)</option>
-                  </select>
-                </div>
-
-                {/* 3. Payment Status */}
-                <div>
-                  <label className="block mb-1 text-[10px] uppercase font-black text-slate-400 tracking-wider">Payment Status</label>
-                  <select
-                    value={filters.paymentStatus}
-                    onChange={e => setFilters(f => ({ ...f, paymentStatus: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
-                  >
-                    <option value="all">All Payment Statuses</option>
-                    <option value="paid">Fully Paid (₹0 Balance)</option>
-                    <option value="due">Balance Due (&gt; ₹0 Balance)</option>
-                    <option value="pending">Pending Payment</option>
-                  </select>
-                </div>
-
-                {/* 4. Expiry Filter */}
-                <div>
-                  <label className="block mb-1 text-[10px] uppercase font-black text-slate-400 tracking-wider">Expiry Horizon</label>
-                  <select
-                    value={filters.expiryStatus}
-                    onChange={e => setFilters(f => ({ ...f, expiryStatus: e.target.value }))}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
-                  >
-                    <option value="all">All Expiries</option>
-                    <option value="expired">Expired</option>
-                    <option value="today">Expires Today</option>
-                    <option value="in_7_days">Expires in 7 Days</option>
-                    <option value="in_30_days">Expires in 30 Days</option>
-                    <option value="in_60_days">Expires in 60 Days</option>
-                    <option value="active_over_60">Active &gt; 60 Days</option>
-                  </select>
-                </div>
-
-                {/* 5. Date Joined Range */}
-                <div className="col-span-1 sm:col-span-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 space-y-2">
-                  <label className="block text-[10px] uppercase font-black text-slate-500 tracking-wider">
-                    Date Joined Range
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Joined From</span>
-                      <input
-                        type="date"
-                        value={filters.joinedFrom}
-                        onChange={e => setFilters(f => ({ ...f, joinedFrom: e.target.value }))}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[9px] text-slate-400 font-bold block mb-0.5">Joined To</span>
-                      <input
-                        type="date"
-                        value={filters.joinedTo}
-                        onChange={e => setFilters(f => ({ ...f, joinedTo: e.target.value }))}
-                        className={`w-full px-2.5 py-1.5 bg-white border rounded-xl text-xs font-bold text-slate-800 ${
-                          dateRangeError ? 'border-red-500 bg-red-50/30' : 'border-slate-300'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                  {dateRangeError && (
-                    <p className="text-[11px] font-bold text-red-500 flex items-center gap-1 mt-1">
-                      <AlertCircle size={12} /> {dateRangeError}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Popover Action Buttons */}
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setFilters(initialFilterState)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-all border-none cursor-pointer flex items-center gap-1.5"
-                >
-                  <RotateCcw size={13} /> Clear All
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowMoreFilters(false)}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl transition-all border-none cursor-pointer shadow-md"
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ACTIVE FILTER CHIPS BAR */}
-      {activeFilterCount > 0 && (
-        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Active Filters:</span>
-
-          {filters.gender !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Gender: {filters.gender}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, gender: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.memberType !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Type: {filters.memberType === 'gym' ? 'Gym Members' : filters.memberType === 'pt' ? 'PT Members' : 'Gym + PT'}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, memberType: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.packagePlan !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Package: {filters.packagePlan}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, packagePlan: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.trainer !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Trainer: {filters.trainer}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, trainer: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.branch !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Branch: {filters.branch}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, branch: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.membershipStatus !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Status: {filters.membershipStatus}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, membershipStatus: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.paymentStatus !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Payment: {filters.paymentStatus}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, paymentStatus: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {(filters.joinedFrom || filters.joinedTo) && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Joined: {filters.joinedFrom || 'Start'} → {filters.joinedTo || 'End'}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, joinedFrom: '', joinedTo: '' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          {filters.expiryStatus !== 'all' && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-800 shadow-2xs">
-              Expiry: {filters.expiryStatus}
-              <button type="button" onClick={() => setFilters(f => ({ ...f, expiryStatus: 'all' }))} className="hover:text-red-500 border-none bg-transparent cursor-pointer">
-                <X size={12} />
-              </button>
-            </span>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setFilters(initialFilterState)}
-            className="text-xs font-black text-rose-600 hover:text-rose-700 underline cursor-pointer border-none bg-transparent ml-2"
-          >
-            Clear All Filters
-          </button>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="px-4 border-b border-slate-100 flex items-center justify-between overflow-x-auto">
-        <div className="flex space-x-1">
-          {[
-            { id: 'all', label: 'All Members', count: counts.all },
-            { id: 'active', label: 'Active', count: counts.active },
-            { id: 'hold', label: 'Hold', count: counts.hold, isHold: true },
-            { id: 'expired', label: 'Expired', count: counts.expired },
-            { id: 'inactive', label: 'Inactive', count: counts.inactive },
-            { id: 'frozen', label: 'Frozen', count: counts.frozen },
-            { id: 'pt', label: 'PT Members', count: counts.pt },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-4 py-3 text-sm font-black whitespace-nowrap border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-                statusFilter === tab.id 
-                  ? 'border-[#EA580C] text-[#EA580C]' 
-                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-xs ${
-                tab.isHold && tab.count > 0
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300 font-black'
-                  : 'text-slate-400 font-bold'
-              }`}>
-                ({tab.count})
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="text-xs font-bold text-slate-500">
-          Showing <b className="text-[#10233f] font-mono">{filtered.length}</b> members
-        </div>
-      </div>
-
-      {/* HOLD MEMBERS DEDICATED CARDS VIEW (When Hold tab is selected) */}
-      {statusFilter === 'hold' ? (
-        <div className="p-5 bg-slate-50/50 min-h-[350px]">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#EA580C] text-white flex items-center justify-center font-black shadow-sm">
-                <Fingerprint size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                  <span>HOLD MEMBERS ({filtered.length})</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-300">
-                    Awaiting Billing
-                  </span>
-                </h4>
-                <p className="text-xs text-slate-600 font-medium mt-0.5">
-                  Members imported with Hikvision terminal Biometric IDs. Click &quot;Create Bill →&quot; to assign a package, record payment, and activate their profile.
-                </p>
-              </div>
-            </div>
-            <div className="text-xs font-bold text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-amber-200 shadow-2xs">
-              Search by <b className="text-[#EA580C]">Name</b> or <b className="text-[#EA580C]">Biometric ID</b> above
-            </div>
           </div>
 
-          {filtered.length === 0 ? (
-            <div className="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200 p-8">
-              <User className="w-12 h-12 text-slate-300 mx-auto mb-2" />
-              <h4 className="text-base font-black text-slate-800">No Hold members found</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                All imported members have been activated, or no members match your search keyword.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {paginatedMembers.map(member => {
-                const bioId = member.biometricId || member.biometricUserId || member.deviceUserId || 'N/A';
-                return (
-                  <div 
-                    key={member.id}
-                    className="bg-white rounded-2xl border border-slate-200/90 hover:border-orange-400 p-5 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#EA580C] to-[#FB923C] text-white flex items-center justify-center font-black text-lg shadow-sm">
-                          {member.name?.charAt(0) || 'M'}
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-black text-slate-900">
-                            {member.name}
-                          </h4>
-                          <div className="inline-flex items-center gap-1.5 mt-0.5 px-2 py-0.5 rounded-lg bg-orange-50 border border-orange-200 text-[#C2410C] font-mono text-xs font-black">
-                            <Fingerprint size={12} />
-                            <span>Biometric ID: {bioId}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
-                        HOLD
-                      </span>
-                    </div>
-
-                    <div className="bg-slate-50 rounded-xl p-3 text-xs space-y-1.5 font-medium text-slate-600 border border-slate-100">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold">Source</span>
-                        <span className="font-bold text-slate-700">Imported from Excel</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold">Phone</span>
-                        <span className="font-mono font-bold text-slate-700">{member.phone || '—'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold">Status</span>
-                        <span className="text-amber-700 font-black">HOLD (Needs Bill)</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/dashboard/members/${encodeURIComponent(member.id)}`)}
-                        className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-all border-none cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <Eye size={13} /> View Profile
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onCreateBill) onCreateBill(member);
-                        }}
-                        className="flex-1 py-2.5 px-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer shadow-sm hover:shadow flex items-center justify-center gap-1.5 active:scale-95"
-                      >
-                        <span>Create Bill →</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
-        /* Normal Table View */
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap border-separate border-spacing-0">
-            <thead className="bg-[#EA580C] text-[#fdfdfd] font-bold">
-              <tr className="bg-[#EA580C]">
-                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] rounded-tl-[14px] border-b border-[#C2410C]">Member</th>
-                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Phone</th>
-                <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Gender</th>
-                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Membership</th>
-                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Trainer</th>
-                <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Attendance</th>
-                <th className="px-4 py-3.5 text-center text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Days Left</th>
-                <th className="px-4 py-3.5 text-[#fdfdfd] bg-[#EA580C] border-b border-[#C2410C]">Payment</th>
-                <th className="px-4 py-3.5 text-right text-[#fdfdfd] bg-[#EA580C] rounded-tr-[14px] border-b border-[#C2410C]">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {paginatedMembers.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center text-slate-400">
-                    <div className="max-w-sm mx-auto space-y-3">
-                      <User className="w-12 h-12 text-slate-300 mx-auto" />
-                      <h3 className="text-base font-black text-slate-800">No members found</h3>
-                      <p className="text-xs text-slate-500 font-medium">
-                        Try changing your search keywords or adjusting your selected filters.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLocalSearch('');
-                          setSearch('');
-                          setFilters(initialFilterState);
-                        }}
-                        className="px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-black rounded-xl transition-all cursor-pointer shadow-sm border-none"
-                      >
-                        Clear All Filters
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                paginatedMembers.map(member => (
-                  <MemberTableRow
-                    key={member.id}
-                    member={member}
-                    isSelected={selectedMemberId === member.id}
-                    onRowClick={() => router.push(`/dashboard/members/${member.id}`)}
-                    onOpenActions={(m, rect) => setActionsMenu({ member: m, rect })}
-                    onCreateBill={onCreateBill}
-                  />
-                ))
+          {/* Right Controls: Filters, Sorting, View Toggle */}
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+            {/* Filter Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setShowFilters(!showFilters)}
+              className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                showFilters || activeFilterCount > 0
+                  ? 'bg-orange-50 border-[#F04400] text-[#EA580C]'
+                  : 'bg-white border-stone-200 text-stone-700 hover:border-stone-300'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-[#F04400] text-white text-[10px] font-black flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
               )}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </button>
 
-      {/* Floating Actions Portal Dropdown (Never Clipped by Table Container) */}
-      {actionsMenu && typeof document !== 'undefined' && createPortal(
-        <div
-          className="actions-portal-menu fixed z-[99999] bg-white border border-slate-200 rounded-2xl shadow-[0_15px_40px_rgba(0,0,0,0.18)] py-1.5 w-52 text-left text-xs font-semibold text-slate-800 animate-in fade-in select-none"
-          style={{
-            top: (window.innerHeight - actionsMenu.rect.bottom < 240)
-              ? Math.max(10, actionsMenu.rect.top - 230)
-              : actionsMenu.rect.bottom + 4,
-            left: Math.max(10, Math.min(window.innerWidth - 220, actionsMenu.rect.right - 180)),
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {((actionsMenu.member.status || '').toLowerCase() === 'hold') && (
+            {/* Sort Dropdown */}
+            <div className="relative">
+              <select
+                value={`${sortField}_${sortOrder}`}
+                onChange={(e) => {
+                  const [f, o] = e.target.value.split('_');
+                  setSortField(f as any);
+                  setSortOrder(o as any);
+                }}
+                className="py-2 pl-3 pr-8 bg-white border border-stone-200 text-stone-700 rounded-xl text-xs font-bold appearance-none cursor-pointer focus:outline-hidden hover:border-stone-300"
+              >
+                <option value="joinDate_desc">Newest Joined</option>
+                <option value="joinDate_asc">Oldest Joined</option>
+                <option value="name_asc">Name (A–Z)</option>
+                <option value="name_desc">Name (Z–A)</option>
+                <option value="daysLeft_asc">Expiry (Soonest)</option>
+                <option value="amount_desc">Highest Paid</option>
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400 pointer-events-none" />
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  viewMode === 'list'
+                    ? 'bg-white text-stone-900 shadow-xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+                title="List View"
+              >
+                <List className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  viewMode === 'grid'
+                    ? 'bg-white text-stone-900 shadow-xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+                title="Grid View"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Slide-Down Filter Panel */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="overflow-hidden pt-2 border-t border-stone-100"
+            >
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-2 text-xs">
+                {/* Gender */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">
+                    Gender
+                  </label>
+                  <select
+                    value={filters.gender}
+                    onChange={(e) => setFilters(prev => ({ ...prev, gender: e.target.value }))}
+                    className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-semibold text-stone-800"
+                  >
+                    <option value="all">All Genders</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                {/* Plan */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">
+                    Package Plan
+                  </label>
+                  <select
+                    value={filters.plan}
+                    onChange={(e) => setFilters(prev => ({ ...prev, plan: e.target.value }))}
+                    className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-semibold text-stone-800"
+                  >
+                    <option value="all">All Plans</option>
+                    <option value="month">Monthly</option>
+                    <option value="quarter">Quarterly (3 Months)</option>
+                    <option value="semi">Semi-Annual (6 Months)</option>
+                    <option value="annual">Annual</option>
+                  </select>
+                </div>
+
+                {/* Payment Status */}
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-stone-500 mb-1">
+                    Payment Status
+                  </label>
+                  <select
+                    value={filters.paymentStatus}
+                    onChange={(e) => setFilters(prev => ({ ...prev, paymentStatus: e.target.value }))}
+                    className="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-semibold text-stone-800"
+                  >
+                    <option value="all">All Payments</option>
+                    <option value="paid">Paid in Full</option>
+                    <option value="partial">Partial / Balance Due</option>
+                    <option value="pending">Pending / No Bill</option>
+                  </select>
+                </div>
+
+                {/* Reset Filters */}
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => setFilters(initialFilterState)}
+                    className="w-full py-2 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold rounded-xl text-xs transition-colors"
+                  >
+                    Reset All Filters
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          2. SEGMENTED STATUS TABS WITH LIVE COUNTS
+         ══════════════════════════════════════════════════════════════════ */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+        {STATUS_TABS.map((tab) => {
+          const isActive = statusFilter === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setStatusFilter(tab.id);
+                setCurrentPage(1);
+              }}
+              className={`relative px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-2 transition-all cursor-pointer border ${
+                isActive
+                  ? 'bg-white border-[#F04400] text-stone-900 shadow-xs'
+                  : 'bg-stone-100/70 hover:bg-stone-100 border-transparent text-stone-600'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${tab.dot}`} />
+              <span>{tab.label}</span>
+              <span
+                className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                  isActive
+                    ? 'bg-orange-100 text-[#EA580C]'
+                    : 'bg-white/80 text-stone-500'
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          3. MEMBER LIST: HYBRID COMPACT PROFILE CARDS
+         ══════════════════════════════════════════════════════════════════ */}
+      {paginatedMembers.length === 0 ? (
+        /* Empty State */
+        <div className="p-12 text-center bg-white rounded-2xl border border-stone-200 shadow-xs space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-orange-50 text-[#EA580C] flex items-center justify-center mx-auto border border-orange-100">
+            <User className="w-7 h-7 stroke-[1.5]" />
+          </div>
+          <div>
+            <h3 className="text-base font-black text-stone-900">No Members Found</h3>
+            <p className="text-xs text-stone-500 max-w-sm mx-auto mt-1">
+              No members match your current search query or active filter settings. Try adjusting your filters.
+            </p>
+          </div>
+          <div className="pt-2">
             <button
               type="button"
               onClick={() => {
-                const m = actionsMenu.member;
-                setActionsMenu(null);
-                if (onCreateBill) onCreateBill(m);
+                setSearch('');
+                setStatusFilter('all');
+                setFilters(initialFilterState);
               }}
-              className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-[#EA580C] transition-colors font-black border-b border-orange-100"
+              className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold rounded-xl transition-colors"
             >
-              <Receipt size={14} className="text-[#EA580C]" />
-              <span>Create Bill / Activate</span>
+              Clear All Filters
             </button>
-          )}
+          </div>
+        </div>
+      ) : viewMode === 'list' ? (
+        /* Compact Hybrid Rows List */
+        <div className="space-y-2.5">
+          {paginatedMembers.map((m: any) => {
+            const isHold = String(m.status || m.membershipStatus || '').toLowerCase() === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
+            const daysLeft = isHold ? 0 : (m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0);
+            const isExpired = !isHold && daysLeft <= 0;
+            const isExpiring = !isHold && daysLeft > 0 && daysLeft <= 15;
 
-          <button
-            type="button"
-            onClick={() => {
-              const m = actionsMenu.member;
-              setActionsMenu(null);
-              router.push(`/dashboard/members/${encodeURIComponent(m.id)}`);
-            }}
-            className="w-full px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
-          >
-            <Eye size={14} className="text-slate-500" />
-            <span>View Profile</span>
-          </button>
+            const rawPaid = Number(m.amountPaid !== undefined ? m.amountPaid : (m.paid ?? m.totalPaid ?? 0));
+            const rawBalance = Number(m.balanceAmount !== undefined ? m.balanceAmount : (m.balance ?? m.outstandingBalance ?? 0));
+            const isSelected = selectedIds.has(m.id);
 
-          <button
-            type="button"
-            onClick={() => {
-              const m = actionsMenu.member;
-              setActionsMenu(null);
-              if (onEdit) onEdit(m);
-              else onSelectMember(m);
-            }}
-            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
-          >
-            <Edit size={14} className="text-[#EA580C]" />
-            <span>Edit Member</span>
-          </button>
+            const attScore = isHold ? 0 : calculateRealAttendance(m.joinDate, m.attendanceCount || 0);
 
-          <button
-            type="button"
-            onClick={() => {
-              const m = actionsMenu.member;
-              setActionsMenu(null);
-              if (onRenew) onRenew(m);
-            }}
-            className="w-full px-3.5 py-2 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
-          >
-            <RefreshCw size={14} className="text-emerald-600" />
-            <span>Renew Membership</span>
-          </button>
+            return (
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className={`group relative bg-white rounded-2xl p-3.5 sm:p-4 border transition-all duration-200 hover:border-orange-300 hover:shadow-md ${
+                  isSelected
+                    ? 'border-[#F04400] bg-orange-50/20'
+                    : 'border-stone-200 hover:bg-white'
+                }`}
+              >
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 sm:gap-4">
+                  {/* Left: Checkbox + Avatar + Member Identity */}
+                  <div className="flex items-center gap-3 min-w-[240px]">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => handleToggleSelect(m.id, e as any)}
+                      className="w-4 h-4 rounded-md text-[#EA580C] focus:ring-orange-200 border-stone-300 cursor-pointer"
+                    />
 
-          <button
-            type="button"
-            onClick={() => {
-              const m = actionsMenu.member;
-              setActionsMenu(null);
-              if (onFreeze) onFreeze(m);
-            }}
-            className="w-full px-3.5 py-2 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
-          >
-            <Snowflake size={14} className="text-indigo-600" />
-            <span>{actionsMenu.member.status === 'frozen' ? 'Unfreeze Status' : 'Freeze / Unfreeze'}</span>
-          </button>
+                    {/* Avatar with Quick Preview click */}
+                    <div
+                      onClick={() => onQuickPreview ? onQuickPreview(m) : onSelectMember(m)}
+                      className="relative cursor-pointer shrink-0 group/avatar"
+                    >
+                      <MemberAvatar
+                        member={m}
+                        className="w-12 h-12 rounded-xl object-cover border border-stone-200 shadow-xs group-hover/avatar:scale-105 transition-transform"
+                        size={48}
+                      />
+                      <span
+                        className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                          isHold ? 'bg-amber-500' :
+                          isExpired ? 'bg-rose-500' :
+                          m.status === 'frozen' ? 'bg-sky-500' :
+                          'bg-emerald-500'
+                        }`}
+                      />
+                    </div>
 
-          <div className="h-px bg-slate-100 my-1" />
+                    {/* Name, Member ID, Biometric ID */}
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onQuickPreview ? onQuickPreview(m) : onSelectMember(m)}
+                          className="text-sm font-bold text-stone-900 hover:text-[#EA580C] transition-colors leading-tight text-left"
+                        >
+                          {m.name}
+                        </button>
+                      </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              const m = actionsMenu.member;
-              setActionsMenu(null);
-              if (onDelete) onDelete(m);
-            }}
-            className="w-full px-3.5 py-2 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-rose-600 transition-colors font-bold"
-          >
-            <Trash2 size={14} className="text-rose-600" />
-            <span>Delete Member</span>
-          </button>
-        </div>,
-        document.body
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[11px] font-mono text-stone-400 font-medium">
+                          #{m.clientId ? `TWG-${m.clientId}` : (m.memberId || 'TWG-MEMBER')}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold bg-orange-50 text-[#EA580C] px-1.5 py-0.2 rounded border border-orange-100">
+                          BIO: {m.biometricId || m.deviceUserId || '—'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Center Column: Status, Membership, Trainer, Days Left */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs w-full lg:w-auto lg:flex-1 items-center px-1 sm:px-3">
+                    {/* 1. Status Pill */}
+                    <div>
+                      <span className="text-[10px] text-stone-400 uppercase tracking-wider block sm:hidden">
+                        Status
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                          isHold
+                            ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                            : isExpired
+                            ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                            : m.status === 'frozen'
+                            ? 'bg-sky-50 text-sky-800 border border-sky-200'
+                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isHold ? 'bg-amber-500' :
+                            isExpired ? 'bg-rose-500' :
+                            m.status === 'frozen' ? 'bg-sky-500' :
+                            'bg-emerald-500'
+                          }`}
+                        />
+                        {isHold ? 'HOLD' : isExpired ? 'EXPIRED' : m.status === 'frozen' ? 'FROZEN' : 'ACTIVE'}
+                      </span>
+                    </div>
+
+                    {/* 2. Membership Plan */}
+                    <div>
+                      <span className="text-[10px] text-stone-400 uppercase tracking-wider block sm:hidden">
+                        Membership
+                      </span>
+                      <span className="font-bold text-stone-900 block truncate">
+                        {isHold ? 'NO PLAN' : (m.plan || 'Standard')}
+                      </span>
+                      <span className="text-[11px] text-stone-500 truncate block">
+                        {m.trainer || 'General Access'}
+                      </span>
+                    </div>
+
+                    {/* 3. Days Left / Expiry */}
+                    <div>
+                      <span className="text-[10px] text-stone-400 uppercase tracking-wider block sm:hidden">
+                        Validity
+                      </span>
+                      {isHold ? (
+                        <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                          PENDING BILL
+                        </span>
+                      ) : (
+                        <div>
+                          <span
+                            className={`font-black text-xs ${
+                              isExpired ? 'text-rose-600' :
+                              isExpiring ? 'text-amber-600' :
+                              'text-stone-800'
+                            }`}
+                          >
+                            {daysLeft > 0 ? `${daysLeft} Days Left` : 'Expired'}
+                          </span>
+                          <span className="text-[10px] text-stone-400 block">
+                            {formatDate(m.expiryDate)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 4. Payment Ledger Display */}
+                    <div>
+                      <span className="text-[10px] text-stone-400 uppercase tracking-wider block sm:hidden">
+                        Payment
+                      </span>
+                      {isHold ? (
+                        <span className="text-[11px] font-bold text-stone-400">
+                          NO BILL
+                        </span>
+                      ) : rawPaid > 0 && rawBalance <= 0 ? (
+                        <div>
+                          <span className="text-xs font-black text-emerald-700">
+                            ₹{rawPaid.toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-[10px] font-bold text-emerald-600 block">
+                            PAID IN FULL
+                          </span>
+                        </div>
+                      ) : rawPaid > 0 && rawBalance > 0 ? (
+                        <div>
+                          <span className="text-xs font-black text-amber-700">
+                            ₹{rawPaid.toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-600 block">
+                            DUE: ₹{rawBalance.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-bold text-rose-600">
+                          UNPAID
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Contextual Quick Actions */}
+                  <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
+                    {isHold ? (
+                      /* Priority Action for Hold Member */
+                      <button
+                        type="button"
+                        onClick={() => onCreateBill ? onCreateBill(m) : null}
+                        className="py-1.5 px-3.5 bg-gradient-to-r from-[#FF7A00] to-[#F04400] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm hover:brightness-105 transition-all cursor-pointer"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Create Bill</span>
+                      </button>
+                    ) : isExpired ? (
+                      /* Priority Action for Expired Member */
+                      <button
+                        type="button"
+                        onClick={() => onRenew ? onRenew(m) : null}
+                        className="py-1.5 px-3 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Renew</span>
+                      </button>
+                    ) : (
+                      /* Active Member Quick View & Billing */
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onQuickPreview ? onQuickPreview(m) : onSelectMember(m)}
+                          className="py-1.5 px-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/dashboard/members/${encodeURIComponent(m.id)}?tab=billing`)}
+                          className="py-1.5 px-2.5 bg-orange-50 hover:bg-orange-100 text-[#EA580C] text-xs font-bold rounded-xl border border-orange-200 transition-colors cursor-pointer"
+                        >
+                          Billing
+                        </button>
+                      </>
+                    )}
+
+                    {/* More Actions Dropdown */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActiveMenuId(activeMenuId === m.id ? null : m.id)}
+                        className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-500 transition-colors"
+                      >
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+
+                      {activeMenuId === m.id && (
+                        <div
+                          className="absolute right-0 top-full mt-1 w-44 bg-white rounded-2xl shadow-xl border border-stone-200 p-1.5 z-30 space-y-0.5 text-xs text-stone-700 text-left"
+                          onMouseLeave={() => setActiveMenuId(null)}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              router.push(`/dashboard/members/${encodeURIComponent(m.id)}`);
+                            }}
+                            className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-50 font-semibold flex items-center gap-2"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-stone-500" />
+                            <span>Full Profile</span>
+                          </button>
+
+                          {onRenew && !isHold && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                onRenew(m);
+                              }}
+                              className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-50 font-semibold flex items-center gap-2"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-stone-500" />
+                              <span>Renew Package</span>
+                            </button>
+                          )}
+
+                          {onFreeze && !isHold && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                onFreeze(m);
+                              }}
+                              className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-50 font-semibold flex items-center gap-2"
+                            >
+                              <Snowflake className="w-3.5 h-3.5 text-sky-500" />
+                              <span>{m.status === 'frozen' ? 'Unfreeze' : 'Freeze Member'}</span>
+                            </button>
+                          )}
+
+                          {onEdit && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                onEdit(m);
+                              }}
+                              className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-stone-50 font-semibold flex items-center gap-2"
+                            >
+                              <Edit className="w-3.5 h-3.5 text-stone-500" />
+                              <span>Edit Details</span>
+                            </button>
+                          )}
+
+                          {onDelete && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                onDelete(m);
+                              }}
+                              className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-red-50 text-red-600 font-semibold flex items-center gap-2"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete Record</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Grid Card View */
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+          {paginatedMembers.map((m: any) => {
+            const isHold = String(m.status || m.membershipStatus || '').toLowerCase() === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
+            const daysLeft = isHold ? 0 : (m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0);
+            const isExpired = !isHold && daysLeft <= 0;
+
+            return (
+              <div
+                key={m.id}
+                className="bg-white rounded-2xl p-4 border border-stone-200 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <MemberAvatar
+                        member={m}
+                        className="w-12 h-12 rounded-xl object-cover border border-stone-200"
+                        size={48}
+                      />
+                      <div>
+                        <h4 className="text-sm font-bold text-stone-900 leading-tight">
+                          {m.name}
+                        </h4>
+                        <span className="text-[11px] font-mono text-stone-400">
+                          #{m.clientId ? `TWG-${m.clientId}` : (m.memberId || 'TWG')}
+                        </span>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                      isHold ? 'bg-amber-100 text-amber-800' :
+                      isExpired ? 'bg-rose-100 text-rose-800' :
+                      'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {isHold ? 'HOLD' : isExpired ? 'EXPIRED' : 'ACTIVE'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-stone-100 text-xs space-y-1.5">
+                    <div className="flex justify-between text-stone-600">
+                      <span>Package:</span>
+                      <span className="font-bold text-stone-900">{isHold ? 'NO PLAN' : (m.plan || 'Standard')}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>Biometric ID:</span>
+                      <span className="font-mono font-bold text-[#EA580C]">#{m.biometricId || '—'}</span>
+                    </div>
+                    <div className="flex justify-between text-stone-600">
+                      <span>Validity:</span>
+                      <span className="font-bold text-stone-900">
+                        {isHold ? 'HOLD' : (daysLeft > 0 ? `${daysLeft} Days` : 'Expired')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
+                  {isHold ? (
+                    <button
+                      type="button"
+                      onClick={() => onCreateBill ? onCreateBill(m) : null}
+                      className="w-full py-2 bg-[#F04400] text-white text-xs font-bold rounded-xl"
+                    >
+                      Create Bill
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onQuickPreview ? onQuickPreview(m) : onSelectMember(m)}
+                      className="w-full py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold rounded-xl"
+                    >
+                      View Profile
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* Pagination Footer */}
-      <div className="p-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4 text-sm text-slate-500">
-        <div>
-          Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} members
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1">
-            <button 
-              disabled={currentPage <= 1}
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              className="p-1.5 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+      {/* ══════════════════════════════════════════════════════════════════
+          4. MODERN COMPACT PAGINATION FOOTER
+         ══════════════════════════════════════════════════════════════════ */}
+      {filteredMembers.length > 0 && (
+        <div className="p-3.5 bg-white rounded-2xl border border-stone-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-600">
+          <div className="flex items-center gap-3">
+            <span>
+              Showing <strong>{((currentPage - 1) * pageSize) + 1}</strong>–<strong>{Math.min(currentPage * pageSize, filteredMembers.length)}</strong> of <strong>{filteredMembers.length}</strong> members
+            </span>
+
+            {/* Rows per page */}
+            <div className="flex items-center gap-1">
+              <span className="text-stone-400">Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="p-1 bg-stone-50 border border-stone-200 rounded-lg text-xs font-semibold"
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              className="p-1.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:pointer-events-none"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft className="w-4 h-4" />
             </button>
 
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              let pageNum = i + 1;
-              if (totalPages > 5 && currentPage > 3) {
-                pageNum = currentPage - 3 + i;
-                if (pageNum > totalPages) pageNum = totalPages - (4 - i);
-              }
-              return (
-                <button
-                  key={pageNum}
-                  onClick={() => setPage(pageNum)}
-                  className={`px-3 py-1 text-xs font-bold rounded transition-colors ${
-                    currentPage === pageNum
-                      ? 'bg-indigo-600 text-white'
-                      : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              );
-            })}
+            <span className="px-2.5 font-bold text-stone-800">
+              Page {currentPage} of {totalPages}
+            </span>
 
-            <button 
+            <button
+              type="button"
               disabled={currentPage >= totalPages}
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              className="p-1.5 border border-slate-200 rounded text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              className="p-1.5 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:pointer-events-none"
             >
-              <ChevronRight size={16} />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <span>Per page:</span>
-            <select 
-              value={pageSize}
-              onChange={e => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              className="px-2 py-1 border border-slate-200 rounded bg-white font-medium text-slate-700 focus:outline-none cursor-pointer"
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-          </div>
         </div>
-      </div>
+      )}
 
+      {/* ══════════════════════════════════════════════════════════════════
+          5. FLOATING BULK ACTIONS BAR
+         ══════════════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {selectedIds.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-stone-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-stone-800 flex items-center gap-4 text-xs font-bold"
+          >
+            <span>{selectedIds.size} Members Selected</span>
+
+            <div className="h-4 w-px bg-stone-700" />
+
+            <button
+              type="button"
+              onClick={() => {
+                toast.success(`WhatsApp campaign queued for ${selectedIds.size} members`);
+                setSelectedIds(new Set());
+              }}
+              className="hover:text-emerald-400 flex items-center gap-1.5 transition-colors"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Broadcast WhatsApp</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-stone-400 hover:text-white ml-2 p-1"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
