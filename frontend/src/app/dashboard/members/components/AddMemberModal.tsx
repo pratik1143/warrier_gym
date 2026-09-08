@@ -7,8 +7,9 @@ import {
   CheckCircle2, ArrowRight, ArrowLeft, CreditCard, DollarSign, 
   Printer, Download, Sparkles, Fingerprint, Banknote, Wallet, 
   ChevronRight, Dumbbell, Award, AlertCircle, FileText, Upload, Camera, Trash2, RefreshCw, AlertTriangle, Check, SwitchCamera,
-  Cpu, ScanFace, Activity, UserCheck, ShieldCheck
+  Cpu, ScanFace, Activity, UserCheck, ShieldCheck, Tag, Info, ExternalLink, MessageCircle, Clock, Percent, Zap, ChevronDown
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import toast from '@/lib/toast';
 import { useGymStore } from '@/store';
 import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
@@ -44,8 +45,6 @@ const step1Schema = z.object({
       message: 'Enter a valid email address',
     }),
   gender: z.enum(['Male', 'Female', 'Other']).default('Male'),
-  membershipPackageId: z.string().min(1, 'Please select a membership package'),
-  startDate: z.string().min(1, 'Please select a start date'),
 });
 
 const step2Schema = z.object({
@@ -92,20 +91,6 @@ const step2Schema = z.object({
   path: ['anniversaryDate'],
 });
 
-const ptStepSchema = z.object({
-  ptAmount: z.number().min(0, 'PT amount cannot be negative'),
-  ptDiscount: z.number().min(0, 'Discount cannot be negative'),
-  ptTax: z.number().min(0, 'Tax cannot be negative'),
-  ptStartDate: z.string().min(1, 'Please select PT start date'),
-  ptExpiryDate: z.string().min(1, 'Please select PT expiry date'),
-}).refine((data) => {
-  if (!data.ptStartDate || !data.ptExpiryDate) return true;
-  return new Date(data.ptExpiryDate) >= new Date(data.ptStartDate);
-}, {
-  message: 'PT Expiry Date cannot be before Start Date',
-  path: ['ptExpiryDate'],
-});
-
 const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 function deduplicatePackages(rawPlans: any[]) {
@@ -121,13 +106,26 @@ function deduplicatePackages(rawPlans: any[]) {
   return Array.from(map.values());
 }
 
+const STEPS = [
+  { id: 1, title: 'Profile', desc: 'Basic info & photo' },
+  { id: 2, title: 'Personal & Health', desc: 'Fitness & contact' },
+  { id: 3, title: 'Membership', desc: 'Package & trainer' },
+  { id: 4, title: 'Biometrics', desc: 'Hikvision access' },
+  { id: 5, title: 'Payment', desc: 'Discount & billing' },
+  { id: 6, title: 'Invoice', desc: 'Receipt & access' },
+];
+
 export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps) {
+  const router = useRouter();
   const { plans, fetchPlans, addMember, fetchPayments, members } = useGymStore();
 
   useEffect(() => {
-    fetchPlans();
-  }, [fetchPlans]);
+    if (isOpen) {
+      fetchPlans();
+    }
+  }, [isOpen, fetchPlans]);
 
+  // Current Step: 1 to 6
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
@@ -136,15 +134,15 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   // Field Errors State
   const [step1Errors, setStep1Errors] = useState<Record<string, string>>({});
   const [step2Errors, setStep2Errors] = useState<Record<string, string>>({});
-  const [ptErrors, setPtErrors] = useState<Record<string, string>>({});
   const [photoError, setPhotoError] = useState<string | null>(null);
 
-  // Step 1: Basic Info & Package
+  // ── Step 1: Profile & Identity ──
   const [fullName, setFullName] = useState('');
   const [mobile, setMobile] = useState('');
   const [email, setEmail] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [gender, setGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 
   // Live Camera Capture Modal State
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -153,20 +151,37 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Step 2: Personal & Health ──
+  const [dob, setDob] = useState('');
+  const [occupation, setOccupation] = useState('');
+  const [emergencyContact, setEmergencyContact] = useState('');
+  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState('');
+  const [age, setAge] = useState('');
+  const [maritalStatus, setMaritalStatus] = useState<'single' | 'married'>('single');
+  const [anniversaryDate, setAnniversaryDate] = useState('');
+  const [address, setAddress] = useState('');
+  const [fitnessGoal, setFitnessGoal] = useState('General Fitness');
+  const [medicalNotes, setMedicalNotes] = useState('');
+
+  // ── Step 3: Membership Selection ──
   const rawPlans = plans && plans.length > 0 ? plans : [
-    { id: 'p_mon', name: '1 MONTH', price: 3000, duration: '30 Days' },
-    { id: 'p_qrt', name: '3 MONTHS', price: 6500, duration: '90 Days' },
-    { id: 'p_semi', name: '6 MONTHS', price: 9500, duration: '180 Days' },
-    { id: 'p_plus', name: '3+1 MONTH', price: 7500, duration: '120 Days' },
-    { id: 'p_ann', name: 'ANNUAL PREMIUM', price: 14000, duration: '365 Days' },
-    { id: 'p_day', name: '10 DAYS', price: 1000, duration: '10 Days' },
+    { id: 'p_mon', name: '1 MONTH', price: 3000, duration: '30 Days', popular: false },
+    { id: 'p_qrt', name: '3 MONTHS', price: 6500, duration: '90 Days', popular: true },
+    { id: 'p_semi', name: '6 MONTHS', price: 9500, duration: '180 Days', popular: false },
+    { id: 'p_plus', name: '3+1 MONTH', price: 7500, duration: '120 Days', popular: false },
+    { id: 'p_ann', name: 'ANNUAL PREMIUM', price: 14000, duration: '365 Days', popular: true },
+    { id: 'p_day', name: '10 DAYS', price: 1000, duration: '10 Days', popular: false },
   ];
 
   const activePlans = deduplicatePackages(rawPlans);
-  const [selectedPlan, setSelectedPlan] = useState<any>(activePlans[0]);
+  const [selectedPlan, setSelectedPlan] = useState<any>(activePlans[1] || activePlans[0]);
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [referralSource, setReferralSource] = useState('Walk-in');
 
-  // Canonical Active Trainers Query for Personal Trainer Selection
+  // Trainers List for Personal Trainer Option
   const [trainersList, setTrainersList] = useState<any[]>([]);
   const [selectedTrainerId, setSelectedTrainerId] = useState('');
 
@@ -178,7 +193,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         const activeTrns = await getActiveTrainers();
         setTrainersList(activeTrns);
       } catch (err) {
-        console.warn("Failed to fetch active trainers via service:", err);
+        console.warn("Failed to fetch active trainers:", err);
       }
     };
 
@@ -190,10 +205,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         const activeTrns = await getActiveTrainers();
         setTrainersList(activeTrns);
       } catch (err) {
-        console.warn("Realtime active trainers sync notice:", err);
+        console.warn("Realtime active trainers sync:", err);
       }
     }, (err) => {
-      console.warn("Employees query listener notice in AddMemberModal:", err);
+      console.warn("Employees query listener error:", err);
     });
 
     return () => unsub();
@@ -206,19 +221,13 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
 
   const hasPt = Boolean(selectedTrainerId);
 
-  // Step 2: Personal & Health
-  const [gender, setGender] = useState('Male');
-  const [age, setAge] = useState('');
-  const [height, setHeight] = useState('');
-  const [weight, setWeight] = useState('');
-  const [dob, setDob] = useState('');
-  const [maritalStatus, setMaritalStatus] = useState<'single' | 'married'>('single');
-  const [anniversaryDate, setAnniversaryDate] = useState('');
-  const [emergencyContact, setEmergencyContact] = useState('');
-  const [occupation, setOccupation] = useState('');
-  const [address, setAddress] = useState('');
+  // Optional PT Details
+  const [ptDuration, setPtDuration] = useState('3 Months');
+  const [ptAmount, setPtAmount] = useState('6000');
+  const [ptDiscount, setPtDiscount] = useState('0');
+  const [ptAmountPaid, setPtAmountPaid] = useState('6000');
 
-  // Step 3: Hikvision Biometric Enrollment
+  // ── Step 4: Hikvision Biometrics ──
   const [biometricId, setBiometricId] = useState('');
   const [enrollStatus, setEnrollStatus] = useState<'idle' | 'enrolling' | 'success' | 'failed' | 'waiting_terminal'>('idle');
   const [enrollMsg, setEnrollMsg] = useState('');
@@ -226,37 +235,22 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   const [selectedEnrollType, setSelectedEnrollType] = useState<'FACE' | 'FINGERPRINT' | 'BOTH'>('FACE');
   const [faceStatus, setFaceStatus] = useState<'NOT ENROLLED' | 'REQUESTING' | 'WAITING FOR TERMINAL' | 'ENROLLED' | 'FAILED' | 'TERMINAL_ENROLLMENT_REQUIRED'>('NOT ENROLLED');
   const [fpStatus, setFpStatus] = useState<'NOT ENROLLED' | 'REQUESTING' | 'WAITING FOR TERMINAL' | 'ENROLLED' | 'FAILED'>('NOT ENROLLED');
-  const [userCreatedOnHikvision, setUserCreatedOnHikvision] = useState<boolean>(false);
-  const [isCreatingUser, setIsCreatingUser] = useState<boolean>(false);
   const [hikvisionOnline, setHikvisionOnline] = useState<boolean>(true);
-  const [lastCheckedTime, setLastCheckedTime] = useState<string>('');
   const [isTestingConn, setIsTestingConn] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
-  const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
-  const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState<boolean>(false);
-  const [connectionMatrix, setConnectionMatrix] = useState<any>({
-    network: true,
-    http: true,
-    auth: true,
-    userApi: true,
-    faceApi: true,
-    fingerprintApi: false
-  });
 
-  // Step 4: Membership Billing & Payment Method
+  // ── Step 5: Payment & Discount ──
   const [discount, setDiscount] = useState('0');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card' | 'NetBanking'>('UPI');
+  const [previousBalance, setPreviousBalance] = useState('0');
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'Cash' | 'Card' | 'Bank Transfer' | 'Other'>('UPI');
   const [amountPaid, setAmountPaid] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentNotes, setPaymentNotes] = useState('');
 
-  // Step 5 (If PT Selected): PT Billing Details
-  const [ptDuration, setPtDuration] = useState('3 Months');
-  const [ptAmount, setPtAmount] = useState('6000');
-  const [ptDiscount, setPtDiscount] = useState('0');
-  const [ptTax, setPtTax] = useState('0');
-  const [ptPaymentMethod, setPtPaymentMethod] = useState<'Cash' | 'UPI' | 'Card' | 'NetBanking'>('UPI');
-  const [ptStartDate, setPtStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [ptExpiryDate, setPtExpiryDate] = useState('');
-  const [ptAmountPaid, setPtAmountPaid] = useState('6000');
+  // ── Step 6: Created Invoices ──
+  const [createdInvoice, setCreatedInvoice] = useState<any | null>(null);
+  const [createdPtInvoice, setCreatedPtInvoice] = useState<any | null>(null);
+  const [createdMember, setCreatedMember] = useState<any | null>(null);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -270,79 +264,37 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     };
   }, [isOpen]);
 
-  // Auto-calculate PT Expiry Date
-  useEffect(() => {
-    if (!ptStartDate) return;
-    const start = new Date(ptStartDate);
-    if (isNaN(start.getTime())) return;
-
-    const expiry = new Date(start);
-    if (ptDuration === '1 Month') {
-      expiry.setMonth(expiry.getMonth() + 1);
-      expiry.setDate(expiry.getDate() - 1);
-    } else if (ptDuration === '3 Months') {
-      expiry.setMonth(expiry.getMonth() + 3);
-      expiry.setDate(expiry.getDate() - 1);
-    } else if (ptDuration === '6 Months') {
-      expiry.setMonth(expiry.getMonth() + 6);
-      expiry.setDate(expiry.getDate() - 1);
-    } else if (ptDuration === '12 Months') {
-      expiry.setFullYear(expiry.getFullYear() + 1);
-      expiry.setDate(expiry.getDate() - 1);
-    }
-    setPtExpiryDate(expiry.toISOString().split('T')[0]);
-  }, [ptStartDate, ptDuration]);
-
-  // Update default PT price when duration changes
-  useEffect(() => {
-    let base = 6000;
-    if (ptDuration === '1 Month') base = 2500;
-    else if (ptDuration === '3 Months') base = 6000;
-    else if (ptDuration === '6 Months') base = 11000;
-    else if (ptDuration === '12 Months') base = 20000;
-    setPtAmount(base.toString());
-    const disc = Number(ptDiscount) || 0;
-    const tax = Number(ptTax) || 0;
-    const net = Math.max(0, base - disc + tax);
-    setPtAmountPaid(net.toString());
-  }, [ptDuration]);
-
-  // Update PT Amount Paid
-  useEffect(() => {
-    const amt = Number(ptAmount) || 0;
-    const disc = Number(ptDiscount) || 0;
-    const tax = Number(ptTax) || 0;
-    const net = Math.max(0, amt - disc + tax);
-    setPtAmountPaid(net.toString());
-  }, [ptAmount, ptDiscount, ptTax]);
-
-  // Final Invoices
-  const [createdInvoice, setCreatedInvoice] = useState<any | null>(null);
-  const [createdPtInvoice, setCreatedPtInvoice] = useState<any | null>(null);
-  const [createdMember, setCreatedMember] = useState<any | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   // Auto-generate sequential Biometric ID
   useEffect(() => {
     if (isOpen) {
       const nextId = (members.length + 101).toString();
       setBiometricId(nextId);
       if (activePlans.length > 0 && !selectedPlan) {
-        setSelectedPlan(activePlans[0]);
+        setSelectedPlan(activePlans[1] || activePlans[0]);
       }
     }
   }, [isOpen, members.length]);
 
-  // Update Membership amount paid when plan or discount changes
+  // Derived Membership Expiry Date
+  const expiryDate = useMemo(() => {
+    if (!startDate || !selectedPlan) return '';
+    const planDuration = selectedPlan.duration || selectedPlan.name || '30 Days';
+    return membershipEngine.calculateMembershipExpiry(startDate, planDuration);
+  }, [startDate, selectedPlan]);
+
+  // Financial Calculations
+  const packagePrice = Number(selectedPlan?.price) || 2500;
+  const discountNum = Math.max(0, Number(discount) || 0);
+  const prevCreditNum = Number(previousBalance) || 0;
+  const netPayable = Math.max(0, packagePrice - discountNum + prevCreditNum);
+
+  // Auto sync amountPaid with netPayable
   useEffect(() => {
-    if (selectedPlan) {
-      const basePrice = Number(selectedPlan.price) || 2500;
-      const disc = Number(discount) || 0;
-      const finalAmt = Math.max(0, basePrice - disc);
-      setAmountPaid(finalAmt.toString());
-    }
-  }, [selectedPlan, discount]);
+    setAmountPaid(netPayable.toString());
+  }, [netPayable]);
+
+  const amountPaidNum = Number(amountPaid) || 0;
+  const remainingBalance = Math.max(0, netPayable - amountPaidNum);
 
   // Check duplicate phone
   const duplicateMember = useMemo(() => {
@@ -354,11 +306,18 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     });
   }, [mobile, members]);
 
-  // Photo File Upload Handler
-  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Check duplicate biometric ID
+  const duplicateBioMember = useMemo(() => {
+    if (!biometricId || biometricId.trim().length === 0) return null;
+    const cleanId = biometricId.trim();
+    return members.find((m: any) => {
+      const mId = String(m.biometricId || m.deviceUserId || '').trim();
+      return mId === cleanId;
+    });
+  }, [biometricId, members]);
 
+  // Photo File Handlers
+  const handlePhotoFile = (file: File) => {
     setPhotoError(null);
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type)) {
@@ -375,6 +334,24 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       setPhotoPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingPhoto(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingPhoto(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingPhoto(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handlePhotoFile(e.dataTransfer.files[0]);
+    }
   };
 
   // Webcam Camera Stream Handlers
@@ -403,6 +380,14 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     setIsCameraOpen(false);
   };
 
+  const switchCamera = () => {
+    stopCameraCapture();
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    setTimeout(() => {
+      startCameraCapture();
+    }, 200);
+  };
+
   const takeSnapshot = () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
@@ -423,15 +408,13 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     }
   };
 
-  // Step 1 Validation Trigger
+  // Step 1 Validation
   const validateStep1 = () => {
     const parseRes = step1Schema.safeParse({
       fullName,
-      gender: gender as any,
       mobile,
       email: email || undefined,
-      membershipPackageId: selectedPlan?.id || selectedPlan?.name || '',
-      startDate,
+      gender,
     });
 
     if (!parseRes.success) {
@@ -449,7 +432,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     return true;
   };
 
-  // Step 2 Validation Trigger
+  // Step 2 Validation
   const validateStep2 = () => {
     const parseRes = step2Schema.safeParse({
       dob: dob || undefined,
@@ -475,111 +458,27 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     return true;
   };
 
-  // PT Step Validation
-  const validatePtStep = () => {
-    const parseRes = ptStepSchema.safeParse({
-      ptAmount: Number(ptAmount) || 0,
-      ptDiscount: Number(ptDiscount) || 0,
-      ptTax: Number(ptTax) || 0,
-      ptStartDate,
-      ptExpiryDate,
-    });
-
-    if (!parseRes.success) {
-      const errors: Record<string, string> = {};
-      parseRes.error.issues.forEach((err) => {
-        if (err.path[0]) {
-          errors[err.path[0].toString()] = err.message;
-        }
-      });
-      setPtErrors(errors);
-      return false;
-    }
-
-    setPtErrors({});
-    return true;
-  };
-
-  // Hikvision Biometric Handlers
+  // Hikvision Health Check
   const checkHikvisionStatus = async () => {
     setIsTestingConn(true);
     try {
       const resp = await API.post('/devices/hikvision/test-connection');
       if (resp.data && resp.data.online) {
         setHikvisionOnline(true);
-        if (resp.data.matrix) {
-          setConnectionMatrix(resp.data.matrix);
-        }
-        toast.success('Hikvision 7-Point Health Check Passed ✓');
+        toast.success('Hikvision Terminal Connected ✓ (192.168.1.45)');
       } else {
         setHikvisionOnline(false);
         toast.error('Hikvision terminal unreachable on 192.168.1.45');
       }
     } catch (e) {
       setHikvisionOnline(false);
-      toast.error('Error testing Hikvision 7-point health matrix');
+      toast.error('Error connecting to Hikvision biometric terminal');
     } finally {
       setIsTestingConn(false);
-      setLastCheckedTime(new Date().toLocaleTimeString());
     }
   };
 
-  const handleTestUserCreation = async () => {
-    setIsCreatingUser(true);
-    setEnrollDetailLog('');
-    try {
-      const bioId = biometricId || '101';
-      const nameStr = fullName || 'TEST MEMBER';
-      toast.loading(`Creating user #${bioId} on Hikvision terminal...`, { id: 'test-user-create' });
-
-      const resp = await API.post('/devices/hikvision/test-user-creation', {
-        biometricId: bioId,
-        memberName: nameStr
-      });
-
-      if (resp.data && resp.data.success) {
-        setUserCreatedOnHikvision(true);
-        toast.success(`Person #${bioId} (${nameStr}) created successfully on Hikvision terminal!`, { id: 'test-user-create' });
-        setEnrollMsg(`✓ Person created on terminal (ID: ${bioId}, Method: ${resp.data.httpMethod || 'POST'})`);
-        setEnrollDetailLog(
-          `Endpoint: ${resp.data.url || '/ISAPI/AccessControl/UserInfo/Record?format=json'}\nMethod: ${resp.data.httpMethod || 'POST'}\nStatus: ${resp.data.httpStatus || 200}\nHikvision Response: ${JSON.stringify(resp.data.parsedResponse || resp.data.hikvisionResponse, null, 2)}`
-        );
-      } else {
-        setUserCreatedOnHikvision(false);
-        const errMsg = resp.data?.errorMessage || 'User creation returned HTTP failure';
-        toast.error(`User creation failed: ${errMsg}`, { id: 'test-user-create' });
-        setEnrollMsg(`User Creation Failed: ${errMsg}`);
-        setEnrollDetailLog(
-          `Endpoint: ${resp.data?.url || '/ISAPI/AccessControl/UserInfo/Record?format=json'}\nMethod: ${resp.data?.httpMethod || 'POST'}\nStatus: ${resp.data?.httpStatus || 400}\nHikvision Response: ${JSON.stringify(resp.data?.parsedResponse || resp.data?.hikvisionResponse, null, 2)}`
-        );
-      }
-    } catch (e: any) {
-      setUserCreatedOnHikvision(false);
-      const errMsg = e.response?.data?.errorMessage || e.message || 'Connection error';
-      toast.error(`User creation error: ${errMsg}`, { id: 'test-user-create' });
-      setEnrollMsg(`User Creation Error: ${errMsg}`);
-      setEnrollDetailLog(`Error: ${errMsg}`);
-    } finally {
-      setIsCreatingUser(false);
-    }
-  };
-
-  const fetchDiagnostics = async () => {
-    setIsLoadingDiagnostics(true);
-    try {
-      const resp = await API.get('/devices/hikvision/diagnostics');
-      if (resp.data) {
-        setDiagnosticsData(resp.data);
-        if (resp.data.reachability === 'REACHABLE') setHikvisionOnline(true);
-        if (resp.data.connectionMatrix) setConnectionMatrix(resp.data.connectionMatrix);
-      }
-    } catch (e) {
-      console.warn("Diagnostics fetch failed:", e);
-    } finally {
-      setIsLoadingDiagnostics(false);
-    }
-  };
-
+  // Hikvision Enrollment Trigger
   const handleExecuteEnrollment = async (type: 'FACE' | 'FINGERPRINT' | 'BOTH') => {
     setSelectedEnrollType(type);
     setEnrollStatus('enrolling');
@@ -587,14 +486,14 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
 
     if (type === 'FACE') {
       setFaceStatus('REQUESTING');
-      setEnrollMsg('Sending request... Registering user & checking face capabilities');
+      setEnrollMsg('Sending face registration request to terminal...');
     } else if (type === 'FINGERPRINT') {
       setFpStatus('REQUESTING');
-      setEnrollMsg('Sending request... Registering user & checking fingerprint scanner');
+      setEnrollMsg('Sending fingerprint enrollment command to scanner...');
     } else {
       setFaceStatus('REQUESTING');
       setFpStatus('REQUESTING');
-      setEnrollMsg('Sending request... Provisioning user & checking biometric capabilities');
+      setEnrollMsg('Initiating face + fingerprint enrollment sequence...');
     }
 
     try {
@@ -607,56 +506,45 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
 
       if (resp.data && resp.data.success) {
         setEnrollStatus('success');
-        setUserCreatedOnHikvision(true);
         if (type === 'FACE' || type === 'BOTH') setFaceStatus('ENROLLED');
         if (type === 'FINGERPRINT' || type === 'BOTH') setFpStatus('ENROLLED');
-
-        const successText = `✓ ${type} enrollment completed on Hikvision terminal (Biometric ID #${biometricId || '101'})`;
-        setEnrollMsg(successText);
+        setEnrollMsg(`✓ ${type} enrolled on Hikvision terminal (ID #${biometricId || '101'})`);
         toast.success(`${type} enrolled successfully on Hikvision terminal`);
       } else if (resp.data && resp.data.requiresTerminalAction) {
         setEnrollStatus('waiting_terminal');
-        setUserCreatedOnHikvision(true);
         if (type === 'FACE' || type === 'BOTH') setFaceStatus('TERMINAL_ENROLLMENT_REQUIRED');
         if (type === 'FINGERPRINT' || type === 'BOTH') setFpStatus('WAITING FOR TERMINAL');
-
-        const terminalMsg = resp.data.message || `User #${biometricId || '101'} created on terminal. Please complete enrollment directly on physical Hikvision terminal.`;
+        const terminalMsg = resp.data.message || `User #${biometricId || '101'} created. Complete scan on physical device.`;
         setEnrollMsg(terminalMsg);
         setEnrollDetailLog(
-          `Endpoint: ${resp.data?.deviceResult?.endpoint || '/ISAPI/AccessControl/UserInfo/Record?format=json'}\nMethod: ${resp.data?.deviceResult?.httpMethod || 'POST'}\nStatus: ${resp.data?.deviceResult?.httpStatus || 200}\nAction Required: Send member to Hikvision terminal to touch fingerprint scanner or capture face.`
+          `Status: 200 OK\nAction: Ask member to place finger or look into camera on terminal #192.168.1.45.`
         );
-        toast.success(`User #${biometricId || '101'} created on terminal! Please complete enrollment on physical device.`);
+        toast.success(`User #${biometricId || '101'} created on terminal! Complete scan on device.`);
       } else {
         setEnrollStatus('failed');
         if (type === 'FACE' || type === 'BOTH') setFaceStatus('FAILED');
         if (type === 'FINGERPRINT' || type === 'BOTH') setFpStatus('FAILED');
-
         const errReason = resp.data?.error || 'Hikvision request failed.';
-        setEnrollMsg(`Hikvision API Error: ${errReason}`);
-        setEnrollDetailLog(
-          `Endpoint: ${resp.data?.apiEndpoint || '/ISAPI/AccessControl/UserInfo/Record?format=json'}\nMethod: ${resp.data?.httpMethod || 'POST'}\nStatus: ${resp.data?.httpStatus || 400}\nHikvision Response: ${JSON.stringify(resp.data?.parsedResponse || resp.data?.hikvisionResponse || errReason, null, 2)}`
-        );
-        toast.error(`Hikvision API Error: ${errReason}`);
+        setEnrollMsg(`Error: ${errReason}`);
+        setEnrollDetailLog(`API Error: ${JSON.stringify(resp.data, null, 2)}`);
+        toast.error(`Terminal error: ${errReason}`);
       }
     } catch (e: any) {
       setEnrollStatus('failed');
       if (type === 'FACE' || type === 'BOTH') setFaceStatus('FAILED');
       if (type === 'FINGERPRINT' || type === 'BOTH') setFpStatus('FAILED');
-
-      const errMsg = e.response?.data?.error || e.message || 'Hikvision request failed.';
-      setEnrollMsg(`Hikvision API Error: ${errMsg}`);
-      setEnrollDetailLog(
-        `Endpoint: ${e.response?.data?.apiEndpoint || '/ISAPI/AccessControl/UserInfo/Record?format=json'}\nMethod: POST\nStatus: ${e.response?.status || 500}\nHikvision Response: ${JSON.stringify(e.response?.data?.parsedResponse || e.response?.data || errMsg, null, 2)}`
-      );
-      toast.error(`Hikvision API Error: ${errMsg}`);
+      const errMsg = e.response?.data?.error || e.message || 'Connection error';
+      setEnrollMsg(`Hikvision Error: ${errMsg}`);
+      setEnrollDetailLog(`Exception: ${errMsg}`);
+      toast.error(`Hikvision Error: ${errMsg}`);
     }
   };
 
-  // Next Step Action
+  // Step Navigation Handlers
   const handleNextStep = () => {
     if (step === 1) {
       if (!validateStep1()) {
-        toast.error('Please complete all required fields on Step 1');
+        toast.error('Please fix the required fields in Profile');
         return;
       }
       setStep(2);
@@ -665,7 +553,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
 
     if (step === 2) {
       if (!validateStep2()) {
-        toast.error('Please fix the validation errors on Step 2');
+        toast.error('Please fix the validation errors in Personal & Health');
         return;
       }
       setStep(3);
@@ -673,26 +561,28 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     }
 
     if (step === 3) {
+      if (!selectedPlan) {
+        toast.error('Please select a membership package');
+        return;
+      }
       setStep(4);
       return;
     }
 
     if (step === 4) {
-      if (hasPt) {
-        setStep(5);
-      } else {
-        handleSubmitFinal();
-      }
+      setStep(5);
       return;
     }
 
-    if (step === 5 && hasPt) {
-      if (!validatePtStep()) {
-        toast.error('Please review PT billing details');
-        return;
-      }
+    if (step === 5) {
       handleSubmitFinal();
       return;
+    }
+  };
+
+  const handlePrevStep = () => {
+    if (step > 1) {
+      setStep(step - 1);
     }
   };
 
@@ -709,20 +599,13 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         : cleanMobile.slice(-10);
 
       const normalizedEmail = (email || `${normalizedPhone}@thewarriorgym.in`).toLowerCase().trim();
-
       const todayStr = new Date().toISOString().split('T')[0];
       const memStartDate = startDate || todayStr;
       const planName = selectedPlan?.name || '1 Month';
       const planDuration = selectedPlan?.duration || planName;
       const expiryStr = membershipEngine.calculateMembershipExpiry(memStartDate, planDuration);
 
-      const basePrice = Number(selectedPlan?.price) || 2500;
-      const disc = Number(discount) || 0;
-      const finalBilled = Math.max(0, basePrice - disc);
-      const paidAmt = Number(amountPaid) || finalBilled;
-
       const computedStatus = membershipEngine.calculateMembershipStatus(expiryStr, memStartDate);
-
       const memInvoiceNo = `INV-MEM-${Date.now().toString().slice(-6)}`;
       const ptInvoiceNo = hasPt ? `INV-PT-${Date.now().toString().slice(-6)}` : '';
       const onboardingUuid = `add_mem_${normalizedPhone}_${todayStr}_${Math.floor(1000 + Math.random() * 9000)}`;
@@ -734,44 +617,47 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         email: normalizedEmail,
         photo: photoPreview || '',
         plan: planName,
-        price: basePrice,
-        originalAmount: basePrice,
-        packagePrice: basePrice,
-        discountAmount: disc,
-        discount: disc,
-        netPayable: finalBilled,
-        amount: finalBilled,
-        amountPaid: paidAmt,
-        paid: paidAmt,
+        price: packagePrice,
+        originalAmount: packagePrice,
+        packagePrice: packagePrice,
+        discountAmount: discountNum,
+        discount: discountNum,
+        netPayable: netPayable,
+        amount: netPayable,
+        amountPaid: amountPaidNum,
+        paid: amountPaidNum,
         joinDate: todayStr,
         startDate: memStartDate,
         createdAt: new Date().toISOString(),
         expiryDate: expiryStr,
         status: computedStatus,
-        paymentStatus: paidAmt >= finalBilled ? 'paid' : 'partial',
-        totalBilled: finalBilled,
-        totalPaid: paidAmt,
-        biometricId: biometricId,
-        deviceUserId: biometricId,
+        paymentStatus: amountPaidNum >= netPayable ? 'paid' : (amountPaidNum > 0 ? 'partial' : 'pending'),
+        totalBilled: netPayable,
+        totalPaid: amountPaidNum,
+        biometricId: biometricId || '101',
+        deviceUserId: biometricId || '101',
         trainerId: selectedTrainerId || 'null',
         trainer: trnName,
         trainerName: trnName,
         gender,
         isRealTimeToday: true,
         paymentMethod: paymentMethod,
+        paymentDate: paymentDate,
+        paymentNotes: paymentNotes,
         idempotencyKey: onboardingUuid,
         invoiceNumber: memInvoiceNo,
-        age, height, weight, dob, maritalStatus,
+        referralSource,
+        dob, occupation, emergencyContact,
+        height, weight, age, maritalStatus,
         anniversaryDate: maritalStatus === 'married' ? anniversaryDate : null,
-        emergencyContact, occupation, address
+        address, fitnessGoal, medicalNotes
       };
 
       if (hasPt && selectedTrainerObj) {
-        const amtNum = Number(ptAmount) || 6000;
-        const discNum = Number(ptDiscount) || 0;
-        const taxNum = Number(ptTax) || 0;
-        const netNum = Math.max(0, amtNum - discNum + taxNum);
-        const pAmtPaid = Number(ptAmountPaid) || netNum;
+        const ptAmtNum = Number(ptAmount) || 6000;
+        const ptDiscNum = Number(ptDiscount) || 0;
+        const ptNetNum = Math.max(0, ptAmtNum - ptDiscNum);
+        const ptPaidNum = Number(ptAmountPaid) || ptNetNum;
 
         memberPayload.ptBilling = {
           enabled: true,
@@ -780,59 +666,43 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
           trainerRole: selectedTrainerObj.role || 'Personal Trainer',
           packageName: `Personal Training (${ptDuration})`,
           duration: ptDuration,
-          originalAmount: amtNum,
-          packagePrice: amtNum,
-          discountAmount: discNum,
-          discount: discNum,
-          taxAmount: taxNum,
-          netPayable: netNum,
-          amount: netNum,
-          amountPaid: pAmtPaid,
-          paid: pAmtPaid,
-          paymentMethod: ptPaymentMethod,
-          startDate: ptStartDate,
-          expiryDate: ptExpiryDate,
-          invoiceNo: ptInvoiceNo,
-          status: 'ACTIVE'
-        };
-
-        memberPayload.pt = {
-          enabled: true,
-          trainerId: selectedTrainerObj.id || selectedTrainerObj.employeeId,
-          trainerName: selectedTrainerObj.name,
-          trainerRole: selectedTrainerObj.role || 'Personal Trainer',
-          trainerAvatar: selectedTrainerObj.photo || selectedTrainerObj.avatarUrl || '',
-          packageName: ptDuration,
-          duration: ptDuration,
-          amount: netNum,
-          startDate: ptStartDate,
-          expiryDate: ptExpiryDate,
+          originalAmount: ptAmtNum,
+          packagePrice: ptAmtNum,
+          discountAmount: ptDiscNum,
+          discount: ptDiscNum,
+          netPayable: ptNetNum,
+          amount: ptNetNum,
+          amountPaid: ptPaidNum,
+          paid: ptPaidNum,
+          paymentMethod: paymentMethod,
+          startDate: memStartDate,
+          expiryDate: expiryStr,
           invoiceNo: ptInvoiceNo,
           status: 'ACTIVE'
         };
       }
 
       const resData: any = await addMember(memberPayload);
-
       const createdMem = resData || memberPayload;
+      
       const memInv = resData?.invoice || {
         invoiceNumber: memInvoiceNo,
         invoiceType: 'MEMBERSHIP',
         billingType: 'MEMBERSHIP',
         packageName: planName,
         plan: planName,
-        originalAmount: basePrice,
-        packagePrice: basePrice,
-        discountAmount: disc,
-        discount: disc,
-        netPayable: finalBilled,
-        amount: finalBilled,
-        amountPaid: paidAmt,
-        paid: paidAmt,
-        pendingAmount: Math.max(0, finalBilled - paidAmt),
+        originalAmount: packagePrice,
+        packagePrice: packagePrice,
+        discountAmount: discountNum,
+        discount: discountNum,
+        netPayable: netPayable,
+        amount: netPayable,
+        amountPaid: amountPaidNum,
+        paid: amountPaidNum,
+        pendingAmount: remainingBalance,
         method: paymentMethod,
         paymentMethod: paymentMethod,
-        status: paidAmt >= finalBilled ? 'paid' : 'partial',
+        status: amountPaidNum >= netPayable ? 'paid' : (amountPaidNum > 0 ? 'partial' : 'pending'),
         date: todayStr,
         startDate: memStartDate,
         expiryDate: expiryStr
@@ -840,44 +710,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
 
       setCreatedMember(createdMem);
       setCreatedInvoice(memInv);
-
-      if (hasPt && selectedTrainerObj) {
-        const amtNum = Number(ptAmount) || 6000;
-        const discNum = Number(ptDiscount) || 0;
-        const taxNum = Number(ptTax) || 0;
-        const netNum = Math.max(0, amtNum - discNum + taxNum);
-        const pAmtPaid = Number(ptAmountPaid) || netNum;
-
-        const ptInv = resData?.ptInvoice || {
-          invoiceNumber: memberPayload.ptBilling?.invoiceNo || ptInvoiceNo,
-          invoiceType: 'PT',
-          billingType: 'PT',
-          packageName: `Personal Training (${ptDuration})`,
-          plan: `Personal Training (${ptDuration})`,
-          trainerName: selectedTrainerObj.name,
-          originalAmount: amtNum,
-          packagePrice: amtNum,
-          discountAmount: discNum,
-          discount: discNum,
-          netPayable: netNum,
-          amount: netNum,
-          amountPaid: pAmtPaid,
-          paid: pAmtPaid,
-          pendingAmount: Math.max(0, netNum - pAmtPaid),
-          method: ptPaymentMethod,
-          paymentMethod: ptPaymentMethod,
-          status: (netNum - pAmtPaid) <= 0 ? 'paid' : 'partial',
-          date: todayStr,
-          startDate: ptStartDate,
-          expiryDate: ptExpiryDate
-        };
-        setCreatedPtInvoice(ptInv);
-      }
-
-      setStep(hasPt ? 6 : 5);
-      toast.success('Member created successfully 🎉');
+      setStep(6);
+      toast.success('Member onboarded & invoice issued! 🚀');
     } catch (err: any) {
-      const errMsg = err.message || 'Failed to complete member registration. Please try again.';
+      const errMsg = err.message || 'Failed to complete member onboarding.';
       setBackendError(errMsg);
       toast.error(errMsg);
     } finally {
@@ -885,1192 +721,1308 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     }
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
-  };
-
-  const handleAttemptClose = () => {
-    const finalStepIndex = hasPt ? 6 : 5;
-    if (step === finalStepIndex) {
+  const handleCloseModal = () => {
+    if (step === 6) {
       onClose();
       return;
     }
-    if (fullName || mobile || email || photoPreview) {
+    if (fullName || mobile || photoPreview) {
       setShowDiscardConfirm(true);
     } else {
       onClose();
     }
   };
 
-  if (!isOpen) return null;
+  const resetForm = () => {
+    setStep(1);
+    setFullName('');
+    setMobile('');
+    setEmail('');
+    setPhotoPreview(null);
+    setGender('Male');
+    setDob('');
+    setOccupation('');
+    setEmergencyContact('');
+    setHeight('');
+    setWeight('');
+    setAge('');
+    setAddress('');
+    setMedicalNotes('');
+    setDiscount('0');
+    setPreviousBalance('0');
+    setCreatedMember(null);
+    setCreatedInvoice(null);
+    setStep1Errors({});
+    setStep2Errors({});
+  };
 
-  const totalStepCount = hasPt ? 6 : 5;
+  if (!isOpen) return null;
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4">
-        
-        {/* Backdrop */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/70 backdrop-blur-sm overflow-y-auto">
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs"
-          onClick={handleAttemptClose}
-        />
-
-        {/* Modal Window — Max 1050px, Max 90vh */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 15 }}
+          initial={{ opacity: 0, scale: 0.96, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 15 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="w-full max-w-[1050px] bg-white text-slate-900 rounded-[32px] shadow-2xl border border-slate-200 relative overflow-hidden flex flex-col h-[90vh] z-10 font-sans text-left"
+          exit={{ opacity: 0, scale: 0.96, y: 12 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          className="relative w-full max-w-4xl bg-white rounded-2xl md:rounded-3xl shadow-2xl border border-stone-200 overflow-hidden flex flex-col max-h-[92vh] my-auto"
         >
-          {/* Header Bar */}
-          <div className="px-6 sm:px-8 py-4 sm:py-5 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#9A3412] text-white flex justify-between items-center shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/20 border border-white/30 flex items-center justify-center text-white shadow-inner shrink-0">
-                <User size={20} />
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-black tracking-tight text-white leading-tight">New Member Onboarding</h2>
-                <p className="text-xs text-orange-100 font-medium">Create a complete member profile, membership and biometric record.</p>
-              </div>
-            </div>
+          {/* ══════════════════════════════════════════════════════════════════
+              1. PREMIUM WARRIOR HEADER
+             ══════════════════════════════════════════════════════════════════ */}
+          <div className="relative px-6 py-5 bg-gradient-to-r from-[#FF7A00] via-[#F04400] to-[#C23500] text-white shrink-0 overflow-hidden">
+            {/* Background geometric accents */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full blur-2xl pointer-events-none -mr-20 -mt-20" />
+            <div className="absolute bottom-0 left-1/3 w-48 h-48 bg-black/10 rounded-full blur-xl pointer-events-none" />
 
-            <button 
-              onClick={handleAttemptClose}
-              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all flex items-center justify-center border-none cursor-pointer shrink-0"
-              title="Close Onboarding"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Modern Step Progress Header */}
-          <div className="px-6 sm:px-8 py-3.5 bg-slate-50 border-b border-slate-200 shrink-0 select-none">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-black uppercase tracking-wider text-[#EA580C]">
-                Step {step} of {totalStepCount}
-              </span>
-              <span className="text-[11px] font-bold text-slate-500">
-                {step === 1 && 'Profile & Plan'}
-                {step === 2 && 'Health & Personal'}
-                {step === 3 && 'Biometrics'}
-                {step === 4 && 'Membership Payment'}
-                {step === 5 && (hasPt ? 'PT Billing' : 'Invoice & Print')}
-                {step === 6 && 'Invoice & Print'}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between relative max-w-3xl mx-auto pt-1">
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-200 rounded-full z-0 overflow-hidden">
-                <motion.div 
-                  className="h-full bg-[#EA580C]" 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${((step - 1) / (totalStepCount - 1)) * 100}%` }}
-                  transition={{ duration: 0.4 }}
-                />
-              </div>
-
-              {[
-                { s: 1, l: 'Profile & Plan' },
-                { s: 2, l: 'Health & Personal' },
-                { s: 3, l: 'Biometrics' },
-                { s: 4, l: 'Payment' },
-                ...(hasPt ? [{ s: 5, l: 'PT Billing' }, { s: 6, l: 'Invoice' }] : [{ s: 5, l: 'Invoice' }])
-              ].map((st) => {
-                const isPassed = step > st.s;
-                const isCurrent = step === st.s;
-
-                return (
-                  <div key={st.s} className="relative z-10 flex flex-col items-center">
-                    <div 
-                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${
-                        isPassed 
-                          ? 'bg-[#EA580C] text-white shadow-md shadow-orange-500/20' 
-                          : isCurrent 
-                          ? 'bg-[#EA580C] text-white ring-4 ring-orange-100 shadow-md'
-                          : 'bg-white border-2 border-slate-300 text-slate-400'
-                      }`}
-                    >
-                      {isPassed ? <Check size={14} strokeWidth={3} /> : st.s}
-                    </div>
-                    <span className={`text-[9px] font-black tracking-wider uppercase mt-1 hidden sm:block ${
-                      isCurrent ? 'text-[#C2410C] font-extrabold' : isPassed ? 'text-slate-700 font-bold' : 'text-slate-400'
-                    }`}>
-                      {st.l}
+            <div className="relative flex items-center justify-between z-10">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center shadow-inner">
+                  <UserCheck className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black tracking-widest uppercase px-2 py-0.5 rounded-full bg-black/20 text-white/90 border border-white/10">
+                      The Warrior Gym CRM
+                    </span>
+                    <span className="text-[11px] font-medium text-orange-100 hidden sm:inline">
+                      • Step {step} of 6
                     </span>
                   </div>
+                  <h2 className="text-xl font-bold tracking-tight text-white mt-0.5">
+                    {step === 6 ? 'Member Onboarding Complete' : 'New Member Onboarding'}
+                  </h2>
+                  <p className="text-xs text-orange-100/90 font-normal">
+                    {step === 6 ? 'Official invoice generated and account active' : 'Create a complete member profile, membership and biometric record.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right: Progress Pill & Close */}
+              <div className="flex items-center gap-3">
+                <div className="hidden sm:flex flex-col items-end text-right">
+                  <span className="text-[11px] font-bold text-white tracking-wide">
+                    {Math.round((step / 6) * 100)}% Complete
+                  </span>
+                  <div className="w-24 h-1.5 bg-black/20 rounded-full mt-1 overflow-hidden">
+                    <motion.div
+                      className="h-full bg-white rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${(step / 6) * 100}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all duration-150 border border-white/20"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════════
+              2. SMART PROGRESS STEPPER
+             ══════════════════════════════════════════════════════════════════ */}
+          <div className="px-6 py-2.5 bg-stone-50 border-b border-stone-200 shrink-0 overflow-x-auto no-scrollbar">
+            <div className="flex items-center justify-between min-w-[540px] gap-2">
+              {STEPS.map((s, idx) => {
+                const isActive = step === s.id;
+                const isCompleted = step > s.id;
+                const isClickable = step > s.id && step !== 6;
+
+                return (
+                  <React.Fragment key={s.id}>
+                    <button
+                      type="button"
+                      disabled={!isClickable}
+                      onClick={() => isClickable && setStep(s.id)}
+                      className={`flex items-center gap-2 text-left py-1 px-2 rounded-lg transition-all ${
+                        isActive
+                          ? 'bg-orange-100/80 text-[#EA580C] font-semibold'
+                          : isCompleted
+                          ? 'text-stone-700 hover:text-stone-900 cursor-pointer'
+                          : 'text-stone-400 cursor-default opacity-60'
+                      }`}
+                    >
+                      <div
+                        className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 transition-colors ${
+                          isActive
+                            ? 'bg-[#F04400] text-white shadow-sm'
+                            : isCompleted
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-stone-200 text-stone-500'
+                        }`}
+                      >
+                        {isCompleted ? <Check className="w-3 h-3 stroke-[3]" /> : s.id}
+                      </div>
+                      <div className="text-xs whitespace-nowrap">
+                        <span className={isActive ? 'font-bold text-[#EA580C]' : 'font-medium'}>
+                          {s.title}
+                        </span>
+                      </div>
+                    </button>
+
+                    {idx < STEPS.length - 1 && (
+                      <div
+                        className={`h-0.5 flex-1 mx-1 rounded-full transition-colors ${
+                          step > idx + 1 ? 'bg-emerald-500' : 'bg-stone-200'
+                        }`}
+                      />
+                    )}
+                  </React.Fragment>
                 );
               })}
             </div>
           </div>
 
-          {/* Scrollable Form Body */}
-          <div className="flex-1 overflow-y-auto p-6 sm:p-8">
-            
-            {/* ── STEP 1: Profile Photo & Basic Information & Plan ── */}
-            {step === 1 && (
-              <motion.div 
-                initial={{ opacity: 0, x: 15 }} 
-                animate={{ opacity: 1, x: 0 }} 
-                exit={{ opacity: 0, x: -15 }}
-                className="max-w-4xl mx-auto space-y-6"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 items-start">
-                  
-                  {/* ── LEFT COLUMN: UNIFIED PROFILE PHOTO SYSTEM ── */}
-                  <div className="md:col-span-1 bg-slate-50 p-6 rounded-3xl border border-slate-200/80 flex flex-col items-center text-center space-y-4 shadow-xs">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Profile Photo</span>
-
-                    {/* Single Avatar Circle */}
-                    <div className="w-32 h-32 rounded-full bg-white border-4 border-slate-200 shadow-md overflow-hidden flex flex-col items-center justify-center relative group shrink-0">
-                      {photoPreview ? (
-                        <img 
-                          src={photoPreview} 
-                          alt="Member preview" 
-                          className="w-full h-full object-cover" 
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center text-slate-300">
-                          <User size={52} strokeWidth={1.5} />
-                          <span className="text-[10px] font-bold text-slate-400 mt-1">No Photo</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <input 
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={handlePhotoFileChange}
-                      className="hidden"
-                      id="member-photo-file-input"
-                    />
-
-                    {/* Unified Actions: Either Upload/Camera buttons OR Change/Remove buttons */}
-                    <div className="w-full space-y-2">
-                      {!photoPreview ? (
-                        <div className="grid grid-cols-2 gap-2 w-full">
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="py-2.5 px-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs border-none cursor-pointer"
-                          >
-                            <Upload size={14} /> Upload
-                          </button>
-                          <button
-                            type="button"
-                            onClick={startCameraCapture}
-                            className="py-2.5 px-3 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border-none cursor-pointer"
-                          >
-                            <Camera size={14} /> Camera
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2 w-full">
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-all border-none cursor-pointer flex items-center justify-center gap-1"
-                          >
-                            <RefreshCw size={12} /> Change Photo
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPhotoPreview(null);
-                              setPhotoError(null);
-                            }}
-                            className="px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-all border-none cursor-pointer"
-                            title="Remove Photo"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <p className="text-[10px] font-bold text-slate-400 leading-tight">
-                      JPG / PNG / WEBP • Max 5 MB
-                    </p>
-
-                    {photoError && (
-                      <p className="text-[10px] font-bold text-red-500 mt-1 flex items-center justify-center gap-1 bg-red-50 p-2 rounded-xl border border-red-200 w-full">
-                        <AlertCircle size={12} /> {photoError}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* ── RIGHT COLUMN: BASIC INFO & MEMBERSHIP PACKAGE ── */}
-                  <div className="md:col-span-2 space-y-4">
-                    
-                    {/* Full Name & Gender */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="sm:col-span-2">
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Full Name *</label>
-                        <input 
-                          type="text" 
-                          value={fullName} 
-                          onChange={(e) => {
-                            setFullName(e.target.value);
-                            if (step1Errors.fullName) setStep1Errors(prev => ({ ...prev, fullName: '' }));
-                          }}
-                          placeholder="e.g. Rahul Sharma"
-                          className={`w-full h-11 bg-slate-50 border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all ${
-                            step1Errors.fullName ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316] focus:bg-white'
-                          }`}
-                        />
-                        {step1Errors.fullName && (
-                          <p className="text-[10px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                            <AlertCircle size={11} /> {step1Errors.fullName}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Gender *</label>
-                        <div className="flex h-11 bg-slate-100/80 border border-slate-300 rounded-xl p-1 gap-1">
-                          {(['Male', 'Female', 'Other'] as const).map((g) => (
-                            <button
-                              key={g}
-                              type="button"
-                              onClick={() => setGender(g)}
-                              className={`flex-1 rounded-lg text-xs font-black transition-all border-none cursor-pointer ${
-                                gender === g
-                                  ? 'bg-[#EA580C] text-white shadow-xs'
-                                  : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
-                              }`}
-                            >
-                              {g}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Mobile Number & Email */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Mobile Number *</label>
-                        <div className="relative flex items-center">
-                          <span className="absolute left-3 font-mono font-black text-xs text-slate-500 border-r border-slate-300 pr-2 pointer-events-none">
-                            +91
-                          </span>
-                          <input 
-                            type="tel" 
-                            value={mobile} 
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                              setMobile(val);
-                              if (step1Errors.mobile) setStep1Errors(prev => ({ ...prev, mobile: '' }));
-                            }}
-                            placeholder="9876543210"
-                            className={`w-full h-11 pl-14 bg-slate-50 border rounded-xl pr-3 text-xs font-mono font-black text-slate-900 focus:outline-none transition-all ${
-                              step1Errors.mobile ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316] focus:bg-white'
-                            }`}
-                          />
-                        </div>
-                        {step1Errors.mobile ? (
-                          <p className="text-[10px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                            <AlertCircle size={11} /> {step1Errors.mobile}
-                          </p>
-                        ) : (
-                          <span className="text-[9px] font-bold text-slate-400 mt-1 block">10 digits required</span>
-                        )}
-
-                        {duplicateMember && (
-                          <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[10px] font-bold flex items-center justify-between gap-1">
-                            <div className="flex items-center gap-1">
-                              <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                              <span>Member already exists with this phone!</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Email Address */}
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Email Address (Optional)</label>
-                        <input 
-                          type="email" 
-                          value={email} 
-                          onChange={(e) => {
-                            setEmail(e.target.value);
-                            if (step1Errors.email) setStep1Errors(prev => ({ ...prev, email: '' }));
-                          }}
-                          placeholder="rahul@example.com"
-                          className={`w-full h-11 bg-slate-50 border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all ${
-                            step1Errors.email ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316] focus:bg-white'
-                          }`}
-                        />
-                        {step1Errors.email && (
-                          <p className="text-[10px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                            <AlertCircle size={11} /> {step1Errors.email}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Membership Packages Selection Grid */}
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">Select Membership Package *</label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {activePlans.map((p: any, pIdx: number) => {
-                          const isSelected = selectedPlan?.name === p.name || selectedPlan?.id === p.id;
-                          return (
-                            <div 
-                              key={p.id || p.name || `plan-${pIdx}`}
-                              onClick={() => {
-                                setSelectedPlan(p);
-                                if (step1Errors.membershipPackageId) setStep1Errors(prev => ({ ...prev, membershipPackageId: '' }));
-                              }}
-                                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all ${
-                                  isSelected 
-                                    ? 'bg-[#FFF7ED] border-[#EA580C] text-slate-900 shadow-md ring-2 ring-orange-500/15' 
-                                    : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50'
-                                }`}
-                            >
-                              <div className="flex justify-between items-start">
-                                <span className="text-xs font-black uppercase">{p.name}</span>
-                                <span className="text-xs font-mono font-black text-[#C2410C]">₹{(p.price || 0).toLocaleString('en-IN')}</span>
-                              </div>
-                              <div className="flex justify-between items-center mt-2">
-                                <span className="text-[10px] text-slate-500 font-bold">{p.duration || '30 Days'} Validity</span>
-                                {isSelected && (
-                                  <span className="text-[9px] font-black uppercase bg-[#EA580C] text-white px-2 py-0.5 rounded-full flex items-center gap-1">
-                                    ✓ Selected
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {step1Errors.membershipPackageId && (
-                        <p className="text-[10px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                          <AlertCircle size={11} /> {step1Errors.membershipPackageId}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Start Date & Optional Trainer */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Membership Start Date *</label>
-                        <input 
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] focus:bg-white transition-all cursor-pointer"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Personal Trainer (Optional)</label>
-                        <select 
-                          value={selectedTrainerId} 
-                          onChange={(e) => setSelectedTrainerId(e.target.value)}
-                          className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] focus:bg-white transition-all cursor-pointer"
-                        >
-                          <option value="">No PT Assigned</option>
-                          {trainersList.map((t: any, tIdx: number) => (
-                            <option key={t.employeeId || t.id || `trainer-${tIdx}`} value={t.employeeId || t.id || `trainer-${tIdx}`}>
-                              {t.name} ({t.employeeId || (t.biometricId ? `#${t.biometricId}` : 'EMP-TRN')}) — {t.specialization || t.role || 'Trainer'}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── STEP 2: Health & Personal Details ── */}
-            {step === 2 && (
-              <motion.div 
-                initial={{ opacity: 0, x: 15 }} 
-                animate={{ opacity: 1, x: 0 }} 
-                exit={{ opacity: 0, x: -15 }}
-                className="max-w-2xl mx-auto space-y-6"
-              >
-                <div className="text-center mb-4">
-                  <span className="px-3 py-1 bg-[#FFF7ED] border border-[#FED7AA] text-[#C2410C] text-[10px] font-extrabold uppercase tracking-widest rounded-full inline-block mb-1">
-                    Personal & Physical Parameters
-                  </span>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Personal & Physical Health Details</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Fill physical metrics for workout & diet customization, or proceed to next step</p>
-                </div>
-
-                {/* Section 1: Personal Information */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                  <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider">Personal Information</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Gender</label>
-                      <select 
-                        value={gender} 
-                        onChange={(e) => setGender(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] transition-all cursor-pointer"
-                      >
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Date of Birth</label>
-                      <input 
-                        type="date" 
-                        value={dob} 
-                        onChange={(e) => {
-                          setDob(e.target.value);
-                          if (step2Errors.dob) setStep2Errors(prev => ({ ...prev, dob: '' }));
-                        }}
-                        className={`w-full h-11 bg-white border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all cursor-pointer ${
-                          step2Errors.dob ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316]'
-                        }`}
-                      />
-                      {step2Errors.dob && (
-                        <p className="text-[10px] font-bold text-red-500 mt-1 flex items-center gap-1">
-                          <AlertCircle size={11} /> {step2Errors.dob}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Occupation</label>
-                      <input 
-                        type="text" 
-                        value={occupation} 
-                        onChange={(e) => setOccupation(e.target.value)}
-                        placeholder="e.g. Software Engineer, Doctor"
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] transition-all"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Marital Status</label>
-                      <select 
-                        value={maritalStatus} 
-                        onChange={(e) => setMaritalStatus(e.target.value as any)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] transition-all cursor-pointer"
-                      >
-                        <option value="single">Single</option>
-                        <option value="married">Married</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {maritalStatus === 'married' && (
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Anniversary Date *</label>
-                      <input 
-                        type="date"
-                        value={anniversaryDate}
-                        onChange={(e) => {
-                          setAnniversaryDate(e.target.value);
-                          if (step2Errors.anniversaryDate) setStep2Errors(prev => ({ ...prev, anniversaryDate: '' }));
-                        }}
-                        className={`w-full h-11 bg-white border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all cursor-pointer ${
-                          step2Errors.anniversaryDate ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316]'
-                        }`}
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Residential Address</label>
-                    <input 
-                      type="text"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Street, City, Pin code"
-                      className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Section 2: Physical Parameters */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                  <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider">Physical & Health Parameters</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Body Weight (kg)</label>
-                      <input 
-                        type="number" 
-                        value={weight} 
-                        onChange={(e) => {
-                          setWeight(e.target.value);
-                          if (step2Errors.weight) setStep2Errors(prev => ({ ...prev, weight: '' }));
-                        }}
-                        placeholder="72"
-                        className={`w-full h-11 bg-white border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all ${
-                          step2Errors.weight ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316]'
-                        }`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Height (cm)</label>
-                      <input 
-                        type="number" 
-                        value={height} 
-                        onChange={(e) => {
-                          setHeight(e.target.value);
-                          if (step2Errors.height) setStep2Errors(prev => ({ ...prev, height: '' }));
-                        }}
-                        placeholder="175"
-                        className={`w-full h-11 bg-white border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all ${
-                          step2Errors.height ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316]'
-                        }`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Emergency Phone</label>
-                      <input 
-                        type="tel" 
-                        value={emergencyContact} 
-                        onChange={(e) => {
-                          setEmergencyContact(e.target.value);
-                          if (step2Errors.emergencyContact) setStep2Errors(prev => ({ ...prev, emergencyContact: '' }));
-                        }}
-                        placeholder="9876543210"
-                        className={`w-full h-11 bg-white border rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none transition-all ${
-                          step2Errors.emergencyContact ? 'border-red-500 bg-red-50/20' : 'border-slate-300 focus:border-[#F97316]'
-                        }`}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </motion.div>
-            )}
-
-            {/* ── STEP 3: Hikvision Biometric Enrollment ── */}
-            {step === 3 && (
-              <motion.div 
-                initial={{ opacity: 0, x: 15 }} 
-                animate={{ opacity: 1, x: 0 }} 
-                exit={{ opacity: 0, x: -15 }}
-                className="max-w-2xl mx-auto space-y-5 text-center"
-              >
-                {/* Title Header */}
-                <div>
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#FFF7ED] to-[#FFEDD5] border border-[#FED7AA] text-[#EA580C] flex items-center justify-center mx-auto shadow-md mb-2">
-                    <ScanFace size={28} />
-                  </div>
-                  <span className="px-3 py-0.5 bg-orange-100 border border-orange-200 text-[#C2410C] text-[10px] font-extrabold uppercase tracking-widest rounded-full inline-block mb-1">
-                    Hikvision Terminal Integration
-                  </span>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Biometric Enrollment</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Register member face & fingerprint biometrics directly on Hikvision terminal
-                  </p>
-                </div>
-
-                {/* Device Status Card */}
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-                  <div className="flex items-center gap-3 text-left">
-                    <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-[#EA580C] shrink-0">
-                      <Cpu size={20} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-xs font-black text-slate-900">Hikvision Terminal</h4>
-                        <span className={`px-2 py-0.5 text-[10px] font-black rounded-full uppercase tracking-wider ${
-                          hikvisionOnline ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : 'bg-red-100 text-red-700 border border-red-300'
-                        }`}>
-                          {hikvisionOnline ? 'Connected' : 'Offline'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        Model: <span className="font-bold text-slate-800">DS-K1T320EFWX</span> · IP: <span className="font-bold text-slate-800">192.168.1.45</span>
-                      </p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        Last checked: {lastCheckedTime || 'Just now'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={checkHikvisionStatus}
-                    disabled={isTestingConn}
-                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                  >
-                    <RefreshCw size={13} className={isTestingConn ? 'animate-spin' : ''} />
-                    <span>{isTestingConn ? 'Testing...' : 'Test Connection'}</span>
-                  </button>
-                </div>
-
-                {/* Biometric User ID & Enrollment Options Container */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-slate-600">Biometric User ID:</span>
-                      <input 
-                        type="number"
-                        value={biometricId}
-                        onChange={(e) => setBiometricId(e.target.value)}
-                        className="w-28 h-10 bg-white border-2 border-[#F97316] rounded-xl text-center font-mono text-lg font-black text-[#C2410C] focus:outline-none shadow-xs"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleTestUserCreation}
-                      disabled={isCreatingUser}
-                      className="px-3.5 py-2 bg-[#EA580C] hover:bg-[#C2410C] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 border-none shadow-xs"
-                    >
-                      <RefreshCw size={13} className={isCreatingUser ? 'animate-spin' : ''} />
-                      <span>{isCreatingUser ? 'Creating...' : `Test User Creation (POST /UserInfo/Record)`}</span>
-                    </button>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 font-medium text-left">
-                    This ID must be the same ID used when creating the person on the Hikvision terminal.
-                  </p>
-
-                  {/* 3 Enrollment Option Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                    {/* Option 1: Face */}
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteEnrollment('FACE')}
-                      disabled={enrollStatus === 'enrolling'}
-                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        selectedEnrollType === 'FACE' 
-                          ? 'border-[#EA580C] bg-orange-50/70 shadow-sm' 
-                          : 'border-slate-200 bg-white hover:border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#EA580C] flex items-center justify-center mb-2">
-                          <Camera size={16} />
-                        </div>
-                        <h5 className="text-xs font-black text-slate-900">Register Face</h5>
-                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                          Provision person & check face capture
-                        </p>
-                      </div>
-                      <span className={`mt-3 px-2 py-0.5 text-[9px] font-black uppercase rounded-md self-start ${
-                        faceStatus === 'ENROLLED' ? 'bg-emerald-600 text-white' : 
-                        faceStatus === 'TERMINAL_ENROLLMENT_REQUIRED' ? 'bg-amber-500 text-white' :
-                        faceStatus === 'REQUESTING' ? 'bg-blue-500 text-white animate-pulse' :
-                        faceStatus === 'FAILED' ? 'bg-red-600 text-white' : 'bg-slate-500 text-white'
-                      }`}>
-                        {faceStatus === 'ENROLLED' ? 'Enrolled ✓' : 
-                         faceStatus === 'TERMINAL_ENROLLMENT_REQUIRED' ? 'Terminal Capture Required' :
-                         faceStatus === 'REQUESTING' ? 'Requesting...' :
-                         faceStatus === 'FAILED' ? 'Failed ✕' : 'Not Enrolled'}
-                      </span>
-                    </button>
-
-                    {/* Option 2: Fingerprint */}
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteEnrollment('FINGERPRINT')}
-                      disabled={enrollStatus === 'enrolling'}
-                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        selectedEnrollType === 'FINGERPRINT' 
-                          ? 'border-[#EA580C] bg-orange-50/70 shadow-sm' 
-                          : 'border-slate-200 bg-white hover:border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#EA580C] flex items-center justify-center mb-2">
-                          <Fingerprint size={16} />
-                        </div>
-                        <h5 className="text-xs font-black text-slate-900">Register Fingerprint</h5>
-                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                          Provision person & initiate scanner
-                        </p>
-                      </div>
-                      <span className={`mt-3 px-2 py-0.5 text-[9px] font-black uppercase rounded-md self-start ${
-                        fpStatus === 'ENROLLED' ? 'bg-emerald-600 text-white' : 
-                        fpStatus === 'WAITING FOR TERMINAL' ? 'bg-amber-500 text-white' :
-                        fpStatus === 'REQUESTING' ? 'bg-blue-500 text-white animate-pulse' :
-                        fpStatus === 'FAILED' ? 'bg-red-600 text-white' : 'bg-slate-500 text-white'
-                      }`}>
-                        {fpStatus === 'ENROLLED' ? 'Enrolled ✓' : 
-                         fpStatus === 'WAITING FOR TERMINAL' ? 'Waiting for Terminal Touch' :
-                         fpStatus === 'REQUESTING' ? 'Requesting...' :
-                         fpStatus === 'FAILED' ? 'Failed ✕' : 'Not Enrolled'}
-                      </span>
-                    </button>
-
-                    {/* Option 3: Both */}
-                    <button
-                      type="button"
-                      onClick={() => handleExecuteEnrollment('BOTH')}
-                      disabled={enrollStatus === 'enrolling'}
-                      className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between ${
-                        selectedEnrollType === 'BOTH' 
-                          ? 'border-[#EA580C] bg-orange-50/70 shadow-sm' 
-                          : 'border-slate-200 bg-white hover:border-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <div className="w-8 h-8 rounded-xl bg-orange-100 text-[#EA580C] flex items-center justify-center mb-2">
-                          <Sparkles size={16} />
-                        </div>
-                        <h5 className="text-xs font-black text-slate-900">Face + Fingerprint</h5>
-                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                          Provision person & run both biometrics
-                        </p>
-                      </div>
-                      <span className="mt-3 px-2 py-0.5 text-[9px] font-black uppercase rounded-md bg-purple-600 text-white self-start">
-                        Both Options
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Live Enrollment Progress Status Box */}
-                  {enrollMsg && (
-                    <div className={`p-4 rounded-2xl border text-xs font-bold text-left space-y-1.5 transition-all ${
-                      enrollStatus === 'success' 
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
-                        : enrollStatus === 'waiting_terminal'
-                        ? 'bg-amber-50 border-amber-300 text-amber-900'
-                        : enrollStatus === 'failed' 
-                        ? 'bg-red-50 border-red-300 text-red-900' 
-                        : 'bg-orange-50 border-orange-300 text-orange-900 animate-pulse'
-                    }`}>
-                      <div className="flex items-center gap-2">
-                        {enrollStatus === 'enrolling' && <RefreshCw size={15} className="animate-spin text-[#EA580C]" />}
-                        {enrollStatus === 'success' && <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />}
-                        {enrollStatus === 'waiting_terminal' && <AlertCircle size={15} className="text-amber-600 shrink-0" />}
-                        {enrollStatus === 'failed' && <AlertCircle size={15} className="text-red-600 shrink-0" />}
-                        <span className="font-extrabold">{enrollMsg}</span>
-                      </div>
-                      {enrollDetailLog && (
-                        <div className="mt-2 text-[10px] font-mono bg-black/5 p-2.5 rounded-xl border border-black/10 overflow-x-auto whitespace-pre-wrap leading-relaxed">
-                          {enrollDetailLog}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Expandable Hikvision Connection Diagnostics Section */}
-                <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden text-left">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowDiagnostics(!showDiagnostics);
-                      if (!showDiagnostics && !diagnosticsData) fetchDiagnostics();
-                    }}
-                    className="w-full px-4 py-3 flex items-center justify-between text-xs font-black text-slate-700 hover:bg-slate-100 transition-all cursor-pointer border-none bg-transparent"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Activity size={15} className="text-[#EA580C]" />
-                      <span>Hikvision Connection Diagnostics (7-Point Matrix)</span>
-                    </div>
-                    <ChevronRight size={15} className={`transition-transform ${showDiagnostics ? 'rotate-90' : ''}`} />
-                  </button>
-
-                  {showDiagnostics && (
-                    <div className="p-4 border-t border-slate-200 space-y-3 bg-white">
-                      {/* 7-Point Health Matrix Badges */}
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center text-[10px] font-bold">
-                        <div className={`p-2 rounded-xl border ${connectionMatrix.network ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'}`}>
-                          NETWORK <br /><span className="text-xs">{connectionMatrix.network ? '✓' : '✕'}</span>
-                        </div>
-                        <div className={`p-2 rounded-xl border ${connectionMatrix.http ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'}`}>
-                          HTTP <br /><span className="text-xs">{connectionMatrix.http ? '✓' : '✕'}</span>
-                        </div>
-                        <div className={`p-2 rounded-xl border ${connectionMatrix.auth ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'}`}>
-                          AUTH <br /><span className="text-xs">{connectionMatrix.auth ? '✓' : '✕'}</span>
-                        </div>
-                        <div className={`p-2 rounded-xl border ${connectionMatrix.userApi ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-red-50 border-red-300 text-red-800'}`}>
-                          USER API <br /><span className="text-xs">{connectionMatrix.userApi ? '✓' : '✕'}</span>
-                        </div>
-                        <div className={`p-2 rounded-xl border ${connectionMatrix.faceApi ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
-                          FACE API <br /><span className="text-xs">{connectionMatrix.faceApi ? '✓' : 'Terminal'}</span>
-                        </div>
-                        <div className={`p-2 rounded-xl border ${connectionMatrix.fingerprintApi ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
-                          FINGERPRINT <br /><span className="text-xs">{connectionMatrix.fingerprintApi ? '✓' : 'Terminal'}</span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                          <span className="text-[10px] font-bold text-slate-400 block uppercase">Device IP</span>
-                          <span className="font-mono font-bold text-slate-900">192.168.1.45</span>
-                        </div>
-                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                          <span className="text-[10px] font-bold text-slate-400 block uppercase">Ports & Protocol</span>
-                          <span className="font-mono font-bold text-slate-900">HTTP: 80 | HTTPS: 443 (Digest)</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                        <span>Last Checked: {lastCheckedTime || new Date().toLocaleTimeString()}</span>
-                        <button
-                          type="button"
-                          onClick={fetchDiagnostics}
-                          disabled={isLoadingDiagnostics}
-                          className="px-3 py-1.5 bg-[#EA580C] text-white rounded-lg font-bold text-xs hover:bg-[#C2410C] transition-all border-none cursor-pointer"
-                        >
-                          {isLoadingDiagnostics ? 'Testing...' : 'Refresh Diagnostics'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── STEP 4: Membership Payment ── */}
-            {step === 4 && (
-              <motion.div 
-                initial={{ opacity: 0, x: 15 }} 
-                animate={{ opacity: 1, x: 0 }} 
-                exit={{ opacity: 0, x: -15 }}
-                className="max-w-xl mx-auto space-y-6"
-              >
-                <div className="text-center mb-2">
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Membership Payment Details</h3>
-                  <p className="text-xs text-slate-500">Confirm price breakdown and select payment method for Gym Membership</p>
-                </div>
-
-                {/* Package Summary Card */}
-                <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl border border-slate-800 shadow-xl space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Selected Package</span>
-                      <h4 className="text-lg font-black">{selectedPlan?.name || '1 MONTH'}</h4>
-                    </div>
-                    <span className="text-xl font-mono font-black text-emerald-400">
-                      ₹{(selectedPlan?.price || 3000).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center text-xs text-slate-300 pt-2 border-t border-white/10">
-                    <span>Duration: {selectedPlan?.duration || '30 Days'}</span>
-                    <span>Start Date: {startDate}</span>
-                  </div>
-                </div>
-
-                {/* Pricing Calculation Form */}
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200/80 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Discount (₹)</label>
-                      <input 
-                        type="number"
-                        min="0"
-                        value={discount}
-                        onChange={(e) => setDiscount(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 font-mono font-bold text-xs text-slate-900 focus:outline-none focus:border-[#F97316]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Net Billed Amount (₹)</label>
-                      <input 
-                        type="number"
-                        readOnly
-                        value={amountPaid}
-                        className="w-full h-11 bg-slate-100 border border-slate-300 rounded-xl px-4 font-mono font-black text-xs text-[#C2410C]"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Payment Mode Selection */}
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Select Payment Method *</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {(['UPI', 'Cash', 'Card', 'NetBanking'] as const).map((method) => (
-                        <button
-                          key={method}
-                          type="button"
-                          onClick={() => setPaymentMethod(method)}
-                          className={`py-3 px-3 rounded-2xl text-xs font-black transition-all flex flex-col items-center gap-1 border cursor-pointer ${
-                            paymentMethod === method
-                              ? 'bg-[#EA580C] text-white border-[#EA580C] shadow-md scale-[1.02]'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {method === 'UPI' && <Smartphone size={16} />}
-                          {method === 'Cash' && <Banknote size={16} />}
-                          {method === 'Card' && <CreditCard size={16} />}
-                          {method === 'NetBanking' && <Wallet size={16} />}
-                          <span>{method}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── STEP 5 (PT BILLING — ONLY IF TRAINER SELECTED) ── */}
-            {step === 5 && hasPt && (
-              <motion.div 
-                initial={{ opacity: 0, x: 15 }} 
-                animate={{ opacity: 1, x: 0 }} 
-                exit={{ opacity: 0, x: -15 }}
-                className="max-w-xl mx-auto space-y-6"
-              >
-                <div className="text-center mb-2">
-                  <span className="px-3 py-1 bg-[#FFF7ED] border border-[#FED7AA] text-[#C2410C] text-[10px] font-extrabold uppercase tracking-widest rounded-full inline-block mb-1">
-                    Step 5 of 6
-                  </span>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Personal Training Billing</h3>
-                  <p className="text-xs text-slate-500">Configure separate PT package duration, price, and payment terms</p>
-                </div>
-
-                <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-3xl border border-blue-800 shadow-md flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-500/20 border border-orange-400/30 flex items-center justify-center text-orange-200 shrink-0">
-                      <Dumbbell size={24} />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-wider text-orange-200 block">Assigned Personal Trainer</span>
-                      <h4 className="text-base font-black text-white">{selectedTrainerObj?.name || 'Assigned Trainer'}</h4>
-                      <span className="text-[10px] text-slate-300 font-bold">{selectedTrainerObj?.role || 'Fitness Trainer'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200/80 space-y-4 text-left">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5">PT Duration *</label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {['1 Month', '3 Months', '6 Months', '12 Months'].map((dur) => (
-                        <button
-                          key={dur}
-                          type="button"
-                          onClick={() => setPtDuration(dur)}
-                          className={`py-2.5 px-2 rounded-xl text-xs font-black transition-all border cursor-pointer ${
-                            ptDuration === dur
-                              ? 'bg-[#EA580C] text-white border-[#EA580C] shadow-sm'
-                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {dur}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">PT Start Date *</label>
-                      <input 
-                        type="date"
-                        value={ptStartDate}
-                        onChange={(e) => setPtStartDate(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] cursor-pointer"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">PT Expiry Date (Auto)</label>
-                      <input 
-                        type="date"
-                        value={ptExpiryDate}
-                        onChange={(e) => setPtExpiryDate(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Price (₹)</label>
-                      <input 
-                        type="number"
-                        min="0"
-                        value={ptAmount}
-                        onChange={(e) => setPtAmount(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3 font-mono font-bold text-xs text-slate-900 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Discount (₹)</label>
-                      <input 
-                        type="number"
-                        min="0"
-                        value={ptDiscount}
-                        onChange={(e) => setPtDiscount(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3 font-mono font-bold text-xs text-slate-900 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Tax (₹)</label>
-                      <input 
-                        type="number"
-                        min="0"
-                        value={ptTax}
-                        onChange={(e) => setPtTax(e.target.value)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-3 font-mono font-bold text-xs text-slate-900 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Net PT Amount (₹)</label>
-                      <input 
-                        type="number"
-                        readOnly
-                        value={ptAmountPaid}
-                        className="w-full h-11 bg-slate-100 border border-slate-300 rounded-xl px-4 font-mono font-black text-xs text-[#C2410C]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">Payment Mode *</label>
-                      <select
-                        value={ptPaymentMethod}
-                        onChange={(e) => setPtPaymentMethod(e.target.value as any)}
-                        className="w-full h-11 bg-white border border-slate-300 rounded-xl px-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] cursor-pointer"
-                      >
-                        <option value="UPI">UPI</option>
-                        <option value="Cash">Cash</option>
-                        <option value="Card">Card</option>
-                        <option value="NetBanking">Net Banking</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* ── STEP 5/6: INVOICE RECEIPT & PRINT ── */}
-            {((step === 5 && !hasPt) || (step === 6 && hasPt)) && createdInvoice && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }} 
-                animate={{ opacity: 1, scale: 1 }} 
-                className="max-w-3xl mx-auto space-y-6 text-center"
-              >
-                <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
-                  <CheckCircle2 size={36} />
-                </div>
-
-                <div>
-                  <span className="px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-extrabold uppercase tracking-widest rounded-full inline-block mb-1">
-                    Onboarding Complete 🎉
-                  </span>
-                  <h3 className="text-2xl font-black text-slate-900 tracking-tight">Member Registered & Invoices Generated!</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Member profile is now active. You can print the official receipt or complete onboarding.
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 p-4 rounded-3xl border border-slate-200 text-left">
-                  <OfficialInvoiceReceipt 
-                    invoice={createdInvoice}
-                    member={createdMember}
-                  />
-
-                  {createdPtInvoice && (
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                      <h4 className="text-xs font-black text-[#C2410C] uppercase tracking-wider mb-2">Personal Training Invoice</h4>
-                      <OfficialInvoiceReceipt 
-                        invoice={createdPtInvoice}
-                        member={createdMember}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handlePrintReceipt}
-                    className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-2xl text-xs font-black transition-all shadow-md border-none cursor-pointer flex items-center gap-2"
-                  >
-                    <Printer size={16} /> Print Invoices
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="px-6 py-3 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black transition-all border-none cursor-pointer"
-                  >
-                    Close & Finish
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
+          {/* ══════════════════════════════════════════════════════════════════
+              3. SCROLLABLE STEP BODY
+             ══════════════════════════════════════════════════════════════════ */}
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 text-slate-800">
             {backendError && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-xs font-bold flex items-center gap-2">
-                <AlertCircle size={16} className="shrink-0" />
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-500" />
                 <span>{backendError}</span>
               </div>
             )}
 
+            <AnimatePresence mode="wait">
+              {/* ─────────────────────────────────────────────────────────────
+                  STEP 01: PROFILE
+                 ───────────────────────────────────────────────────────────── */}
+              {step === 1 && (
+                <motion.div
+                  key="step-1"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.18 }}
+                  className="grid grid-cols-1 md:grid-cols-12 gap-6"
+                >
+                  {/* Left Column: Photo Uploader */}
+                  <div className="md:col-span-4 flex flex-col items-center justify-start p-5 bg-stone-50 rounded-2xl border border-stone-200 text-center">
+                    <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider mb-3">
+                      Member Photo
+                    </span>
+
+                    {/* Circular Preview / Dropzone */}
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`relative w-36 h-36 rounded-full overflow-hidden border-2 border-dashed flex items-center justify-center transition-all group ${
+                        isDraggingPhoto
+                          ? 'border-[#F04400] bg-orange-50'
+                          : photoPreview
+                          ? 'border-emerald-500 bg-white shadow-md'
+                          : 'border-stone-300 bg-white hover:border-orange-400'
+                      }`}
+                    >
+                      {photoPreview ? (
+                        <img
+                          src={photoPreview}
+                          alt="Member Preview"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center p-3 text-stone-400">
+                          <User className="w-10 h-10 stroke-[1.5] mb-1 text-stone-300 group-hover:text-orange-400 transition-colors" />
+                          <span className="text-[10px] font-medium text-stone-500 leading-tight">
+                            Drop photo here
+                          </span>
+                        </div>
+                      )}
+
+                      {photoPreview && (
+                        <button
+                          type="button"
+                          onClick={() => setPhotoPreview(null)}
+                          className="absolute inset-0 bg-black/50 text-white flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-5 h-5 mb-1 text-red-300" />
+                          <span className="text-[10px] font-bold">Remove</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {photoError && (
+                      <span className="text-[10px] text-red-600 font-medium mt-2">
+                        {photoError}
+                      </span>
+                    )}
+
+                    {/* Upload / Camera Action Buttons */}
+                    <div className="flex items-center gap-2 mt-4 w-full">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            handlePhotoFile(e.target.files[0]);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 py-2 px-2.5 bg-white border border-stone-200 hover:border-orange-300 text-stone-700 hover:text-[#EA580C] text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-stone-500" />
+                        <span>Upload</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={startCameraCapture}
+                        className="flex-1 py-2 px-2.5 bg-gradient-to-r from-[#FF7A00] to-[#F04400] text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 hover:brightness-105 transition-all shadow-xs"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Webcam</span>
+                      </button>
+                    </div>
+
+                    <p className="text-[10px] text-stone-400 mt-3">
+                      JPG, PNG or WEBP (Max 5 MB)
+                    </p>
+                  </div>
+
+                  {/* Right Column: Identity Fields */}
+                  <div className="md:col-span-8 space-y-4">
+                    {/* Full Name */}
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Full Name <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={(e) => {
+                            setFullName(e.target.value);
+                            if (step1Errors.fullName) setStep1Errors(prev => ({ ...prev, fullName: '' }));
+                          }}
+                          placeholder="e.g. Vikram Singh"
+                          className={`w-full pl-10 pr-4 py-2.5 text-sm bg-white rounded-xl border ${
+                            step1Errors.fullName
+                              ? 'border-red-500 focus:ring-red-200'
+                              : 'border-stone-200 focus:border-[#F04400] focus:ring-orange-100'
+                          } focus:outline-hidden focus:ring-3 transition-all`}
+                        />
+                      </div>
+                      {step1Errors.fullName && (
+                        <p className="text-[11px] text-red-500 font-medium mt-1">
+                          {step1Errors.fullName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Mobile Number & Duplicate Check */}
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Mobile Number <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-stone-400 text-xs font-bold">
+                          <span>+91</span>
+                        </div>
+                        <input
+                          type="tel"
+                          maxLength={10}
+                          value={mobile}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                            setMobile(val);
+                            if (step1Errors.mobile) setStep1Errors(prev => ({ ...prev, mobile: '' }));
+                          }}
+                          placeholder="9876543210"
+                          className={`w-full pl-12 pr-4 py-2.5 text-sm bg-white rounded-xl border ${
+                            step1Errors.mobile
+                              ? 'border-red-500 focus:ring-red-200'
+                              : 'border-stone-200 focus:border-[#F04400] focus:ring-orange-100'
+                          } focus:outline-hidden focus:ring-3 transition-all font-mono`}
+                        />
+                      </div>
+                      {step1Errors.mobile && (
+                        <p className="text-[11px] text-red-500 font-medium mt-1">
+                          {step1Errors.mobile}
+                        </p>
+                      )}
+                      {duplicateMember && (
+                        <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>
+                            Member already exists with this phone: <strong>{duplicateMember.name}</strong> ({duplicateMember.status})
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Email Address */}
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Email Address <span className="text-stone-400 text-[10px] lowercase">(optional)</span>
+                      </label>
+                      <div className="relative">
+                        <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => {
+                            setEmail(e.target.value);
+                            if (step1Errors.email) setStep1Errors(prev => ({ ...prev, email: '' }));
+                          }}
+                          placeholder="vikram.singh@gmail.com"
+                          className="w-full pl-10 pr-4 py-2.5 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                        />
+                      </div>
+                      {step1Errors.email && (
+                        <p className="text-[11px] text-red-500 font-medium mt-1">
+                          {step1Errors.email}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Gender Segmented Control */}
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Gender
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(['Male', 'Female', 'Other'] as const).map((g) => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => setGender(g)}
+                            className={`py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                              gender === g
+                                ? 'bg-orange-50 border-[#F04400] text-[#EA580C] shadow-xs'
+                                : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* DOB & Emergency Contact */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                          Date of Birth
+                        </label>
+                        <input
+                          type="date"
+                          value={dob}
+                          max={new Date().toISOString().split('T')[0]}
+                          onChange={(e) => setDob(e.target.value)}
+                          className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                          Emergency Contact
+                        </label>
+                        <input
+                          type="tel"
+                          value={emergencyContact}
+                          onChange={(e) => setEmergencyContact(e.target.value)}
+                          placeholder="e.g. 9811002233"
+                          className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Occupation */}
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Occupation
+                      </label>
+                      <input
+                        type="text"
+                        value={occupation}
+                        onChange={(e) => setOccupation(e.target.value)}
+                        placeholder="e.g. IT Professional, Entrepreneur, Student"
+                        className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────────
+                  STEP 02: PERSONAL & HEALTH
+                 ───────────────────────────────────────────────────────────── */}
+              {step === 2 && (
+                <motion.div
+                  key="step-2"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.18 }}
+                  className="space-y-6"
+                >
+                  <div className="bg-stone-50 p-5 rounded-2xl border border-stone-200 space-y-4">
+                    <h3 className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-2">
+                      <Heart className="w-4 h-4 text-[#F04400]" /> Physical Attributes & Health
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-600 mb-1">
+                          Height (cm)
+                        </label>
+                        <input
+                          type="number"
+                          value={height}
+                          onChange={(e) => setHeight(e.target.value)}
+                          placeholder="e.g. 175"
+                          className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                        />
+                        {step2Errors.height && (
+                          <p className="text-[10px] text-red-500 mt-1">{step2Errors.height}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-600 mb-1">
+                          Weight (kg)
+                        </label>
+                        <input
+                          type="number"
+                          value={weight}
+                          onChange={(e) => setWeight(e.target.value)}
+                          placeholder="e.g. 72"
+                          className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                        />
+                        {step2Errors.weight && (
+                          <p className="text-[10px] text-red-500 mt-1">{step2Errors.weight}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-600 mb-1">
+                          Age (Years)
+                        </label>
+                        <input
+                          type="number"
+                          value={age}
+                          onChange={(e) => setAge(e.target.value)}
+                          placeholder="e.g. 26"
+                          className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Calculated BMI Badge */}
+                    {height && weight && Number(height) > 0 && Number(weight) > 0 && (
+                      <div className="p-3 bg-white rounded-xl border border-stone-200 flex items-center justify-between text-xs">
+                        <span className="font-medium text-stone-600">Estimated Body Mass Index (BMI):</span>
+                        <span className="font-black text-[#EA580C]">
+                          {(Number(weight) / Math.pow(Number(height) / 100, 2)).toFixed(1)} kg/m²
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Marital Status & Anniversary */}
+                  <div className="bg-stone-50 p-5 rounded-2xl border border-stone-200 space-y-4">
+                    <h3 className="text-xs font-bold text-stone-700 uppercase tracking-wider">
+                      Marital Status & Milestones
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-600 mb-1.5">
+                          Status
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['single', 'married'] as const).map((ms) => (
+                            <button
+                              key={ms}
+                              type="button"
+                              onClick={() => setMaritalStatus(ms)}
+                              className={`py-2 px-3 text-xs font-bold rounded-xl border capitalize transition-all ${
+                                maritalStatus === ms
+                                  ? 'bg-orange-50 border-[#F04400] text-[#EA580C]'
+                                  : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                              }`}
+                            >
+                              {ms}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {maritalStatus === 'married' && (
+                        <div>
+                          <label className="block text-xs font-semibold text-stone-600 mb-1.5">
+                            Anniversary Date <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={anniversaryDate}
+                            onChange={(e) => setAnniversaryDate(e.target.value)}
+                            className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                          />
+                          {step2Errors.anniversaryDate && (
+                            <p className="text-[10px] text-red-500 mt-1">
+                              {step2Errors.anniversaryDate}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Residential Address & Fitness Goals */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Residential Address
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="House / Flat No., Society, Landmark, City"
+                        className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all resize-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Primary Fitness Goal
+                      </label>
+                      <select
+                        value={fitnessGoal}
+                        onChange={(e) => setFitnessGoal(e.target.value)}
+                        className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                      >
+                        <option value="General Fitness">General Fitness & Endurance</option>
+                        <option value="Weight Loss">Weight Loss & Fat Burn</option>
+                        <option value="Muscle Hypertrophy">Muscle Hypertrophy & Bodybuilding</option>
+                        <option value="Strength Training">Powerlifting & Strength</option>
+                        <option value="Athletic Conditioning">Athletic Conditioning</option>
+                        <option value="Rehabilitation">Rehabilitation & Posture</option>
+                      </select>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────────
+                  STEP 03: MEMBERSHIP PACKAGES
+                 ───────────────────────────────────────────────────────────── */}
+              {step === 3 && (
+                <motion.div
+                  key="step-3"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.18 }}
+                  className="space-y-6"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-stone-900 tracking-tight">
+                          Select Membership Package
+                        </h3>
+                        <p className="text-xs text-stone-500">
+                          Choose package tier and duration for the member
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-[#EA580C] bg-orange-50 px-2.5 py-1 rounded-full border border-orange-200">
+                        {activePlans.length} Plans Available
+                      </span>
+                    </div>
+
+                    {/* Membership Cards Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                      {activePlans.map((p) => {
+                        const isSelected = selectedPlan?.id === p.id || selectedPlan?.name === p.name;
+                        const isPopular = p.popular || String(p.name).includes('3 MONTH') || String(p.name).includes('ANNUAL');
+
+                        return (
+                          <div
+                            key={p.id || p.name}
+                            onClick={() => setSelectedPlan(p)}
+                            className={`relative p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                              isSelected
+                                ? 'border-[#F04400] bg-gradient-to-b from-orange-50/80 to-white shadow-md shadow-orange-500/10'
+                                : 'border-stone-200 bg-white hover:border-orange-300 hover:shadow-xs'
+                            }`}
+                          >
+                            {/* Popular / Best Value Badge */}
+                            {isPopular && (
+                              <div className="absolute -top-2.5 right-3 bg-gradient-to-r from-[#FF7A00] to-[#F04400] text-white text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+                                <Sparkles className="w-2.5 h-2.5" /> Popular
+                              </div>
+                            )}
+
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-black tracking-wide text-stone-900 uppercase">
+                                  {p.name}
+                                </span>
+                                {isSelected && (
+                                  <div className="w-5 h-5 rounded-full bg-[#F04400] text-white flex items-center justify-center">
+                                    <Check className="w-3 h-3 stroke-[3]" />
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-stone-500 font-medium">
+                                Validity: {p.duration || '30 Days'}
+                              </span>
+                            </div>
+
+                            <div className="mt-4 pt-3 border-t border-stone-100 flex items-baseline justify-between">
+                              <span className="text-lg font-black text-stone-900">
+                                ₹{Number(p.price || 0).toLocaleString('en-IN')}
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
+                                Official Rate
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Start Date & Expiry Calculation */}
+                  <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Membership Start Date
+                      </label>
+                      <input
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Auto-Calculated Expiry Date
+                      </label>
+                      <div className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 font-bold text-stone-800 flex items-center justify-between">
+                        <span>{expiryDate || '—'}</span>
+                        <span className="text-[10px] font-black text-emerald-600 uppercase bg-emerald-50 px-2 py-0.5 rounded">
+                          Active Until
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Personal Trainer & Referral Source */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Assign Personal Trainer <span className="text-stone-400 text-[10px] lowercase">(optional)</span>
+                      </label>
+                      <select
+                        value={selectedTrainerId}
+                        onChange={(e) => setSelectedTrainerId(e.target.value)}
+                        className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                      >
+                        <option value="">No Trainer (General Gym Access)</option>
+                        {trainersList.map((t) => (
+                          <option key={t.id || t.employeeId} value={t.id || t.employeeId}>
+                            {t.name} ({t.role || 'Fitness Trainer'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                        Referral Source
+                      </label>
+                      <select
+                        value={referralSource}
+                        onChange={(e) => setReferralSource(e.target.value)}
+                        className="w-full px-3.5 py-2 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all"
+                      >
+                        <option value="Walk-in">Direct Walk-in</option>
+                        <option value="Google / Maps">Google Search / Maps</option>
+                        <option value="Instagram / Social">Instagram / Social Media</option>
+                        <option value="Friend / Member Referral">Friend / Member Referral</option>
+                        <option value="Gym Hoarding / Banner">Gym Banner / Hoarding</option>
+                        <option value="Corporate Partner">Corporate Partner</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────────
+                  STEP 04: BIOMETRICS (HIKVISION INTEGRATION)
+                 ───────────────────────────────────────────────────────────── */}
+              {step === 4 && (
+                <motion.div
+                  key="step-4"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.18 }}
+                  className="space-y-6"
+                >
+                  {/* Top Bar: Biometric User ID & Terminal Telemetry */}
+                  <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                        Biometric Machine User ID <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={biometricId}
+                          onChange={(e) => setBiometricId(e.target.value.replace(/\D/g, ''))}
+                          placeholder="e.g. 101"
+                          className="w-32 px-3 py-1.5 text-base font-mono font-bold bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:outline-hidden"
+                        />
+                        <span className="text-xs text-stone-500">
+                          (Used on turnstile / Hikvision reader)
+                        </span>
+                      </div>
+                      {duplicateBioMember && (
+                        <p className="text-[11px] text-amber-600 font-medium mt-1">
+                          ⚠️ ID #{biometricId} is already assigned to {duplicateBioMember.name}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Hardware Terminal Status */}
+                    <div className="flex items-center gap-2.5 bg-white px-3.5 py-2 rounded-xl border border-stone-200">
+                      <div className={`w-2.5 h-2.5 rounded-full ${hikvisionOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                      <div className="text-left">
+                        <span className="text-[11px] font-bold text-stone-800 block leading-tight">
+                          Hikvision DS-K1T342MFWX
+                        </span>
+                        <span className="text-[10px] text-stone-500">
+                          IP: 192.168.1.45 • {hikvisionOnline ? 'Online' : 'Offline'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={checkHikvisionStatus}
+                        disabled={isTestingConn}
+                        className="ml-2 p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors"
+                        title="Check Terminal Connection"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isTestingConn ? 'animate-spin text-orange-500' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Three Premium Enrollment Action Cards */}
+                  <div>
+                    <h3 className="text-xs font-bold text-stone-700 uppercase tracking-wider mb-3">
+                      Select Enrollment Action
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                      {/* 1. Register Face */}
+                      <div
+                        onClick={() => handleExecuteEnrollment('FACE')}
+                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                          selectedEnrollType === 'FACE' && enrollStatus !== 'idle'
+                            ? 'border-[#F04400] bg-orange-50/60 shadow-sm'
+                            : 'border-stone-200 bg-white hover:border-orange-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#EA580C] flex items-center justify-center mb-3">
+                            <ScanFace className="w-5 h-5" />
+                          </div>
+                          <h4 className="text-sm font-bold text-stone-900">
+                            Register Face
+                          </h4>
+                          <p className="text-[11px] text-stone-500 mt-1">
+                            Sends command to terminal camera to capture 3D facial profile.
+                          </p>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
+                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                            faceStatus === 'ENROLLED' ? 'bg-emerald-100 text-emerald-800' :
+                            faceStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                            faceStatus === 'REQUESTING' ? 'bg-orange-100 text-orange-800 animate-pulse' :
+                            faceStatus === 'TERMINAL_ENROLLMENT_REQUIRED' ? 'bg-amber-100 text-amber-800' :
+                            'bg-stone-100 text-stone-600'
+                          }`}>
+                            {faceStatus}
+                          </span>
+                          <ChevronRight className="w-4 h-4 text-stone-400" />
+                        </div>
+                      </div>
+
+                      {/* 2. Register Fingerprint */}
+                      <div
+                        onClick={() => handleExecuteEnrollment('FINGERPRINT')}
+                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                          selectedEnrollType === 'FINGERPRINT' && enrollStatus !== 'idle'
+                            ? 'border-[#F04400] bg-orange-50/60 shadow-sm'
+                            : 'border-stone-200 bg-white hover:border-orange-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="w-10 h-10 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center mb-3">
+                            <Fingerprint className="w-5 h-5" />
+                          </div>
+                          <h4 className="text-sm font-bold text-stone-900">
+                            Register Fingerprint
+                          </h4>
+                          <p className="text-[11px] text-stone-500 mt-1">
+                            Enrolls biometric fingerprint template on scanner.
+                          </p>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
+                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                            fpStatus === 'ENROLLED' ? 'bg-emerald-100 text-emerald-800' :
+                            fpStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                            fpStatus === 'REQUESTING' ? 'bg-orange-100 text-orange-800 animate-pulse' :
+                            fpStatus === 'WAITING FOR TERMINAL' ? 'bg-amber-100 text-amber-800' :
+                            'bg-stone-100 text-stone-600'
+                          }`}>
+                            {fpStatus}
+                          </span>
+                          <ChevronRight className="w-4 h-4 text-stone-400" />
+                        </div>
+                      </div>
+
+                      {/* 3. Face + Fingerprint */}
+                      <div
+                        onClick={() => handleExecuteEnrollment('BOTH')}
+                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between ${
+                          selectedEnrollType === 'BOTH' && enrollStatus !== 'idle'
+                            ? 'border-[#F04400] bg-orange-50/60 shadow-sm'
+                            : 'border-stone-200 bg-white hover:border-orange-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3">
+                            <ShieldCheck className="w-5 h-5" />
+                          </div>
+                          <h4 className="text-sm font-bold text-stone-900">
+                            Face + Fingerprint
+                          </h4>
+                          <p className="text-[11px] text-stone-500 mt-1">
+                            Dual sequential enrollment for highest turnstile security.
+                          </p>
+                        </div>
+                        <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-[#EA580C] bg-orange-50 px-2 py-0.5 rounded">
+                            Sequential
+                          </span>
+                          <ChevronRight className="w-4 h-4 text-stone-400" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Live Status Response Log */}
+                  {enrollMsg && (
+                    <div className={`p-4 rounded-2xl border text-xs ${
+                      enrollStatus === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' :
+                      enrollStatus === 'failed' ? 'bg-red-50 border-red-200 text-red-900' :
+                      enrollStatus === 'waiting_terminal' ? 'bg-amber-50 border-amber-200 text-amber-900' :
+                      'bg-orange-50 border-orange-200 text-orange-900'
+                    }`}>
+                      <div className="flex items-center gap-2 font-bold mb-1">
+                        {enrollStatus === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                        {enrollStatus === 'failed' && <AlertTriangle className="w-4 h-4 text-red-600" />}
+                        {enrollStatus === 'waiting_terminal' && <Info className="w-4 h-4 text-amber-600" />}
+                        {enrollStatus === 'enrolling' && <RefreshCw className="w-4 h-4 text-orange-600 animate-spin" />}
+                        <span>Terminal Feedback</span>
+                      </div>
+                      <p className="font-medium">{enrollMsg}</p>
+                      {enrollDetailLog && (
+                        <pre className="mt-2 p-2 bg-black/5 rounded-lg text-[10px] font-mono whitespace-pre-wrap overflow-x-auto">
+                          {enrollDetailLog}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-600 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Info className="w-4 h-4 text-stone-400 shrink-0" />
+                      Biometrics can also be assigned or re-synced anytime from the member profile.
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────────
+                  STEP 05: PAYMENT & FINANCIAL ADJUSTMENTS
+                 ───────────────────────────────────────────────────────────── */}
+              {step === 5 && (
+                <motion.div
+                  key="step-5"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  transition={{ duration: 0.18 }}
+                  className="space-y-6"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                    {/* Left: Input Fields */}
+                    <div className="md:col-span-7 space-y-4">
+                      <h3 className="text-xs font-bold text-stone-700 uppercase tracking-wider">
+                        Payment & Adjustment Breakdown
+                      </h3>
+
+                      {/* Financial Discount (Financial Adjustment) */}
+                      <div>
+                        <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                          <span>Financial Discount (₹)</span>
+                          <span className="text-[10px] font-medium text-stone-500 lowercase">
+                            (financial adjustment, not payment)
+                          </span>
+                        </label>
+                        <div className="relative">
+                          <Percent className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                          <input
+                            type="number"
+                            min="0"
+                            value={discount}
+                            onChange={(e) => setDiscount(e.target.value)}
+                            placeholder="0"
+                            className="w-full pl-10 pr-4 py-2.5 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Previous Balance / Credit */}
+                      <div>
+                        <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                          Previous Balance / Credit Adjustment (₹)
+                        </label>
+                        <div className="relative">
+                          <Wallet className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                          <input
+                            type="number"
+                            value={previousBalance}
+                            onChange={(e) => setPreviousBalance(e.target.value)}
+                            placeholder="0"
+                            className="w-full pl-10 pr-4 py-2.5 text-sm bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Amount Paid */}
+                      <div>
+                        <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                          Amount Paid Today (₹) <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <Banknote className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                          <input
+                            type="number"
+                            min="0"
+                            value={amountPaid}
+                            onChange={(e) => setAmountPaid(e.target.value)}
+                            placeholder={netPayable.toString()}
+                            className="w-full pl-10 pr-4 py-2.5 text-base font-bold bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Payment Method Segmented Buttons */}
+                      <div>
+                        <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+                          Payment Method
+                        </label>
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {(['UPI', 'Cash', 'Card', 'Bank Transfer', 'Other'] as const).map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setPaymentMethod(m)}
+                              className={`py-2 px-2 text-xs font-bold rounded-xl border transition-all truncate ${
+                                paymentMethod === m
+                                  ? 'bg-orange-50 border-[#F04400] text-[#EA580C] shadow-xs'
+                                  : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                              }`}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Payment Date & Notes */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                            Payment Date
+                          </label>
+                          <input
+                            type="date"
+                            value={paymentDate}
+                            onChange={(e) => setPaymentDate(e.target.value)}
+                            className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                            Notes / Reference
+                          </label>
+                          <input
+                            type="text"
+                            value={paymentNotes}
+                            onChange={(e) => setPaymentNotes(e.target.value)}
+                            placeholder="e.g. Google Pay UTR #..."
+                            className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Modern Financial Calculation Card */}
+                    <div className="md:col-span-5 flex flex-col justify-between p-5 bg-stone-50 rounded-2xl border border-stone-200">
+                      <div>
+                        <div className="flex items-center justify-between pb-3 border-b border-stone-200">
+                          <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">
+                            Financial Summary
+                          </span>
+                          <span className="text-[11px] font-bold text-[#EA580C] bg-orange-100 px-2 py-0.5 rounded">
+                            {selectedPlan?.name}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2.5 py-4 text-xs">
+                          <div className="flex justify-between text-stone-600">
+                            <span>Package Base Price:</span>
+                            <span className="font-semibold text-stone-900">
+                              ₹{packagePrice.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between text-stone-600">
+                            <span>Financial Discount:</span>
+                            <span className="font-semibold text-emerald-600">
+                              -₹{discountNum.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+
+                          {prevCreditNum !== 0 && (
+                            <div className="flex justify-between text-stone-600">
+                              <span>Previous Adjustment:</span>
+                              <span className="font-semibold text-stone-900">
+                                {prevCreditNum > 0 ? `+₹${prevCreditNum}` : `-₹${Math.abs(prevCreditNum)}`}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="pt-2 border-t border-dashed border-stone-200 flex justify-between text-sm font-bold text-stone-900">
+                            <span>Net Payable:</span>
+                            <span className="text-base text-[#EA580C]">
+                              ₹{netPayable.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between text-xs text-stone-600">
+                            <span>Amount Paid ({paymentMethod}):</span>
+                            <span className="font-bold text-stone-900">
+                              ₹{amountPaidNum.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Remaining Balance Pill */}
+                      <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                        remainingBalance === 0
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-amber-50 border-amber-200 text-amber-800'
+                      }`}>
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider block">
+                            Remaining Balance
+                          </span>
+                          <span className="text-base font-black">
+                            ₹{remainingBalance.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${
+                          remainingBalance === 0 ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-900'
+                        }`}>
+                          {remainingBalance === 0 ? 'PAID IN FULL ✓' : 'PARTIAL DUE'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ─────────────────────────────────────────────────────────────
+                  STEP 06: OFFICIAL INVOICE & RECEIPT
+                 ───────────────────────────────────────────────────────────── */}
+              {step === 6 && (
+                <motion.div
+                  key="step-6"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.2 }}
+                  className="space-y-6 text-center"
+                >
+                  <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
+                    <Check className="w-7 h-7 stroke-[3]" />
+                  </div>
+
+                  <div>
+                    <h3 className="text-xl font-black text-stone-900 tracking-tight">
+                      Member Onboarded Successfully!
+                    </h3>
+                    <p className="text-xs text-stone-500 mt-1">
+                      Account activated, biometric ID assigned, and official invoice generated.
+                    </p>
+                  </div>
+
+                  {/* Actions Strip */}
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="py-2 px-4 bg-stone-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-xs"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Print Official Receipt</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleanPhone = mobile.replace(/\D/g, '').slice(-10);
+                        const msg = `Hello ${fullName}! Welcome to The Warrior Gym. Your membership for ${selectedPlan?.name} has been activated. Invoice #${createdInvoice?.invoiceNumber || 'INV-001'} is generated.`;
+                        window.open(`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                      }}
+                      className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-xs"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Share on WhatsApp</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        if (createdMember?.id) {
+                          router.push(`/dashboard/members/${createdMember.id}`);
+                        }
+                      }}
+                      className="py-2 px-4 bg-orange-50 hover:bg-orange-100 text-[#EA580C] text-xs font-bold rounded-xl border border-orange-200 flex items-center gap-2 transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Open Member Profile</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="py-2 px-4 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl flex items-center gap-2 transition-all"
+                    >
+                      <span>+ Onboard Another</span>
+                    </button>
+                  </div>
+
+                  {/* Rendered Official Invoice Component */}
+                  <div className="mt-4 border border-stone-200 rounded-2xl overflow-hidden shadow-sm text-left">
+                    <OfficialInvoiceReceipt
+                      invoice={createdInvoice}
+                      member={createdMember}
+                      onPrint={() => window.print()}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Sticky Footer Controls */}
-          {((step < 5 && !hasPt) || (step < 6 && hasPt)) && (
-            <div className="px-6 sm:px-8 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0">
+          {/* ══════════════════════════════════════════════════════════════════
+              4. STICKY FOOTER ACTION BAR
+             ══════════════════════════════════════════════════════════════════ */}
+          {step < 6 && (
+            <div className="px-6 py-4 bg-white border-t border-stone-200 flex items-center justify-between shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  if (step > 1) setStep(step - 1);
-                  else handleAttemptClose();
-                }}
-                className="px-5 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5"
+                disabled={step === 1 || isSubmitting}
+                onClick={handlePrevStep}
+                className={`py-2.5 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  step === 1
+                    ? 'opacity-0 pointer-events-none'
+                    : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                }`}
               >
-                <ArrowLeft size={14} /> {step === 1 ? 'Cancel' : 'Back'}
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back</span>
               </button>
 
-              <div className="flex items-center gap-2">
-                {step === 3 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toast.info('Biometric enrollment skipped. Statuses marked as Pending.');
-                      setStep(4);
-                    }}
-                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all border-none cursor-pointer"
-                  >
-                    Skip for now
-                  </button>
-                )}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-stone-400 font-medium hidden sm:inline">
+                  Step {step} of 6
+                </span>
+
                 <button
                   type="button"
-                  onClick={handleNextStep}
                   disabled={isSubmitting}
-                  className="px-6 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black transition-all shadow-md border-none cursor-pointer flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                  onClick={handleNextStep}
+                  className="py-2.5 px-6 bg-gradient-to-r from-[#FF7A00] to-[#F04400] hover:brightness-105 active:scale-98 text-white text-xs font-black rounded-xl flex items-center gap-2 shadow-md shadow-orange-500/20 transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <span>
-                    {step === 4 && !hasPt ? (isSubmitting ? 'Creating Member...' : 'Create Member ✓') : ''}
-                    {step === 5 && hasPt ? (isSubmitting ? 'Creating Member...' : 'Create Member & Bills ✓') : ''}
-                    {((step < 4 && !hasPt) || (step < 5 && hasPt)) ? 'Next Step' : ''}
-                  </span>
-                  <ArrowRight size={14} />
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Issuing Membership...</span>
+                    </>
+                  ) : step === 5 ? (
+                    <>
+                      <span>Create Member & Issue Invoice</span>
+                      <Zap className="w-3.5 h-3.5 fill-white" />
+                    </>
+                  ) : (
+                    <>
+                      <span>Next Step</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
           )}
-
         </motion.div>
       </div>
 
-      {/* ── LIVE CAMERA CAPTURE MODAL ── */}
+      {/* ══════════════════════════════════════════════════════════════════
+          LIVE WEBCAM CAPTURE MODAL
+         ══════════════════════════════════════════════════════════════════ */}
       {isCameraOpen && (
-        <div key="live-camera-capture-modal" className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-slate-900 text-white rounded-3xl p-6 max-w-md w-full space-y-4 text-center border border-slate-800 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <h3 className="text-sm font-black flex items-center gap-2">
-                <Camera size={16} className="text-[#FB923C]" /> Take Member Photo
+                <Camera className="w-4 h-4 text-[#FF7A00]" /> Take Member Photo
               </h3>
-              <button onClick={stopCameraCapture} className="text-slate-400 hover:text-white bg-transparent border-none cursor-pointer p-1">
+              <button
+                type="button"
+                onClick={stopCameraCapture}
+                className="text-slate-400 hover:text-white p-1"
+              >
                 ✕
               </button>
             </div>
@@ -2080,11 +2032,11 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                 {cameraError}
               </div>
             ) : (
-              <div className="relative w-64 h-64 mx-auto rounded-full overflow-hidden border-4 border-[#F97316] shadow-2xl bg-black">
-                <video 
-                  ref={videoRef} 
-                  autoPlay 
-                  playsInline 
+              <div className="relative w-64 h-64 mx-auto rounded-full overflow-hidden border-4 border-[#F04400] shadow-2xl bg-black">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
                   className="w-full h-full object-cover"
                 />
               </div>
@@ -2095,36 +2047,43 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
             <div className="flex justify-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={stopCameraCapture}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl border-none cursor-pointer"
+                onClick={switchCamera}
+                className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5"
               >
-                Cancel
+                <SwitchCamera className="w-3.5 h-3.5" />
+                <span>Flip</span>
               </button>
+
               <button
                 type="button"
                 onClick={takeSnapshot}
                 disabled={Boolean(cameraError)}
-                className="px-6 py-2.5 bg-[#EA580C] hover:bg-orange-500 text-white text-xs font-black rounded-xl border-none cursor-pointer flex items-center gap-2 shadow-lg disabled:opacity-50"
+                className="px-6 py-2.5 bg-[#F04400] hover:bg-orange-500 text-white text-xs font-black rounded-xl flex items-center gap-2 shadow-lg disabled:opacity-50"
               >
-                <Camera size={16} /> Capture Photo
+                <Camera className="w-4 h-4" />
+                <span>Capture Snapshot</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Discard Confirmation Modal */}
+      {/* ══════════════════════════════════════════════════════════════════
+          DISCARD CONFIRMATION MODAL
+         ══════════════════════════════════════════════════════════════════ */}
       {showDiscardConfirm && (
-        <div key="discard-confirmation-modal" className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 text-center shadow-2xl border border-slate-200">
-            <AlertCircle size={36} className="text-amber-500 mx-auto" />
-            <h3 className="text-base font-black text-slate-900">Discard Member Registration?</h3>
-            <p className="text-xs text-slate-500 font-medium">You have unsaved form data. Are you sure you want to exit without saving?</p>
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 text-center shadow-2xl border border-stone-200">
+            <AlertCircle className="w-9 h-9 text-amber-500 mx-auto" />
+            <h3 className="text-base font-black text-stone-900">Discard Member Registration?</h3>
+            <p className="text-xs text-stone-500 font-medium">
+              You have entered member details. Are you sure you want to discard this onboarding?
+            </p>
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setShowDiscardConfirm(false)}
-                className="flex-1 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 border-none cursor-pointer"
+                className="flex-1 py-2.5 bg-stone-100 text-stone-700 rounded-xl text-xs font-bold hover:bg-stone-200"
               >
                 Keep Editing
               </button>
@@ -2134,9 +2093,9 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                   setShowDiscardConfirm(false);
                   onClose();
                 }}
-                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 border-none cursor-pointer"
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700"
               >
-                Discard & Close
+                Discard & Exit
               </button>
             </div>
           </div>
