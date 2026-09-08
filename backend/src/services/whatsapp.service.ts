@@ -11,6 +11,10 @@ class WhatsAppService {
   private clientInfo: any = null;
 
   constructor() {
+    if (process.env.VERCEL) {
+      console.log('[WhatsApp] Vercel Serverless environment: automatic client startup disabled.');
+      return;
+    }
     // Automatically attempt reconnection if initialized
     setTimeout(() => {
       this.initClient();
@@ -28,6 +32,12 @@ class WhatsAppService {
   }
 
   public async initClient() {
+    if (process.env.VERCEL) {
+      this.status = 'Disconnected';
+      console.log('[WhatsApp] WhatsApp Web client is disabled on Vercel Serverless.');
+      return;
+    }
+
     if (this.client && this.status === 'Connecting') {
       console.log('[WhatsApp] Initialization already in progress.');
       return;
@@ -72,12 +82,18 @@ class WhatsAppService {
       puppeteerOptions.executablePath = edgePath;
     }
 
-    this.client = new Client({
-      authStrategy: new LocalAuth({
-        dataPath: authPath
-      }),
-      puppeteer: puppeteerOptions
-    });
+    try {
+      this.client = new Client({
+        authStrategy: new LocalAuth({
+          dataPath: authPath
+        }),
+        puppeteer: puppeteerOptions
+      });
+    } catch (createErr) {
+      console.warn('[WhatsApp] Failed to instantiate Client (headless browser missing):', createErr);
+      this.status = 'Disconnected';
+      return;
+    }
 
     this.client.on('qr', async (qr) => {
       console.log('[WhatsApp] QR Code received. Generating data URL...');
