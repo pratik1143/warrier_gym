@@ -26,11 +26,8 @@ import KPICommandStrip from "./components/KPICommandStrip";
 import PerformanceAnalytics from "./components/PerformanceAnalytics";
 import AttendanceCommandCenter from "./components/AttendanceCommandCenter";
 import MembershipOverviewWidget from "./components/MembershipOverviewWidget";
-import MemberActivityFeed from "./components/MemberActivityFeed";
-import QuickActionsGrid from "./components/QuickActionsGrid";
 import RecentPaymentsTable from "./components/RecentPaymentsTable";
 import GymPulseWidget from "./components/GymPulseWidget";
-import GateAccessCard from "./components/GateAccessCard";
 import PresentMembersModal from "./components/PresentMembersModal";
 
 const fadeUp = (delay = 0) => ({
@@ -454,55 +451,22 @@ export default function OverviewCommandCenter() {
         />
       </motion.div>
 
-      {/* ── 4. TWO-COLUMN OPERATIONAL HUB (Attendance Timeline + Member Activity) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Attendance Command Center (7 cols) */}
-        <motion.div {...fadeUp(0.18)} className="lg:col-span-7">
-          <AttendanceCommandCenter
-            attendanceLogs={attendance}
-            activeMembersCount={activeMembersCount}
-            onOpenRoster={() => setShowPresentModal(true)}
-          />
-        </motion.div>
-
-        {/* Member Activity Feed (5 cols) */}
-        <motion.div {...fadeUp(0.22)} className="lg:col-span-5">
-          <MemberActivityFeed
-            payments={payments}
-            attendanceLogs={attendance}
-            members={members}
-          />
-        </motion.div>
-      </div>
-
-      {/* ── 5. QUICK ACTIONS HUB ── */}
-      <motion.div {...fadeUp(0.26)}>
-        <QuickActionsGrid
-          onNewMember={() => setShowNewMemberModal(true)}
-          onNewEnquiry={() => setShowNewEnquiryModal(true)}
-          onFollowUp={() => setShowNewFollowupModal(true)}
+      {/* ── 4. ATTENDANCE COMMAND CENTER (Full Width) ── */}
+      <motion.div {...fadeUp(0.18)} className="w-full">
+        <AttendanceCommandCenter
+          attendanceLogs={attendance}
+          activeMembersCount={activeMembersCount}
+          onOpenRoster={() => setShowPresentModal(true)}
         />
       </motion.div>
 
-      {/* ── 6. TWO-COLUMN MIDDLE HUB (Membership Overview + Hardware / Gate Access) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Membership Lifecycle & Expiring Table (8 cols) */}
-        <motion.div {...fadeUp(0.3)} className="lg:col-span-8">
-          <MembershipOverviewWidget
-            members={members}
-            onRenewMember={(m) => router.push(`/dashboard/billing?memberId=${m.id || m.memberId}`)}
-          />
-        </motion.div>
-
-        {/* Gate Access Control & Hardware Card (4 cols) */}
-        <motion.div {...fadeUp(0.34)} className="lg:col-span-4 flex flex-col gap-4">
-          <GateAccessCard
-            deviceStatus={deviceStatus}
-            lastPunchEvent={lastPunchEvent}
-            onUnlockGate={triggerGateUnlock}
-          />
-        </motion.div>
-      </div>
+      {/* ── 5. MEMBERSHIP OVERVIEW & EXPIRING TABLE (Full Width) ── */}
+      <motion.div {...fadeUp(0.24)} className="w-full">
+        <MembershipOverviewWidget
+          members={members}
+          onRenewMember={(m) => router.push(`/dashboard/billing?memberId=${m.id || m.memberId}`)}
+        />
+      </motion.div>
 
       {/* ── 7. GYM PULSE & TELEMETRY ── */}
       <motion.div {...fadeUp(0.38)}>
