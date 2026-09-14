@@ -140,7 +140,7 @@ class BiometricAgentManager:
         """Periodically reports health to Firestore and checks for remote commands (e.g. test door unlock)."""
         while not self._stop_event.is_set():
             try:
-                time.sleep(5)
+                time.sleep(3)
                 now_iso = datetime.now(timezone.utc).isoformat()
 
                 # Check connectivity for each provider and attempt reconnection if needed
@@ -176,7 +176,10 @@ class BiometricAgentManager:
                         "hikvisionOnline": is_hik_online,
                         "esslConnected": is_essl_online,
                         "gateControlEnabled": is_hik_online or is_essl_online,
-                        "version": "3.0.0-hikvision"
+                        "version": "3.2.0-hikvision",
+                        "deviceModel": "DS-K1T320EFWX",
+                        "deviceIp": Config.HIKVISION_HOST,
+                        "reconnectCount": getattr(self, "reconnect_count", 0)
                     }
                     control_ref.set(update_payload, merge=True)
 
@@ -194,6 +197,7 @@ class BiometricAgentManager:
                             "status": "connected" if is_hik_online else "offline",
                             "connectionHealth": 100 if is_hik_online else 0,
                             "lastSync": now_iso,
+                            "lastHeartbeat": now_iso,
                             "firmwareVersion": dev_info.get("firmwareVersion", "V3.5.20"),
                             "serialNumber": dev_info.get("serialNumber", "N/A"),
                             "provider": "hikvision",
@@ -270,6 +274,49 @@ class BiometricAgentManager:
                     })
             except Exception as e:
                 logger.error(f"Error processing readUsersPending: {e}")
+
+        # 4. Test Event Listener Diagnostics Command (Requirement 23)
+        if control_data.get("testListenerPending"):
+            try:
+                db.collection("device_testing").document("control").update({"testListenerPending": False})
+                logger.info("📡 [Remote Command] Test Event Listener triggered from CRM UI!")
+                is_running = self.hikvision_provider and self.hikvision_provider.is_running
+                is_conn = self.hikvision_provider and self.hikvision_provider.is_connected()
+                db.collection("device_testing").document("control").update({
+                    "lastListenerTestResult": {
+                        "streamActive": is_running,
+                        "deviceConnected": is_conn,
+                        "lastSerialNo": getattr(self.hikvision_provider, "_last_serial_no", 0),
+                        "processedCount": len(getattr(self.hikvision_provider, "_processed_serials", set())),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    },
+                    "lastListenerTestTime": datetime.now(timezone.utc).isoformat()
+                })
+            except Exception as e:
+                logger.error(f"Error processing testListenerPending: {e}")
+
+        # 5. Send Test Event ONLY IN DEVELOPMENT (Requirement 23)
+        if control_data.get("testPunchPending"):
+            try:
+                test_emp = str(control_data.get("testPunchEmployeeNo", "6")).strip()
+                db.collection("device_testing").document("control").update({"testPunchPending": False})
+                logger.info(f"🧪 [Remote Command - DEV ONLY] Simulating dev punch for ID #{test_emp}")
+                self.processor.process_event({
+                    "deviceId": Config.HIKVISION_DEVICE_ID,
+                    "deviceUserId": test_emp,
+                    "employeeNo": test_emp,
+                    "biometricId": test_emp,
+                    "memberName": control_data.get("testPunchName", ""),
+                    "eventType": "ACCESS_GRANTED",
+                    "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+05:30"),
+                    "verificationMethod": control_data.get("testPunchMethod", "FACE"),
+                    "deviceIp": Config.HIKVISION_HOST,
+                    "rawEventId": f"test_{int(time.time())}",
+                    "source": "HIKVISION",
+                    "doorNo": 1
+                })
+            except Exception as e:
+                logger.error(f"Error processing testPunchPending: {e}")
 
 if __name__ == "__main__":
     agent = BiometricAgentManager()

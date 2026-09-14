@@ -110,50 +110,48 @@ class EventProcessor:
             logger.warning(f"Ignoring event with empty deviceUserId: {event}")
             return {"status": "ignored", "reason": "empty_user_id"}
 
-        # 1. Deterministic Idempotency Fingerprint Check
-        # Uses rawEventId (serialNo) if present, plus timestamp prefix
+        # 1. Deterministic Idempotency Check using device_id + device_uid + raw_event_id
+        event_id = f"punch_{device_id}_{device_uid}_{raw_event_id}"
         fingerprint = f"{device_id}_{device_uid}_{raw_event_id}_{timestamp_iso[:16]}"
-        if fingerprint in self.processed_fingerprints:
-            logger.info(f"⏭ [Idempotent Protection] Ignoring duplicate raw event fingerprint {fingerprint}")
-            return {"status": "duplicate_event", "fingerprint": fingerprint}
+        if event_id in self.processed_fingerprints or fingerprint in self.processed_fingerprints:
+            logger.info(f"⏭ [Idempotent Protection] Ignoring duplicate raw event {event_id}")
+            return {"status": "duplicate_event", "eventId": event_id}
 
-        # Strict Real-time freshness guard: ignore events older than 35 seconds to prevent buffered historical replays
-        try:
-            ev_dt = datetime.fromisoformat(timestamp_iso)
-            now_dt = datetime.now(timezone.utc)
-            ev_utc = ev_dt.astimezone(timezone.utc)
-            if abs((now_dt - ev_utc).total_seconds()) > 35:
-                logger.info(f"⏭ [Historical Ignored] Skipping stale buffered punch from {timestamp_iso} for user {device_uid}")
-                return {"status": "ignored_stale_event", "timestamp": timestamp_iso}
-        except Exception:
-            pass
-
+        self.processed_fingerprints.add(event_id)
         self.processed_fingerprints.add(fingerprint)
-        if len(self.processed_fingerprints) > 3000:
+        if len(self.processed_fingerprints) > 5000:
             self.processed_fingerprints.clear()
 
-        # 2. Member Resolution (STABLE MAPPING ONLY - NEVER BY NAME OR PHONE ALONE)
+        # 2. Member Resolution (STABLE MAPPING ONLY - BY BIOMETRIC / EMPLOYEE ID)
         member = self._resolve_member(device_uid, device_id)
 
-        # 3. Handle Unmapped User
+        # 3. Handle Unknown / Unmapped User
         if not member:
-            return self._handle_unmapped_user(event, device_uid, device_id, timestamp_iso)
+            return self._handle_unmapped_user(event, device_uid, device_id, timestamp_iso, event_id)
 
         # 4. Member Status & Access Evaluation
         member_id = member.get("id") or member.get("uid")
-        member_name = member.get("name") or event.get("memberName") or "Warrior Member"
+        member_name = member.get("name") or event.get("memberName") or f"Member #{device_uid}"
         member_code = member.get("memberId") or f"TWG-2026-{device_uid}"
         plan_name = member.get("plan") or "Monthly Standard"
-        avatar_url = member.get("avatar") or member.get("avatarUrl") or ""
+        photo_url = member.get("photoUrl") or member.get("photo") or member.get("avatar") or member.get("avatarUrl") or ""
+        m_status = str(member.get("status", "active")).strip().upper()
 
-        access_status, reason, days_left, expired_days = self._evaluate_member_access(member, timestamp_iso)
+        is_hold = (m_status == "HOLD")
+        if is_hold:
+            access_status = "hold"
+            reason = "Member account is on HOLD"
+            days_left = 0
+            expired_days = 0
+        else:
+            access_status, reason, days_left, expired_days = self._evaluate_member_access(member, timestamp_iso)
 
-        # 5. Duplicate Check-in / Already Inside Check (Strictly preserves 1 Members Inside rule)
+        # 5. Duplicate Check-in / Already Inside Check (Preserves 1 Members Inside rule)
         is_already_inside = False
         first_checkin_time = ""
         presence_ref = None
 
-        if self.db is not None and access_status == "granted":
+        if self.db is not None and access_status == "granted" and not is_hold:
             try:
                 presence_ref = self.db.collection("gym_presence").document(member_id)
                 presence_snap = presence_ref.get()
@@ -161,16 +159,74 @@ class EventProcessor:
                     p_data = presence_snap.to_dict() or {}
                     if p_data.get("inside") is True:
                         is_already_inside = True
-                        access_status = "already_inside"
                         first_checkin_time = p_data.get("entryTime") or ""
                         reason = "Member is already inside gym"
             except Exception as ex:
                 logger.warning(f"Error checking gym_presence for {member_id}: {ex}")
 
-        # 6. Record Attendance and Presence
+        # Determine Punch Status & Punch Type
+        if is_hold:
+            punch_status = "HOLD_MEMBER"
+            punch_type = "PUNCH_IN"
+            gate_will_open = False
+        elif is_already_inside:
+            punch_status = "ALREADY_INSIDE"
+            punch_type = "REPEAT_TAP"
+            gate_will_open = False
+        elif access_status == "granted":
+            punch_status = "MATCHED"
+            punch_type = "PUNCH_IN"
+            gate_will_open = True
+        else:
+            punch_status = access_status.upper()
+            punch_type = "PUNCH_IN"
+            gate_will_open = False
+
+        verification_mode = event.get("verificationMethod", "FACE")
+
+        # 6. CRITICAL (Requirements 11 & 15): Store Raw Device Event FIRST in attendanceEvents
+        raw_event_record = {
+            "eventId": event_id,
+            "deviceId": device_id,
+            "hikvisionEventId": raw_event_id,
+            "employeeNo": device_uid,
+            "biometricId": device_uid,
+            "memberId": member_id,
+            "memberName": member_name,
+            "memberPhotoUrl": photo_url,
+            "eventType": "ACCESS_GRANTED" if (punch_status in ("MATCHED", "ALREADY_INSIDE")) else "ACCESS_DENIED",
+            "punchType": punch_type,
+            "verificationMode": verification_mode,
+            "eventTime": timestamp_iso,
+            "receivedAt": datetime.now(timezone.utc).isoformat(),
+            "status": punch_status,
+            "reason": reason,
+            "source": "HIKVISION",
+            "createdAt": datetime.now(timezone.utc).isoformat()
+        }
+
+        if self.db is not None:
+            try:
+                # Production raw event collection
+                self.db.collection("attendanceEvents").document(event_id).set(raw_event_record)
+                # Also mirror to attendance_logs for legacy widgets
+                self.db.collection("attendance_logs").document(event_id).set(raw_event_record)
+                # Realtime latest punch for global dashboard listeners
+                self.db.collection("device_testing").document("control").set({
+                    "latestPunch": raw_event_record,
+                    "lastHeartbeat": datetime.now(timezone.utc).isoformat()
+                }, merge=True)
+            except Exception as dbe:
+                logger.error(f"Error persisting punch event to Firestore: {dbe}")
+
+        logger.info(f"📋 [HIKVISION EVENT RECEIVED] device={device_id} employeeNo={device_uid} eventTime={timestamp_iso} verificationMode={verification_mode}")
+        logger.info(f"🔍 [HIKVISION EVENT MAPPED] employeeNo={device_uid} biometricId={device_uid} memberId={member_id} memberName={member_name} status={punch_status}")
+        logger.info(f"💾 [FIRESTORE EVENT CREATED] collection=attendanceEvents eventId={event_id}")
+        logger.info(f"📢 [LIVE EVENT PUBLISHED] status={punch_status} name={member_name} verificationMode={verification_mode}")
+
+        # 7. Attendance Session & Gym Presence Processing
         today_str = datetime.now().strftime("%Y-%m-%d")
         att_doc_id = f"att_{member_id}_{today_str}"
-
         punch_record = {
             "docId": att_doc_id,
             "attendanceId": att_doc_id,
@@ -180,36 +236,34 @@ class EventProcessor:
             "deviceUserId": device_uid,
             "memberName": member_name,
             "memberCode": member_code,
-            "avatarUrl": avatar_url,
+            "avatarUrl": photo_url,
             "deviceId": device_id,
             "deviceName": device_name,
             "branch": branch,
             "timestamp": timestamp_iso,
             "checkIn": timestamp_iso,
             "checkOut": None,
-            "status": access_status,
+            "status": punch_status,
             "reason": reason,
-            "method": f"Hikvision Biometric ({event.get('verificationMethod', 'Face/FP')})",
+            "method": f"Hikvision Biometric ({verification_mode})",
             "membership": plan_name,
             "createdAt": timestamp_iso,
             "rawEventId": raw_event_id,
-            "source": event.get("source", "hikvision")
+            "source": "HIKVISION"
         }
 
-        gate_will_open = False
-        if access_status == "granted" and not is_already_inside:
-            # Fresh Check-in: Increment Members Inside, set 1-hour auto-checkout timer
-            gate_will_open = True
+        if punch_status == "MATCHED":
+            # Fresh Check-in: Increment Members Inside (+1), set 1-hour auto-checkout
             self._save_fresh_checkin(punch_record, member_id, member_name, timestamp_iso, presence_ref)
-        elif access_status == "already_inside":
-            # Repeated punch while already inside:
-            # DOES NOT increment Members Inside again!
+        elif punch_status == "ALREADY_INSIDE":
+            # Repeat tap: DOES NOT increment Members Inside again!
             self._handle_duplicate_inside_punch(punch_record, member_id, member_name, timestamp_iso, presence_ref)
+        elif is_hold:
+            logger.info(f"⏸ [HOLD Member Punch] {member_name} (ID: {device_uid}) punched. Preserving HOLD status, gate locked.")
         else:
-            # Denied (expired/frozen)
             self._record_denied_attempt(punch_record, member_id)
 
-        # 7. Physical Gate / Door Relay Activation (ONLY FOR AUTHORIZED MEMBERS)
+        # 8. Physical Gate / Door Relay Activation (ONLY FOR AUTHORIZED MEMBERS)
         if gate_will_open:
             logger.info(f"🟢 [Access Granted] Triggering door relay unlock for {member_name} (ID: {device_uid})")
             if self.door_callback:
@@ -218,46 +272,21 @@ class EventProcessor:
                 except Exception as de:
                     logger.error(f"Error executing door relay callback: {de}")
         else:
-            logger.info(f"🔴 [Gate Kept Locked] Access status: {access_status.upper()} for {member_name} ({reason})")
-
-        # 8. Update device_testing/control with real-time latestPunch payload for Web Dashboard Popup
-        if self.db is not None:
-            try:
-                self.db.collection("device_testing").document("control").set({
-                    "latestPunch": {
-                        "status": access_status,
-                        "memberName": member_name,
-                        "memberId": member_id,
-                        "memberCode": member_code,
-                        "biometricId": device_uid,
-                        "deviceUserId": device_uid,
-                        "avatarUrl": avatar_url,
-                        "verificationMethod": event.get("verificationMethod", "Face/FP"),
-                        "timestamp": timestamp_iso,
-                        "gateOpened": gate_will_open,
-                        "doorNo": event.get("doorNo", 1),
-                        "deviceId": device_id,
-                        "rawEventId": raw_event_id,
-                        "source": "hikvision"
-                    },
-                    "lastHeartbeat": datetime.now(timezone.utc).isoformat()
-                }, merge=True)
-            except Exception as e:
-                logger.error(f"Failed to record latestPunch in control doc: {e}")
+            logger.info(f"🔒 [Gate Kept Locked] Access status: {punch_status} for {member_name} ({reason})")
 
         # 9. Trigger Windows Desktop Overlay Popup
         if desktop_popup:
             try:
                 desktop_popup.show_attendance_popup({
-                    "status": access_status,
+                    "status": "granted" if punch_status == "MATCHED" else punch_status.lower(),
                     "memberName": member_name,
                     "memberId": member_id,
                     "memberCode": member_code,
                     "plan": plan_name,
-                    "daysRemaining": days_left if access_status in ("granted", "already_inside") else 0,
+                    "daysRemaining": days_left if punch_status in ("MATCHED", "ALREADY_INSIDE") else 0,
                     "expiredDays": expired_days,
                     "visitCount": member.get("attendanceCount", 1) or 1,
-                    "avatarUrl": avatar_url,
+                    "avatarUrl": photo_url,
                     "deviceId": device_name,
                     "biometricId": device_uid,
                     "timestamp": timestamp_iso,
@@ -268,7 +297,7 @@ class EventProcessor:
                 logger.error(f"Desktop popup error: {pe}")
 
         return {
-            "status": access_status,
+            "status": punch_status,
             "memberId": member_id,
             "memberName": member_name,
             "gateOpened": gate_will_open,
@@ -277,13 +306,16 @@ class EventProcessor:
 
     def _resolve_member(self, device_uid: str, device_id: str) -> Optional[Dict[str, Any]]:
         """
-        Resolves member strictly by deviceUserId / biometricId mapping.
-        Never guesses by name or phone alone.
+        Resolves member strictly by deviceUserId / biometricId / employeeId mapping.
+        Never guesses by name or phone alone (Requirement 8).
         """
         if self.db is None:
             return None
 
-        clean_uid = device_uid.strip().lower()
+        clean_uid = str(device_uid).strip().lower()
+        if not clean_uid or clean_uid.startswith("unknown"):
+            return None
+
         members_ref = self.db.collection("members")
 
         try:
@@ -292,16 +324,25 @@ class EventProcessor:
             for doc in q1:
                 return {"id": doc.id, **doc.to_dict()}
 
-            # 2. Exact query on deviceUserId (string)
+            # 2. Exact query on employeeId (string)
+            q_emp = members_ref.where("employeeId", "==", device_uid).limit(1).stream()
+            for doc in q_emp:
+                return {"id": doc.id, **doc.to_dict()}
+
+            # 3. Exact query on deviceUserId (string)
             q2 = members_ref.where("deviceUserId", "==", device_uid).limit(1).stream()
             for doc in q2:
                 return {"id": doc.id, **doc.to_dict()}
 
-            # 3. Try integer conversion for biometricId / deviceUserId
+            # 4. Try integer conversion for biometricId / employeeId / deviceUserId
             try:
                 int_uid = int(device_uid)
                 q3 = members_ref.where("biometricId", "==", int_uid).limit(1).stream()
                 for doc in q3:
+                    return {"id": doc.id, **doc.to_dict()}
+
+                q_emp_int = members_ref.where("employeeId", "==", int_uid).limit(1).stream()
+                for doc in q_emp_int:
                     return {"id": doc.id, **doc.to_dict()}
 
                 q4 = members_ref.where("deviceUserId", "==", int_uid).limit(1).stream()
@@ -310,22 +351,28 @@ class EventProcessor:
             except ValueError:
                 pass
 
-            # 4. Check nested biometric object: biometric.deviceUserId == clean_uid
+            # 5. Check nested biometric object: biometric.deviceUserId == clean_uid
             q5 = members_ref.where("biometric.deviceUserId", "==", device_uid).limit(1).stream()
             for doc in q5:
                 return {"id": doc.id, **doc.to_dict()}
 
-            # 5. In-memory check for exact match or leading zero match across members
+            # 6. In-memory check for exact match or leading zero match across all members
             all_members = [ {"id": d.id, **d.to_dict()} for d in members_ref.stream() ]
             for m in all_members:
                 b_id = str(m.get("biometricId", "")).strip().lower()
+                e_id = str(m.get("employeeId", "")).strip().lower()
                 d_id = str(m.get("deviceUserId", "")).strip().lower()
+                h_id = str(m.get("hikvisionUserId", "")).strip().lower()
                 nested_bio = m.get("biometric", {})
                 nested_dev_uid = str(nested_bio.get("deviceUserId", "")).strip().lower() if isinstance(nested_bio, dict) else ""
 
                 if b_id and (b_id == clean_uid or b_id.lstrip("0") == clean_uid.lstrip("0")):
                     return m
+                if e_id and (e_id == clean_uid or e_id.lstrip("0") == clean_uid.lstrip("0")):
+                    return m
                 if d_id and (d_id == clean_uid or d_id.lstrip("0") == clean_uid.lstrip("0")):
+                    return m
+                if h_id and (h_id == clean_uid or h_id.lstrip("0") == clean_uid.lstrip("0")):
                     return m
                 if nested_dev_uid and (nested_dev_uid == clean_uid or nested_dev_uid.lstrip("0") == clean_uid.lstrip("0")):
                     return m
@@ -335,56 +382,76 @@ class EventProcessor:
 
         return None
 
-    def _handle_unmapped_user(self, event: Dict[str, Any], device_uid: str, device_id: str, timestamp_iso: str) -> Dict[str, Any]:
-        """Handles authentication from a device user slot that is not yet mapped to a CRM member."""
-        logger.warning(f"⚠️ [Unmapped User] Biometric ID #{device_uid} at {device_id} is not mapped to any Warrior member!")
+    def _handle_unmapped_user(self, event: Dict[str, Any], device_uid: str, device_id: str, timestamp_iso: str, event_id: str = "") -> Dict[str, Any]:
+        """
+        Handles authentication from an unmapped or unknown person (Requirement 9).
+        Never silently discards the punch! Persists to attendanceEvents and fires Live Punch popup.
+        """
+        raw_event_id = str(event.get("rawEventId", ""))
+        verification_mode = event.get("verificationMethod", "FACE")
+        if not event_id:
+            event_id = f"punch_{device_id}_{device_uid}_{raw_event_id}"
+
+        logger.warning(f"⚠️ [UNKNOWN PUNCH DETECTED] Biometric ID #{device_uid} at {device_id} is not mapped in CRM!")
+
+        raw_event_record = {
+            "eventId": event_id,
+            "deviceId": device_id,
+            "hikvisionEventId": raw_event_id,
+            "employeeNo": device_uid,
+            "biometricId": device_uid,
+            "memberId": None,
+            "memberName": event.get("memberName") or f"Unknown Person #{device_uid}",
+            "memberPhotoUrl": "",
+            "eventType": "ACCESS_DENIED",
+            "punchType": "UNKNOWN_PUNCH",
+            "verificationMode": verification_mode,
+            "eventTime": timestamp_iso,
+            "receivedAt": datetime.now(timezone.utc).isoformat(),
+            "status": "UNKNOWN",
+            "reason": "Biometric ID not mapped in CRM",
+            "source": "HIKVISION",
+            "createdAt": datetime.now(timezone.utc).isoformat()
+        }
 
         unmapped_record = {
             "deviceUserId": device_uid,
             "deviceId": device_id,
             "nameOnDevice": event.get("memberName") or "",
             "lastSeen": timestamp_iso,
-            "rawEventId": event.get("rawEventId"),
-            "verificationMethod": event.get("verificationMethod"),
-            "source": event.get("source", "hikvision"),
+            "rawEventId": raw_event_id,
+            "verificationMethod": verification_mode,
+            "source": "HIKVISION",
             "count": self.unmapped_users.get(device_uid, {}).get("count", 0) + 1
         }
         self.unmapped_users[device_uid] = unmapped_record
 
-        # Store in Firestore collection unmapped_device_users for CRM Settings display
+        # Store in Firestore collection attendanceEvents (Requirement 11)
         if self.db is not None:
             try:
+                self.db.collection("attendanceEvents").document(event_id).set(raw_event_record)
+                self.db.collection("attendance_logs").document(event_id).set(raw_event_record)
                 self.db.collection("unmapped_device_users").document(f"{device_id}_{device_uid}").set(unmapped_record, merge=True)
                 self.db.collection("device_testing").document("control").set({
-                    "latestPunch": {
-                        "status": "unmapped",
-                        "memberName": event.get("memberName") or f"Unknown Person #{device_uid}",
-                        "memberId": None,
-                        "memberCode": f"User #{device_uid}",
-                        "biometricId": device_uid,
-                        "deviceUserId": device_uid,
-                        "verificationMethod": event.get("verificationMethod", "Face/FP"),
-                        "timestamp": timestamp_iso,
-                        "gateOpened": False,
-                        "doorNo": event.get("doorNo", 1),
-                        "deviceId": device_id,
-                        "rawEventId": event.get("rawEventId"),
-                        "source": "hikvision"
-                    },
+                    "latestPunch": raw_event_record,
                     "lastHeartbeat": datetime.now(timezone.utc).isoformat()
                 }, merge=True)
             except Exception as e:
                 logger.error(f"Failed to record unmapped device user in Firestore: {e}")
 
+        logger.info(f"📋 [HIKVISION EVENT RECEIVED] device={device_id} employeeNo={device_uid} status=UNKNOWN")
+        logger.info(f"💾 [FIRESTORE EVENT CREATED] collection=attendanceEvents eventId={event_id}")
+        logger.info(f"📢 [LIVE EVENT PUBLISHED] status=UNKNOWN biometricId={device_uid}")
+
         # Desktop popup for front desk alert
         if desktop_popup:
             try:
                 desktop_popup.show_attendance_popup({
-                    "status": "unmapped",
-                    "memberName": f"Unmapped Biometric User #{device_uid}",
+                    "status": "unknown",
+                    "memberName": f"Unknown Person #{device_uid}",
                     "memberId": "",
-                    "memberCode": f"ID #{device_uid}",
-                    "plan": "Unmapped Biometric Slot",
+                    "memberCode": f"Biometric #{device_uid}",
+                    "plan": "Unmapped Biometric User",
                     "daysRemaining": 0,
                     "expiredDays": 0,
                     "visitCount": 0,
@@ -399,10 +466,11 @@ class EventProcessor:
                 pass
 
         return {
-            "status": "unmapped",
+            "status": "UNKNOWN",
             "deviceUserId": device_uid,
+            "biometricId": device_uid,
             "gateOpened": False,
-            "message": f"Biometric ID #{device_uid} is unmapped. Gate remains closed."
+            "message": f"Biometric ID #{device_uid} is unknown. Gate remains closed."
         }
 
     def _evaluate_member_access(self, member: Dict[str, Any], timestamp_iso: str):
@@ -414,10 +482,14 @@ class EventProcessor:
 
         # Check explicit status
         m_status = str(member.get("status", "active")).lower()
+        if m_status == "hold":
+            return "hold", "Member account is on HOLD", 0, 0
         if m_status == "frozen":
             return "frozen", "Membership is frozen", 0, 0
         if m_status == "expired":
             return "expired", "Membership has expired", 0, 1
+        if m_status == "blocked":
+            return "blocked", "Member account is blocked", 0, 0
 
         # Check future start date
         start_date_str = member.get("startDate") or member.get("joinDate")

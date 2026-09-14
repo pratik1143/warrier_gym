@@ -78,10 +78,10 @@ export const getInvoicePreview = async (req: Request, res: Response) => {
       gst: 2745,
     };
     const mockMember = {
-      name: 'Pratik Chaudhary',
-      memberId: 'TWG-2026-0009',
-      phone: '9859527050',
-      email: 'pratikdc11@gmail.com',
+      name: 'Warrior Member',
+      memberId: 'TWG-2026-0001',
+      phone: '9876543210',
+      email: 'member@warriorgym.com',
       joinDate: '2026-06-27',
       expiryDate: '2027-06-27',
     };

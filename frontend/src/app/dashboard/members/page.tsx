@@ -646,8 +646,8 @@ export default function MembersPage() {
                 m.memberId.toUpperCase() === newReferralCode.toUpperCase()),
           );
           await addDoc(collection(fDb, "referrals"), {
-            referrerId: referrerMember ? referrerMember.id : "m1",
-            referrerName: referrerMember ? referrerMember.name : "Pratik",
+            referrerId: referrerMember ? referrerMember.id : "",
+            referrerName: referrerMember ? referrerMember.name : "Direct Member",
             referrerPhone: referrerMember ? referrerMember.phone || "" : "",
             friendId: newMember.id,
             friendName: newName,

@@ -68,86 +68,117 @@ export default function AttendancePopupManager() {
     if (!docId || processedDocIds.current.has(docId)) return;
     processedDocIds.current.add(docId);
 
-    // Strictly suppress popups for punches older than 15 seconds
-    const rawTimeStr = data.checkIn || data.timestamp || data.createdAt;
+    // Realtime guard: allow punches received in the last 45 seconds to prevent stale popups on load
+    const rawTimeStr = data.receivedAt || data.eventTime || data.createdAt || data.timestamp || data.checkIn;
     if (rawTimeStr) {
       const punchMs = new Date(rawTimeStr).getTime();
       const nowMs = Date.now();
       const ageSec = (nowMs - punchMs) / 1000;
-      if (ageSec > 15 || ageSec < -5) {
+      if (ageSec > 45 || ageSec < -30) {
         return;
       }
     }
 
     const members = useGymStore.getState().members;
-    const match = members.find((m: any) =>
-      (m.id && data.memberId && m.id === data.memberId) ||
-      (m.uid && data.memberId && m.uid === data.memberId) ||
-      (m.memberId && data.memberId && m.memberId === data.memberId) ||
-      (m.memberId && data.memberCode && m.memberId === data.memberCode) ||
-      (m.biometricId && data.biometricId && m.biometricId === data.biometricId) ||
-      (m.biometricId && data.deviceUserId && m.biometricId === data.deviceUserId) ||
-      (m.deviceUserId && data.biometricId && m.deviceUserId === data.biometricId) ||
-      (m.phone && data.phone && String(m.phone).replace(/\D/g, '') === String(data.phone).replace(/\D/g, '')) ||
-      (m.name && data.memberName && m.name.trim().toLowerCase() === String(data.memberName).trim().toLowerCase())
-    );
+    const bioId = String(data.biometricId || data.employeeNo || data.deviceUserId || '').trim();
+
+    // Strictly resolve member by biometricId, employeeId, or memberId (Requirement 8)
+    const match = bioId
+      ? members.find((m: any) =>
+          String(m.biometricId || '').trim() === bioId ||
+          String(m.employeeId || '').trim() === bioId ||
+          String(m.deviceUserId || '').trim() === bioId ||
+          (data.memberId && (m.id === data.memberId || m.memberId === data.memberId))
+        )
+      : null;
 
     let type: PopupData['type'] = 'success';
+    const statusUpper = String(data.status || '').toUpperCase();
 
-    if (data.status === 'duplicate' || data.method === 'duplicate' || data.isDuplicate) {
-      type = 'duplicate';
-    } else if (data.status === 'unknown' || (data.memberName && String(data.memberName).toLowerCase().includes('unmapped'))) {
+    if (statusUpper === 'UNKNOWN' || String(data.punchType || '').toUpperCase() === 'UNKNOWN_PUNCH' || !match && !data.memberName) {
       type = 'unknown';
-    } else if (data.status === 'denied') {
-      if (data.reason?.toLowerCase().includes('blacklisted')) type = 'blacklisted';
-      else if (data.reason?.toLowerCase().includes('frozen') || match?.status === 'frozen') type = 'frozen';
-      else type = 'expired';
+    } else if (statusUpper === 'ALREADY_INSIDE' || statusUpper === 'DUPLICATE' || data.punchType === 'REPEAT_TAP') {
+      type = 'duplicate';
+    } else if (statusUpper === 'HOLD_MEMBER' || match?.status?.toLowerCase() === 'hold') {
+      type = 'frozen';
+    } else if (statusUpper === 'EXPIRED' || statusUpper === 'DENIED') {
+      type = 'expired';
+    } else if (match) {
+      type = 'success';
+    } else {
+      type = 'unknown';
     }
 
     const days = match?.expiryDate
       ? membershipEngine.calculateDaysLeft(match.expiryDate)
-      : 30;
+      : (match?.status?.toLowerCase() === 'hold' ? 0 : 30);
 
     if (type === 'success' && days <= 0 && match) {
       type = 'expired';
     }
 
-    const rawTime = data.checkIn || data.timestamp || data.createdAt;
+    const rawTime = data.eventTime || data.receivedAt || data.checkIn || data.timestamp || data.createdAt;
     const formattedTime = rawTime
-      ? new Date(rawTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-      : new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      ? new Date(rawTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+      : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+    const memberName = match?.name || data.memberName || (type === 'unknown' ? `Unknown Person #${bioId}` : 'Warrior Member');
+    const photoUrl = data.memberPhotoUrl || match?.photoUrl || match?.photo || match?.avatar || match?.avatarUrl || '';
+    const verifyMode = data.verificationMode || data.method || 'Face';
 
     const popupData: PopupData = {
       id: docId,
       type,
       data: {
-        memberName: match?.name || data.memberName || 'Athlete',
-        memberCode: match?.biometricId || match?.deviceUserId || match?.clientId || match?.customId || match?.memberId || data.memberCode || data.memberId || 'TWG-2026-0001',
+        memberName,
+        memberCode: match?.memberId || (bioId ? `BIO #${bioId}` : 'TWG-2026-0001'),
+        biometricId: bioId,
         timestamp: formattedTime,
-        deviceName: data.deviceName || data.method || 'Hikvision DS-K1T320EFWX',
+        deviceName: data.deviceName || 'Hikvision DS-K1T320EFWX',
         branch: match?.branch || data.branch || 'Mohali, Punjab',
-        avatarUrl: match?.photo || match?.avatarUrl || match?.avatar || data.avatarUrl || data.photo || '',
-        plan: match?.plan || 'Monthly Standard',
+        avatarUrl: photoUrl,
+        plan: match?.plan || (type === 'unknown' ? 'Unknown Person' : (match?.status?.toLowerCase() === 'hold' ? 'Account on HOLD' : 'Monthly Standard')),
         trainer: match?.trainer || 'No PT Assigned',
         remainingDays: days > 0 ? days : 0,
         expiredDays: days < 0 ? Math.abs(days) : 0,
-        workout: 'Push Day',
-        reason: data.reason
+        workout: verifyMode,
+        reason: data.reason || (type === 'unknown' ? 'Member not found in CRM' : '')
       }
     };
 
-    const memberName = match?.name || data.memberName || `ID #${data.biometricId || data.memberId || '1145'}`;
-    const toastTitle = type === 'unknown' ? 'Unmapped Biometric Punch' : (type === 'duplicate' ? 'Already Inside' : 'Attendance Marked');
-    toast(`⚡ ${toastTitle}: ${memberName}`, {
-      icon: type === 'success' ? '🟢' : type === 'duplicate' ? '🔵' : type === 'unknown' ? '🟡' : '🔴',
+    // Toast notification for instant visual & sound cue (Requirement 13)
+    let toastTitle = 'Attendance Marked';
+    let toastIcon = '🟢';
+    if (type === 'unknown') {
+      toastTitle = 'Unknown Punch Detected';
+      toastIcon = '🟡';
+    } else if (type === 'duplicate') {
+      toastTitle = 'Punch Detected — Already Inside';
+      toastIcon = '🔵';
+    } else if (type === 'frozen') {
+      toastTitle = 'HOLD Member Punch';
+      toastIcon = '⏸️';
+    } else if (type === 'expired') {
+      toastTitle = 'Membership Expired';
+      toastIcon = '🔴';
+    }
+
+    toast(`${toastIcon} ${toastTitle}: ${memberName} (BIO: ${bioId || 'N/A'}) · ${verifyMode}`, {
       duration: 5000,
-      style: { background: '#0F172A', color: '#fff', border: type === 'success' ? '1px solid #22C55E' : type === 'duplicate' ? '1px solid #3B82F6' : type === 'unknown' ? '1px solid #F59E0B' : '1px solid #EF4444', borderRadius: '16px', fontWeight: 'bold', fontSize: '13px' }
+      style: {
+        background: '#0F172A',
+        color: '#fff',
+        border: type === 'success' ? '1px solid #22C55E' : type === 'duplicate' ? '1px solid #3B82F6' : type === 'unknown' ? '1px solid #F59E0B' : '1px solid #EF4444',
+        borderRadius: '16px',
+        fontWeight: 'bold',
+        fontSize: '13px'
+      }
     });
 
     setQueue(prev => [...prev, popupData]);
   };
 
-  // REST API Polling for latest punch event
+  // REST API Polling for latest punch event (safety backup)
   useEffect(() => {
     let isMounted = true;
     
@@ -155,7 +186,7 @@ export default function AttendancePopupManager() {
     API.get('/attendance/latest-punch').then(res => {
       const latest = res.data?.latestPunch;
       if (latest && isMounted) {
-        const id = latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
+        const id = latest.eventId || latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
         processedDocIds.current.add(id);
       }
     }).catch(() => {});
@@ -165,7 +196,7 @@ export default function AttendancePopupManager() {
         const res = await API.get('/attendance/latest-punch');
         const latest = res.data?.latestPunch;
         if (latest && isMounted) {
-          const docId = latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
+          const docId = latest.eventId || latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
           processPunchItem(latest, docId);
         }
       } catch (err) {}
@@ -178,12 +209,13 @@ export default function AttendancePopupManager() {
     };
   }, []);
 
-  // Firestore Realtime Listener (when Firebase ready)
+  // Firestore Realtime Listener for raw device punch events (Requirement 11 & 12)
   useEffect(() => {
     if (!isFirebaseReady || !fDb) return;
 
-    const attCollection = collection(fDb, 'attendance_logs');
-    const qPop = query(attCollection, orderBy('createdAt', 'desc'), limit(15));
+    // Listen directly to attendanceEvents collection
+    const eventsCollection = collection(fDb, 'attendanceEvents');
+    const qPop = query(eventsCollection, orderBy('receivedAt', 'desc'), limit(20));
     let isInitialLoad = true;
 
     const unsubscribe = onSnapshot(
@@ -191,7 +223,7 @@ export default function AttendancePopupManager() {
       (snapshot) => {
         if (isInitialLoad) {
           isInitialLoad = false;
-          // Baseline: mark all historical docs in snapshot as already processed
+          // Mark historical docs as already seen so reopening page doesn't flood popups
           snapshot.docs.forEach(doc => processedDocIds.current.add(doc.id));
           return;
         }
@@ -199,13 +231,11 @@ export default function AttendancePopupManager() {
           if (change.type !== 'added') return;
           const data = change.doc.data();
           const docId = change.doc.id;
-          if (data.status === 'auto_checkout') return;
-
           processPunchItem(data, docId);
         });
       },
       (error) => {
-        console.warn('[AttendancePopupManager] Firestore listener error:', error);
+        console.warn('[AttendancePopupManager] Firestore attendanceEvents listener error:', error);
       }
     );
 

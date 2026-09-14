@@ -334,26 +334,34 @@ class HikvisionProvider(BiometricProvider):
             logger.warning(f"Failed to initialize baseline serial number: {e}")
 
     def _stream_listener_loop(self, callback: Callable[[Dict[str, Any]], None]):
-        """Long-running HTTP chunked multipart streaming listener."""
+        """
+        Long-running HTTP chunked multipart streaming listener (/ISAPI/Event/notification/alertStream).
+        Uses robust MIME multipart boundary parsing to handle nested JSON objects without truncation.
+        """
+        boundary = "--MIME_boundary"
+        reconnect_delay = 2
+
         while not self._stop_event.is_set():
             try:
                 if not self._connected:
                     if not self.connect():
-                        time.sleep(5)
+                        time.sleep(min(reconnect_delay, 10))
+                        reconnect_delay = min(reconnect_delay * 1.5, 10)
                         continue
+                    reconnect_delay = 2
 
                 logger.info(f"Connecting to Hikvision alertStream at {self.base_url}/ISAPI/Event/notification/alertStream...")
                 with self.session.get(
                     f"{self.base_url}/ISAPI/Event/notification/alertStream",
                     stream=True,
-                    timeout=30
+                    timeout=35
                 ) as resp:
                     if resp.status_code != 200:
-                        logger.warning(f"alertStream returned HTTP {resp.status_code}. Reconnecting in 5s...")
-                        time.sleep(5)
+                        logger.warning(f"alertStream returned HTTP {resp.status_code}. Retrying in 4s...")
+                        time.sleep(4)
                         continue
 
-                    logger.info("🟢 Hikvision real-time alertStream connected and listening.")
+                    logger.info("🟢 [Hikvision Live Stream] alertStream connected and listening.")
                     buffer = ""
                     for chunk in resp.iter_content(chunk_size=1024):
                         if self._stop_event.is_set():
@@ -366,26 +374,19 @@ class HikvisionProvider(BiometricProvider):
                         except Exception:
                             continue
 
-                        # Look for complete JSON blocks inside MIME multipart
-                        while "{" in buffer and "}" in buffer:
-                            start_idx = buffer.find("{")
-                            end_idx = buffer.find("}\r\n", start_idx)
-                            if end_idx == -1:
-                                end_idx = buffer.find("}\n", start_idx)
-                            if end_idx == -1:
-                                if buffer.endswith("}"):
-                                    end_idx = len(buffer) - 1
-                                else:
-                                    break
-
-                            json_str = buffer[start_idx:end_idx + 1].strip()
-                            buffer = buffer[end_idx + 1:]
-
-                            try:
-                                payload = json.loads(json_str)
-                                self._handle_raw_event(payload, callback)
-                            except json.JSONDecodeError:
-                                pass
+                        if boundary in buffer:
+                            parts = buffer.split(boundary)
+                            buffer = parts[-1]
+                            for part in parts[:-1]:
+                                s_idx = part.find("{")
+                                e_idx = part.rfind("}")
+                                if s_idx != -1 and e_idx > s_idx:
+                                    json_str = part[s_idx:e_idx + 1]
+                                    try:
+                                        payload = json.loads(json_str)
+                                        self._handle_raw_event(payload, callback)
+                                    except Exception as je:
+                                        logger.debug(f"JSON parse error on alertStream chunk: {je}")
 
             except requests.exceptions.Timeout:
                 continue
@@ -394,14 +395,17 @@ class HikvisionProvider(BiometricProvider):
                 self._connected = False
                 time.sleep(3)
             except Exception as ex:
-                logger.error(f"alertStream loop error: {ex}. Retrying in 5s...")
-                time.sleep(5)
+                logger.error(f"alertStream error: {ex}. Retrying in 4s...")
+                time.sleep(4)
 
     def _poll_fallback_loop(self, callback: Callable[[Dict[str, Any]], None]):
-        """Safety fallback: polls AcsEvent endpoint to guarantee real-time punches are captured."""
+        """
+        Safety fallback: queries latest AcsEvent every 2 seconds.
+        Guarantees that no punches are lost even during stream reconnections.
+        """
         while not self._stop_event.is_set():
             try:
-                time.sleep(Config.POLL_INTERVAL_SECONDS if 'Config' in globals() else 3)
+                time.sleep(2)
                 if not self._connected:
                     continue
 
@@ -423,12 +427,12 @@ class HikvisionProvider(BiometricProvider):
                     data = resp.json()
                     total = data.get("AcsEvent", {}).get("totalMatches", 0)
                     if total > 0:
-                        pos = max(0, total - 5)
+                        pos = max(0, total - 8)
                         cond_recent = {
                             "AcsEventCond": {
                                 "searchID": f"poll_recent_{int(time.time())}",
                                 "searchResultPosition": pos,
-                                "maxResults": 5,
+                                "maxResults": 8,
                                 "major": 0,
                                 "minor": 0
                             }
@@ -441,117 +445,111 @@ class HikvisionProvider(BiometricProvider):
                         if resp2.status_code == 200:
                             events = resp2.json().get("AcsEvent", {}).get("InfoList", [])
                             for ev in events:
-                                s_no = ev.get("serialNo", 0)
-                                if s_no > self._last_serial_no and s_no not in self._processed_serials:
+                                s_no = int(ev.get("serialNo", 0))
+                                if s_no and s_no > self._last_serial_no and s_no not in self._processed_serials:
                                     self._processed_serials.add(s_no)
                                     self._last_serial_no = max(self._last_serial_no, s_no)
                                     norm = self._normalize_event(ev)
                                     if norm:
+                                        logger.info(f"⚡ [Fallback Poll Captured] Punch event serial #{s_no} for user {norm.get('employeeNo')}")
                                         callback(norm)
-            except Exception as e:
+            except Exception:
                 pass
 
     def _handle_raw_event(self, payload: Dict[str, Any], callback: Callable[[Dict[str, Any]], None]):
         """Extracts and normalizes authentication events from stream payload."""
-        acs_event = payload.get("AccessControllerEvent")
-        if not acs_event:
-            if payload.get("major") is not None and payload.get("minor") is not None:
-                acs_event = payload
-
-        if not acs_event:
+        acs_event = payload.get("AccessControllerEvent") or payload
+        if not acs_event or not isinstance(acs_event, dict):
             return
 
-        s_no = acs_event.get("serialNo", 0)
-        if s_no and s_no in self._processed_serials:
-            return
+        s_no = int(acs_event.get("serialNo", 0))
         if s_no:
+            if s_no <= self._last_serial_no or s_no in self._processed_serials:
+                return
             self._processed_serials.add(s_no)
             self._last_serial_no = max(self._last_serial_no, s_no)
-            if len(self._processed_serials) > 2000:
-                self._processed_serials.clear()
+            if len(self._processed_serials) > 5000:
+                self._processed_serials = {self._last_serial_no}
 
-        norm = self._normalize_event(acs_event)
+        norm = self._normalize_event(acs_event, parent_time=payload.get("dateTime", ""))
         if norm:
+            logger.info(
+                f"🟢 [HIKVISION EVENT RECEIVED] device={self.host} employeeNo={norm.get('employeeNo')} "
+                f"serial={norm.get('rawEventId')} method={norm.get('verificationMethod')} time={norm.get('timestamp')}"
+            )
             callback(norm)
 
-    def _normalize_event(self, ev: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _normalize_event(self, ev: Dict[str, Any], parent_time: str = "") -> Optional[Dict[str, Any]]:
         """
         Normalizes Hikvision raw event into internal standardized dictionary.
-        Requires major=5 (Access Event) and a REAL user credential authentication event.
-        Rejects non-credential sensor pulses (door magnetic open/close, remote pulses, exit buttons).
+        Supports both ISAPI alertStream (majorEventType, subEventType, dateTime)
+        and AcsEvent query formats (major, minor, time).
         """
-        major = ev.get("major", 0)
-        minor = ev.get("minor", 0)
+        major = ev.get("majorEventType") or ev.get("major", 0)
+        minor = ev.get("subEventType") or ev.get("minor", 0)
 
         # In Hikvision ISAPI: major=5 is Access Event
         if major != 5:
             return None
 
         # Filter out hardware sensors / door contact / remote unlock / exit buttons
-        # minor 21: Door magnetic sensor open
-        # minor 22: Door magnetic sensor closed
-        # minor 23: Door open timed out
-        # minor 24: Remote door unlock pulse
-        # minor 25: Exit button pressed
-        # minor 27: Doorbell
-        # minor 32: Normal door open/unlock
-        # minor 33: Door close
         NON_PUNCH_MINORS = {21, 22, 23, 24, 25, 26, 27, 32, 33, 40}
         if minor in NON_PUNCH_MINORS:
             return None
 
         emp_no = str(ev.get("employeeNoString") or ev.get("employeeNo") or "").strip()
         name = ev.get("name") or ""
-        time_str = ev.get("time") or datetime.now(timezone.utc).isoformat()
-        verify_mode = ev.get("currentVerifyMode") or "faceOrFpOrCardOrPw"
+        time_str = ev.get("time") or ev.get("dateTime") or parent_time or datetime.now(timezone.utc).isoformat()
+        verify_mode_raw = str(ev.get("currentVerifyMode") or "").lower()
         serial_no = str(ev.get("serialNo") or int(time.time()))
         door_no = ev.get("doorNo") or self.door_id
 
-        # Valid credential verification minor codes:
-        # 38: (0x26) Normal verification passed (Card, fingerprint, face, password)
-        # 75: (0x4b) Face + Card passed
-        # 76: (0x4c) Face verification passed
+        # Minor codes for authentication:
         # 1: Card authenticated
+        # 38: Authentication passed (Face/FP/Card/Pw)
+        # 75: Face + Card passed / Face passed
+        # 76: Face passed
+        # 2: Invalid card
         # 22, 39, 77, 78: Verification failed / invalid user
-        AUTH_MINORS = {1, 38, 75, 76, 22, 39, 77, 78}
+        AUTH_MINORS = {1, 38, 75, 76, 2, 22, 39, 77, 78}
 
-        # If not an authentication minor code and no employee number, completely ignore
         if minor not in AUTH_MINORS and not emp_no:
             return None
 
-        # Check timestamp freshness: must be within the last 35 seconds to be considered a real-time punch
-        if time_str:
-            try:
-                ev_dt = datetime.fromisoformat(time_str)
-                now_dt = datetime.now(timezone.utc)
-                ev_utc = ev_dt.astimezone(timezone.utc)
-                if abs((now_dt - ev_utc).total_seconds()) > 35:
-                    return None
-            except Exception:
-                pass
+        # Resolve clean verification method
+        if minor in (75, 76) or "face" in verify_mode_raw or ev.get("FaceRect"):
+            verification_method = "FACE"
+        elif "finger" in verify_mode_raw or "fp" in verify_mode_raw:
+            verification_method = "FINGERPRINT"
+        elif minor == 1 or ev.get("cardNo") or "card" in verify_mode_raw:
+            verification_method = "CARD"
+        else:
+            verification_method = "FACE" if ev.get("FaceRect") else "BIOMETRIC"
 
         if not emp_no:
-            if minor in (22, 39, 77, 78):
-                emp_no = f"Unknown_{serial_no[-4:]}"
+            if minor in (2, 22, 39, 77, 78):
+                emp_no = f"UNKNOWN_{serial_no}"
             else:
                 return None
 
-        is_granted = minor in (38, 75, 76, 1) or (emp_no != "" and not emp_no.startswith("Unknown"))
-        event_type = "access_granted" if is_granted else "access_denied"
+        is_granted = minor in (1, 38, 75, 76) or (emp_no and not emp_no.startswith("UNKNOWN"))
+        event_type = "ACCESS_GRANTED" if is_granted else "ACCESS_DENIED"
 
         self._last_event_time = time_str
 
         return {
             "deviceId": self.device_id,
             "deviceUserId": emp_no,
+            "employeeNo": emp_no,
+            "biometricId": emp_no,
             "memberId": None,
-            "memberName": name or (f"Unknown Person #{emp_no}" if emp_no.startswith("Unknown") else f"User #{emp_no}"),
+            "memberName": name or (f"Unknown Person #{emp_no}" if emp_no.startswith("UNKNOWN") else f"User #{emp_no}"),
             "eventType": event_type,
             "timestamp": time_str,
-            "verificationMethod": verify_mode,
+            "verificationMethod": verification_method,
             "deviceIp": self.host,
             "rawEventId": serial_no,
-            "source": "hikvision",
+            "source": "HIKVISION",
             "doorNo": door_no,
             "major": major,
             "minor": minor

@@ -196,10 +196,17 @@ def show_attendance_popup(popup_data):
             avatar_canvas = tk.Canvas(main_frame, width=92, height=92, bg=bg_color, highlightthickness=0)
             avatar_canvas.pack(pady=6)
 
+            img_rendered = False
             if photo_img:
-                avatar_canvas.create_image(46, 46, image=photo_img)
-                avatar_canvas.image = photo_img
-            else:
+                try:
+                    avatar_canvas.create_image(46, 46, image=photo_img)
+                    avatar_canvas.image = photo_img
+                    img_rendered = True
+                except Exception as ie:
+                    logging.debug(f"Could not render PhotoImage: {ie}")
+                    img_rendered = False
+
+            if not img_rendered:
                 clean_name = member_name.replace("Unmapped Biometric User #", "ID ")
                 parts = clean_name.split()
                 initials = (parts[0][0] + (parts[1][0] if len(parts) > 1 else '')).upper() if parts else "AZ"
