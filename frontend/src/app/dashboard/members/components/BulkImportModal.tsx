@@ -5,7 +5,7 @@ import {
   Upload, FileSpreadsheet, Download, CheckCircle2, AlertTriangle,
   XCircle, ArrowRight, X, Sparkles, RefreshCw, AlertCircle, Check,
   ChevronRight, Users, Shield, Sliders, Fingerprint, Search, Link2,
-  CheckSquare, Square, Eye, Terminal, Cpu
+  CheckSquare, Square, Eye, Terminal, Cpu, Camera, Zap
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import toast from '@/lib/toast';
@@ -13,6 +13,7 @@ import API from '@/services/api';
 import { useGymStore } from '@/store';
 import { db as firestoreDb } from '@/lib/firebase';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import HikvisionPhotoSyncModal from './HikvisionPhotoSyncModal';
 
 interface BulkImportModalProps {
   isOpen: boolean;
@@ -101,6 +102,7 @@ export default function BulkImportModal({
   // Manual mapping modal state
   const [manualMapTarget, setManualMapTarget] = useState<MappingRow | null>(null);
   const [manualSearchQuery, setManualSearchQuery] = useState<string>('');
+  const [showPhotoSyncModal, setShowPhotoSyncModal] = useState<boolean>(false);
 
   // ── 1. DOWNLOAD IMPORT TEMPLATE (Strictly 2 Columns) ─────────────────────
   const handleDownloadTemplate = () => {
@@ -1077,18 +1079,29 @@ export default function BulkImportModal({
               </div>
 
               {/* Confirmation Button */}
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
                 <div className="text-xs font-bold text-slate-600">
                   <b className="text-slate-900">{mappingCounts.selectedCount}</b> of {mappingCounts.total} members selected for terminal linking.
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleConfirmMapping}
-                  className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-black rounded-xl text-xs shadow-md border-none cursor-pointer flex items-center gap-1.5 active:scale-95"
-                >
-                  <span>Confirm Mapping & Continue →</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPhotoSyncModal(true)}
+                    className="px-4 py-3 bg-orange-50 hover:bg-orange-100 text-[#EA580C] border border-orange-200 font-bold rounded-xl text-xs cursor-pointer flex items-center gap-1.5 transition-all"
+                  >
+                    <Camera size={14} />
+                    <span>Sync Photos From Hikvision</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleConfirmMapping}
+                    className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-black rounded-xl text-xs shadow-md border-none cursor-pointer flex items-center gap-1.5 active:scale-95"
+                  >
+                    <span>Confirm Mapping & Continue →</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1118,13 +1131,24 @@ export default function BulkImportModal({
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleFinish}
-                className="w-full py-3.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-black rounded-xl text-xs shadow-md border-none cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <span>View Hold Members & Create Bills →</span>
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPhotoSyncModal(true)}
+                  className="flex-1 py-3.5 bg-orange-50 hover:bg-orange-100 text-[#EA580C] border border-orange-200 font-black rounded-xl text-xs cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Camera size={15} />
+                  <span>Sync Photos From Hikvision Now</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleFinish}
+                  className="flex-1 py-3.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-black rounded-xl text-xs shadow-md border-none cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>View Hold Members & Create Bills →</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -1220,6 +1244,13 @@ export default function BulkImportModal({
             </div>
           </div>
         )}
+
+        {/* Dedicated Photo Sync Screen */}
+        <HikvisionPhotoSyncModal
+          isOpen={showPhotoSyncModal}
+          onClose={() => setShowPhotoSyncModal(false)}
+          onSyncComplete={() => fetchMembers()}
+        />
 
       </div>
     </div>

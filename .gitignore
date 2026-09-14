@@ -44,3 +44,6 @@ scratch
 .cora
 diff*.txt
 
+# Member Uploads / Synced Photos
+backend/public/uploads/*
+!backend/public/uploads/.gitkeep

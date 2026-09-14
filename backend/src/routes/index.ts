@@ -16,7 +16,8 @@ import {
   getHikvisionStatus, triggerHikvisionDoorUnlock, getUnmappedDeviceUsers, mapDeviceUserToMember,
   testHikvisionConnection, syncHikvisionUsers, syncHikvisionEvents, getHikvisionEvents,
   getHikvisionDiagnostics, enrollHikvisionBiometrics, testHikvisionUserCreation,
-  getHikvisionCapabilitiesController, getHikvisionTerminalUsers, bulkMapHikvisionUsers
+  getHikvisionCapabilitiesController, getHikvisionTerminalUsers, bulkMapHikvisionUsers,
+  getHikvisionPhotoManifest, syncHikvisionMemberPhotos, syncHikvisionUsersAndPhotos, getHikvisionMemberPhoto
 } from '../controllers/device.controller';
 import { getInvoices, createInvoice, updateInvoice, deleteInvoice, markPaymentPaid } from '../controllers/billing.controller';
 import { 
@@ -123,6 +124,10 @@ router.get('/devices/hikvision/unmapped-users', getUnmappedDeviceUsers);
 router.post('/devices/hikvision/map-user', mapDeviceUserToMember);
 router.get('/devices/hikvision/terminal-users', getHikvisionTerminalUsers);
 router.post('/devices/hikvision/bulk-map-members', bulkMapHikvisionUsers);
+router.get('/devices/hikvision/photo-manifest', getHikvisionPhotoManifest);
+router.post('/devices/hikvision/sync-photos', syncHikvisionMemberPhotos);
+router.post('/devices/hikvision/sync-users-and-photos', syncHikvisionUsersAndPhotos);
+router.get('/devices/hikvision/photo/:biometricId', getHikvisionMemberPhoto);
 
 // Smart Biometric Enrollment
 router.post('/devices/biometric/enroll-fingerprint', startEnrollFingerprint);

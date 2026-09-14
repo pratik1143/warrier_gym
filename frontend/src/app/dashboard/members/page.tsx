@@ -60,6 +60,7 @@ import {
   where,
   addDoc,
   setDoc,
+  deleteDoc
 } from "firebase/firestore";
 import MembersKPI from "./components/MembersKPI";
 import MembersTable from "./components/MembersTable";
@@ -67,6 +68,7 @@ import AddMemberModal from "./components/AddMemberModal";
 import RenewalCenterModal from "./components/RenewalCenterModal";
 import RenewalWizardModal from "./components/RenewalWizardModal";
 import BulkImportModal from "./components/BulkImportModal";
+import HikvisionPhotoSyncModal from "./components/HikvisionPhotoSyncModal";
 import CreateNewBillModal from "./components/CreateNewBillModal";
 import MemberDrawer from "./components/MemberDrawer";
 import SmartPhotoCapture from "../components/SmartPhotoCapture";
@@ -182,6 +184,7 @@ export default function MembersPage() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
+  const [showPhotoSyncModal, setShowPhotoSyncModal] = useState(false);
   const [createBillTargetMember, setCreateBillTargetMember] = useState<any | null>(null);
   const [activeProfile, setActiveProfile] = useState<any | null>(null);
   const [editingMember, setEditingMember] = useState<any | null>(null);
@@ -955,6 +958,14 @@ export default function MembersPage() {
           </button>
           <button
             type="button"
+            className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 hover:bg-orange-100 text-[#EA580C] border border-orange-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
+            onClick={() => setShowPhotoSyncModal(true)}
+          >
+            <Camera size={14} />
+            <span>Sync Photos</span>
+          </button>
+          <button
+            type="button"
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#F04400] hover:brightness-105 active:scale-98 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-orange-500/20 cursor-pointer border-none"
             onClick={() => setShowAddModal(true)}
           >
@@ -1032,6 +1043,13 @@ export default function MembersPage() {
           setStatusFilter(targetTab || 'hold');
           fetchMembers();
         }}
+      />
+
+      {/* Hikvision Member Face Photo Sync Modal */}
+      <HikvisionPhotoSyncModal
+        isOpen={showPhotoSyncModal}
+        onClose={() => setShowPhotoSyncModal(false)}
+        onSyncComplete={() => fetchMembers()}
       />
 
       {/* Create New Bill Modal (Hold -> Active) */}

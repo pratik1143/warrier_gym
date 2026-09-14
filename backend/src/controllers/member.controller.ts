@@ -541,7 +541,7 @@ export const importBulkHoldMembers = async (req: Request, res: Response) => {
     const existingPhoneMap = new Map<string, any>();
 
     existingMembers.forEach((m: any) => {
-      const bioId = String(m.biometricId || m.biometricUserId || m.deviceUserId || '').trim().toLowerCase();
+      const bioId = String(m.biometricId || m.employeeId || m.hikvisionUserId || m.biometricUserId || m.deviceUserId || '').trim().toLowerCase();
       if (bioId) {
         existingBioMap.set(bioId, m);
       }
@@ -600,6 +600,9 @@ export const importBulkHoldMembers = async (req: Request, res: Response) => {
           // Update existing member basic fields without touching membership/billing
           const updatedDoc = await db.updateMember(existingMember.id, {
             name: rawName,
+            biometricId: rawBioId,
+            employeeId: rawBioId,
+            hikvisionUserId: rawBioId,
             ...(rawPhone ? { phone: rawPhone } : {}),
             ...(row.gender ? { gender: row.gender } : {}),
             ...(row.address ? { address: row.address } : {}),
@@ -620,6 +623,8 @@ export const importBulkHoldMembers = async (req: Request, res: Response) => {
       const newMemberPayload = {
         name: rawName,
         biometricId: rawBioId,
+        employeeId: rawBioId,
+        hikvisionUserId: rawBioId,
         biometricUserId: rawBioId,
         deviceUserId: rawBioId,
         status: 'HOLD',

@@ -392,6 +392,18 @@ export default function ClientProfileSystem() {
                             : 'Expired'}
                     </span>
                   )}
+
+                  {member.photoSource === 'HIKVISION' && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-[#EA580C] border border-orange-200">
+                      <Camera size={11} />
+                      Photo source: <strong>Hikvision</strong>
+                      {member.photoSyncedAt && (
+                        <span className="text-slate-400 font-normal">
+                          · Synced: {new Date(member.photoSyncedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </div>
 
                 {/* Secondary Metadata */}

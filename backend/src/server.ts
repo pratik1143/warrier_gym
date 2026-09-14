@@ -27,6 +27,8 @@ app.options('*', cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+import path from 'path';
+
 // Request Logger Middleware
 app.use((req, res, next) => {
   res.on('finish', () => {
@@ -34,6 +36,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Serve uploaded media / photos statically
+app.use('/uploads', express.static(path.resolve(process.cwd(), 'public', 'uploads')));
 
 // API route middleware mounting
 app.use('/api', router);
