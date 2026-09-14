@@ -44,31 +44,26 @@ def main():
     elif cmd == "test_connection":
         res = provider.test_connection_matrix()
         print(json.dumps(res))
+    elif cmd in ("status", "user_status", "biometric_status"):
+        emp_no = sys.argv[2] if len(sys.argv) > 2 else "101"
+        res = provider.get_user_biometric_status(emp_no)
+        print(json.dumps(res))
     elif cmd == "enroll_face":
         emp_no = sys.argv[2] if len(sys.argv) > 2 else "101"
         name = sys.argv[3] if len(sys.argv) > 3 else "Member"
         prov = provider.create_user(emp_no, name)
-        if not prov.get("success") and not prov.get("requiresTerminalAction"):
-            print(json.dumps(prov))
-            sys.exit(0)
         res = provider.enroll_face(emp_no)
         print(json.dumps(res))
     elif cmd == "enroll_fingerprint":
         emp_no = sys.argv[2] if len(sys.argv) > 2 else "101"
         name = sys.argv[3] if len(sys.argv) > 3 else "Member"
         prov = provider.create_user(emp_no, name)
-        if not prov.get("success") and not prov.get("requiresTerminalAction"):
-            print(json.dumps(prov))
-            sys.exit(0)
         res = provider.enroll_fingerprint(emp_no)
         print(json.dumps(res))
     elif cmd == "enroll_both":
         emp_no = sys.argv[2] if len(sys.argv) > 2 else "101"
         name = sys.argv[3] if len(sys.argv) > 3 else "Member"
         prov = provider.create_user(emp_no, name)
-        if not prov.get("success") and not prov.get("requiresTerminalAction"):
-            print(json.dumps(prov))
-            sys.exit(0)
         face_res = provider.enroll_face(emp_no)
         fp_res = provider.enroll_fingerprint(emp_no)
         is_succ = face_res.get("success", False) or fp_res.get("success", False)

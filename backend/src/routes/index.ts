@@ -17,7 +17,8 @@ import {
   testHikvisionConnection, syncHikvisionUsers, syncHikvisionEvents, getHikvisionEvents,
   getHikvisionDiagnostics, enrollHikvisionBiometrics, testHikvisionUserCreation,
   getHikvisionCapabilitiesController, getHikvisionTerminalUsers, bulkMapHikvisionUsers,
-  getHikvisionPhotoManifest, syncHikvisionMemberPhotos, syncHikvisionUsersAndPhotos, getHikvisionMemberPhoto
+  getHikvisionPhotoManifest, syncHikvisionMemberPhotos, syncHikvisionUsersAndPhotos, getHikvisionMemberPhoto,
+  getHikvisionEnrollmentStatus, createHikvisionUserEndpoint
 } from '../controllers/device.controller';
 import { getInvoices, createInvoice, updateInvoice, deleteInvoice, markPaymentPaid } from '../controllers/billing.controller';
 import { 
@@ -116,6 +117,8 @@ router.post('/devices/hikvision/test-user-creation', testHikvisionUserCreation);
 router.get('/devices/hikvision/capabilities', getHikvisionCapabilitiesController);
 router.get('/devices/hikvision/diagnostics', getHikvisionDiagnostics);
 router.post('/devices/hikvision/enroll', enrollHikvisionBiometrics);
+router.get('/devices/hikvision/enrollment-status/:biometricId', getHikvisionEnrollmentStatus);
+router.post('/devices/hikvision/create-user', createHikvisionUserEndpoint);
 router.post('/devices/hikvision/sync-users', syncHikvisionUsers);
 router.post('/devices/hikvision/sync-events', syncHikvisionEvents);
 router.get('/devices/hikvision/events', getHikvisionEvents);

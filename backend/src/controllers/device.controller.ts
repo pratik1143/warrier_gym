@@ -1193,6 +1193,78 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
 };
 
 /**
+ * Real Hikvision Biometric Live Status Query (/api/devices/hikvision/enrollment-status/:biometricId)
+ * Returns true hardware counts from terminal: numOfFace, numOfFP, hasFace, hasFingerprint
+ */
+export const getHikvisionEnrollmentStatus = async (req: Request, res: Response) => {
+  try {
+    const { biometricId } = req.params;
+    const bioId = String(biometricId || '101').trim();
+    const rootDir = process.cwd().endsWith('backend') ? path.dirname(process.cwd()) : process.cwd();
+    const agentRoot = path.resolve(rootDir, 'warrior-biometric-agent');
+    const scriptPath = path.resolve(agentRoot, 'enroll_cli.py');
+
+    exec(`py "${scriptPath}" status ${bioId}`, { cwd: agentRoot }, async (err, stdout, stderr) => {
+      let resultData: any = null;
+      try {
+        if (stdout) resultData = JSON.parse(stdout.trim());
+      } catch (e) {}
+
+      if (resultData) {
+        return res.json(resultData);
+      } else {
+        return res.status(500).json({
+          success: false,
+          error: stderr || err?.message || 'Failed to query device user status',
+          employeeNo: bioId
+        });
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Real Hikvision Create User Endpoint (/api/devices/hikvision/create-user)
+ * Provisions member on terminal before enrollment
+ */
+export const createHikvisionUserEndpoint = async (req: Request, res: Response) => {
+  try {
+    const { biometricId, memberName } = req.body;
+    const bioId = String(biometricId || '101').trim();
+    const nameStr = String(memberName || 'Member').trim();
+    const rootDir = process.cwd().endsWith('backend') ? path.dirname(process.cwd()) : process.cwd();
+    const agentRoot = path.resolve(rootDir, 'warrior-biometric-agent');
+    const scriptPath = path.resolve(agentRoot, 'enroll_cli.py');
+
+    exec(`py "${scriptPath}" create_user ${bioId} "${nameStr}"`, { cwd: agentRoot }, async (err, stdout, stderr) => {
+      let resultData: any = null;
+      try {
+        if (stdout) resultData = JSON.parse(stdout.trim());
+      } catch (e) {}
+
+      if (resultData && (resultData.success || resultData.alreadyExists)) {
+        return res.json({
+          success: true,
+          employeeNo: bioId,
+          name: nameStr,
+          details: resultData
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: resultData?.errorMessage || resultData?.error || stderr || 'Failed to create user on terminal',
+          employeeNo: bioId
+        });
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
  * Real Hikvision Connection Diagnostics Controller (/api/devices/hikvision/diagnostics)
  */
 export const getHikvisionDiagnostics = async (req: Request, res: Response) => {

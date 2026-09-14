@@ -319,6 +319,44 @@ export default function MemberDrawer({
               </div>
             </div>
 
+            {/* Hikvision Biometric Identity & Status Card */}
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                  Hikvision Biometrics
+                </span>
+                <span className="text-[10px] font-mono font-black text-stone-900 bg-stone-200/80 px-2 py-0.5 rounded">
+                  ID: #{member.biometricId || member.deviceUserId || 'Not Assigned'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 text-center">
+                <div className="p-2 bg-white rounded-xl border border-stone-200">
+                  <span className="text-[10px] text-stone-400 block uppercase">Face Biometric</span>
+                  <span className={`text-xs font-black ${
+                    member.faceEnrollmentStatus === 'ENROLLED' || member.biometric?.face?.status === 'ENROLLED'
+                      ? 'text-emerald-700'
+                      : 'text-stone-500'
+                  }`}>
+                    {member.faceEnrollmentStatus === 'ENROLLED' || member.biometric?.face?.status === 'ENROLLED'
+                      ? '✓ ENROLLED'
+                      : '○ NOT ENROLLED'}
+                  </span>
+                </div>
+                <div className="p-2 bg-white rounded-xl border border-stone-200">
+                  <span className="text-[10px] text-stone-400 block uppercase">Fingerprint</span>
+                  <span className={`text-xs font-black ${
+                    member.fingerprintEnrollmentStatus === 'ENROLLED' || member.biometric?.fingerprint?.status === 'ENROLLED'
+                      ? 'text-emerald-700'
+                      : 'text-stone-500'
+                  }`}>
+                    {member.fingerprintEnrollmentStatus === 'ENROLLED' || member.biometric?.fingerprint?.status === 'ENROLLED'
+                      ? '✓ ENROLLED'
+                      : '○ NOT ENROLLED'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             {/* Contact & Personal Metadata */}
             <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2.5 text-xs">
               <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 block mb-1">

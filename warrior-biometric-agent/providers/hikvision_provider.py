@@ -934,13 +934,17 @@ class HikvisionProvider(BiometricProvider):
         }
         try:
             resp = self.session.post(url, json=payload, timeout=8)
-            status_code = resp.status_code
-            parsed = self._parse_hikvision_response(resp)
+            fp_status_val = ""
+            try:
+                data = resp.json()
+                fp_status_val = str(data.get("FingerPrintStatus", {}).get("status", "")).lower()
+            except Exception:
+                pass
+
             is_ok = status_code == 200 and (
                 parsed.get("statusCode") == 1
                 or parsed.get("subStatusCode") == "ok"
-                or "success" in resp.text.lower()
-                or "FingerPrintStatus" in resp.text
+                or fp_status_val in ("ok", "success")
             )
 
             if is_ok:
@@ -956,7 +960,7 @@ class HikvisionProvider(BiometricProvider):
                     "errorMessage": None
                 }
             else:
-                logger.info(f"[Hikvision FP Enroll] Setup returned {status_code}. Falling back to terminal prompt instructions...")
+                logger.info(f"[Hikvision FP Enroll] Setup returned {status_code} (status={fp_status_val}). User is provisioned on terminal; awaiting physical scan.")
                 return {
                     "success": False,
                     "requiresTerminalAction": True,
@@ -966,7 +970,8 @@ class HikvisionProvider(BiometricProvider):
                     "httpStatus": status_code,
                     "parsedResponse": parsed,
                     "hikvisionResponse": parsed["raw"],
-                    "errorMessage": f"Fingerprint setup returned HTTP {status_code}. User #{employee_no} is provisioned. Please press finger on physical Hikvision terminal scanner."
+                    "message": f"User #{employee_no} is provisioned on Hikvision terminal. Please press finger on physical scanner to enroll fingerprint.",
+                    "errorMessage": f"Fingerprint setup returned HTTP {status_code} (status: {fp_status_val or 'awaiting scan'}). User #{employee_no} is provisioned. Complete scan on physical scanner."
                 }
         except Exception as e:
             return {
@@ -978,7 +983,84 @@ class HikvisionProvider(BiometricProvider):
                 "httpStatus": 0,
                 "parsedResponse": {"error": str(e)},
                 "hikvisionResponse": str(e),
-                "errorMessage": f"User #{employee_no} provisioned on device. Send user to terminal for fingerprint enrollment."
+                "message": f"User #{employee_no} provisioned. Please press finger on physical terminal scanner.",
+                "errorMessage": f"User #{employee_no} provisioned on device. Send user to terminal for fingerprint enrollment: {e}"
+            }
+
+    def get_user_biometric_status(self, employee_no: str) -> Dict[str, Any]:
+        """
+        Queries UserInfo/Search directly on Hikvision DS-K1T320EFWX terminal.
+        Returns live hardware verification counts for Face and Fingerprint.
+        """
+        clean_emp = str(employee_no).strip()
+        url = f"{self.base_url}/ISAPI/AccessControl/UserInfo/Search?format=json"
+        body = {
+            "UserInfoSearchCond": {
+                "searchID": f"verify_bio_{clean_emp}_{int(time.time())}",
+                "searchResultPosition": 0,
+                "maxResults": 1,
+                "EmployeeNoList": [{"employeeNo": clean_emp}]
+            }
+        }
+        try:
+            resp = self.session.post(url, json=body, timeout=6)
+            if resp.status_code == 200:
+                data = resp.json().get("UserInfoSearch", {})
+                users = data.get("UserInfo", [])
+                if users:
+                    u = users[0]
+                    num_face = int(u.get("numOfFace", 0))
+                    num_fp = int(u.get("numOfFP", 0))
+                    face_url = u.get("faceURL") or None
+                    has_face = num_face > 0 or bool(face_url)
+                    has_fp = num_fp > 0
+                    return {
+                        "success": True,
+                        "exists": True,
+                        "employeeNo": clean_emp,
+                        "name": u.get("name", ""),
+                        "numOfFace": num_face,
+                        "hasFace": has_face,
+                        "faceURL": face_url,
+                        "faceStatus": "ENROLLED" if has_face else "NOT_ENROLLED",
+                        "numOfFP": num_fp,
+                        "hasFingerprint": has_fp,
+                        "fingerprintStatus": "ENROLLED" if has_fp else "NOT_ENROLLED",
+                        "doorRight": u.get("doorRight", "1"),
+                        "valid": u.get("Valid", {}).get("enable", True),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                else:
+                    return {
+                        "success": True,
+                        "exists": False,
+                        "employeeNo": clean_emp,
+                        "name": "",
+                        "numOfFace": 0,
+                        "hasFace": False,
+                        "faceURL": None,
+                        "faceStatus": "NOT_ENROLLED",
+                        "numOfFP": 0,
+                        "hasFingerprint": False,
+                        "fingerprintStatus": "NOT_ENROLLED",
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+            else:
+                return {
+                    "success": False,
+                    "exists": False,
+                    "employeeNo": clean_emp,
+                    "error": f"Terminal returned HTTP {resp.status_code}: {resp.text[:200]}",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+        except Exception as e:
+            logger.error(f"[Hikvision User Biometric Status Error] {e}")
+            return {
+                "success": False,
+                "exists": False,
+                "employeeNo": clean_emp,
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
     def run_diagnostics(self) -> Dict[str, Any]:
