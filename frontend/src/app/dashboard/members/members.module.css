@@ -1,0 +1,55 @@
+.membersPage {
+  --orange: #ea580c;
+  --glass-line: rgba(234, 88, 12, .14);
+  --glass-shadow: 0 10px 28px rgba(55, 38, 25, .055);
+}
+
+.membersPage :global(.bg-white.rounded-2xl),
+.membersPage :global(.bg-white.rounded-3xl) {
+  background-color: rgba(255, 255, 255, .83) !important;
+  border-color: var(--glass-line) !important;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.membersPage :global(.bg-white.rounded-2xl:hover),
+.membersPage :global(.bg-white.rounded-3xl:hover) {
+  border-color: rgba(234, 88, 12, .3) !important;
+  box-shadow: 0 14px 32px rgba(124, 61, 23, .09);
+}
+
+.membersPage :global(button),
+.membersPage :global(input),
+.membersPage :global(select) {
+  transition-duration: .18s;
+}
+
+.membersPage :global(.bg-stone-50.rounded-xl.border) {
+  border-color: rgba(234, 88, 12, .12) !important;
+}
+
+.modalCard {
+  background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(255,250,246,.97));
+  border-color: rgba(234, 88, 12, .18) !important;
+  box-shadow: 0 28px 90px rgba(28, 25, 23, .24);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+@media (max-width: 639px) {
+  .membersPage { padding-bottom: 1.5rem; }
+  .membersPage :global(.grid.grid-cols-1.sm\:grid-cols-2.lg\:grid-cols-5) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .membersPage :global(*),
+  .membersPage :global(*::before),
+  .membersPage :global(*::after) {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

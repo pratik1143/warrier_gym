@@ -64,6 +64,8 @@ import {
   deleteDoc
 } from "firebase/firestore";
 import MembersKPI from "./components/MembersKPI";
+import styles from "./members.module.css";
+import { getBiometricReadiness } from "@/lib/biometricStatus";
 import MembersTable from "./components/MembersTable";
 import AddMemberModal from "./components/AddMemberModal";
 import RenewalCenterModal from "./components/RenewalCenterModal";
@@ -908,15 +910,11 @@ export default function MembersPage() {
 
   // Members missing biometrics (skipped or never enrolled)
   const missingBioCount = useMemo(() => {
-    return (members || []).filter((m: any) => {
-      const faceStatus = String(m.faceEnrollmentStatus || m.biometric?.face?.status || '').toUpperCase();
-      const bioStatus = String(m.biometricStatus || '').toUpperCase();
-      return faceStatus !== 'ENROLLED' || bioStatus === 'SKIPPED';
-    }).length;
+    return (members || []).filter((m: any) => getBiometricReadiness(m).needsMapping).length;
   }, [members]);
 
   return (
-    <div className="space-y-6 pb-12 w-full text-slate-800 text-left font-sans">
+    <div className={`${styles.membersPage} space-y-6 pb-12 w-full text-slate-800 text-left font-sans`}>
       {/* ── 1. POLISHED WARRIOR HEADER ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
         <div>
@@ -1013,6 +1011,7 @@ export default function MembersPage() {
         onEdit={(m) => setEditingMember(m)}
         onRenew={(m) => setRenewWizardMember(m)}
         onCreateBill={(m) => setCreateBillTargetMember(m)}
+        onMapBiometric={(m) => router.push(`/dashboard/members/map-bio?memberId=${encodeURIComponent(m.id)}`)}
         onFreeze={async (m) => {
           try {
             await toggleFreeze(m.id);
@@ -1081,7 +1080,7 @@ export default function MembersPage() {
         member={createBillTargetMember}
         onClose={() => setCreateBillTargetMember(null)}
         onSaved={() => {
-          fetchMembers();
+          fetchMembers(true);
           setStatusFilter('active');
         }}
       />

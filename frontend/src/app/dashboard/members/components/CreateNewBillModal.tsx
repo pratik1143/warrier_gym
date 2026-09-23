@@ -11,6 +11,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { billingRepository } from '@/services/billingRepository';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
+import styles from '../members.module.css';
 
 // ── ZOD VALIDATION SCHEMA ──────────────────────────────────────────────────
 const createBillSchema = z.object({
@@ -312,11 +313,9 @@ export default function CreateNewBillModal({
       const idempotencyKey = `pay_${member.id}_${data.plan}_${new Date().toISOString().split('T')[0]}_${Date.now()}`;
       billPayload.idempotencyKey = idempotencyKey;
 
-      let createdInvoice: any = null;
-      try {
-        createdInvoice = await billingRepository.createBill(billPayload);
-      } catch (apiErr: any) {
-        console.warn('Backend billing API call error:', apiErr);
+      const createdInvoice = await billingRepository.createBill(billPayload);
+      if (!createdInvoice?.id) {
+        throw new Error('The bill was not saved. Please retry; the member has not been activated.');
       }
 
       const txId = createdInvoice?.id || `tx_${Date.now()}`;
@@ -438,7 +437,7 @@ export default function CreateNewBillModal({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4 relative border border-slate-100 max-h-[95vh] overflow-y-auto">
+      <div className={`${styles.modalCard} bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4 relative border border-slate-100 max-h-[95vh] overflow-y-auto`}>
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">

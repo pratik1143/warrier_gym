@@ -14,6 +14,8 @@ import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import API from '@/services/api';
 import toast from '@/lib/toast';
+import { getBiometricReadiness } from '@/lib/biometricStatus';
+import styles from './map-bio.module.css';
 
 type BiometricMachineState =
   | 'IDLE' | 'CREATING_USER' | 'USER_READY'
@@ -32,9 +34,7 @@ export default function MapBioPage() {
 
   const missingBioMembers = useMemo(() =>
     (members || []).filter((m: any) => {
-      const face = String(m.faceEnrollmentStatus || m.biometric?.face?.status || '').toUpperCase();
-      const bio = String(m.biometricStatus || '').toUpperCase();
-      return face !== 'ENROLLED' || bio === 'SKIPPED';
+      return getBiometricReadiness(m).needsMapping;
     }), [members]);
 
   const displayMembers = showAll ? (members || []) : missingBioMembers;
@@ -45,7 +45,7 @@ export default function MapBioPage() {
     return displayMembers.filter((m: any) =>
       String(m.name || '').toLowerCase().includes(q) ||
       String(m.phone || '').includes(q) ||
-      String(m.biometricId || '').includes(q)
+      String(m.biometricId || m.deviceUserId || m.biometricUserId || '').includes(q)
     );
   }, [displayMembers, search]);
 
@@ -73,9 +73,13 @@ export default function MapBioPage() {
     setBiometricId(String(selectedMember.biometricId || selectedMember.deviceUserId || ''));
     setMachineStep('IDLE'); setEnrollStatus('idle');
     setEnrollMsg(''); setEnrollDetailLog('');
-    setFaceStatus('NOT ENROLLED'); setFpStatus('NOT ENROLLED');
+    const savedFaceStatus = String(selectedMember.faceEnrollmentStatus || selectedMember.biometric?.face?.status || '').toUpperCase();
+    const savedFingerprintStatus = String(selectedMember.fingerprintEnrollmentStatus || selectedMember.biometric?.fingerprint?.status || '').toUpperCase();
+    setFaceStatus(savedFaceStatus === 'ENROLLED' ? 'ENROLLED' : 'NOT ENROLLED');
+    setFpStatus(savedFingerprintStatus === 'ENROLLED' ? 'ENROLLED' : 'NOT ENROLLED');
     faceEnrolledAtRef.current = null; fpEnrolledAtRef.current = null;
-    fpStatusRef.current = 'NOT ENROLLED'; faceStatusRef.current = 'NOT ENROLLED';
+    fpStatusRef.current = savedFingerprintStatus === 'ENROLLED' ? 'ENROLLED' : 'NOT ENROLLED';
+    faceStatusRef.current = savedFaceStatus === 'ENROLLED' ? 'ENROLLED' : 'NOT ENROLLED';
     cancelRef.current = false;
   }, [selectedMember?.id]);
 
@@ -201,7 +205,7 @@ export default function MapBioPage() {
       const ok = await executeFace(bioId, memName);
       if (ok) {
         setMachineStep('BIOMETRIC_COMPLETE'); setEnrollStatus('success');
-        await persist(bioId, 'ENROLLED', 'NOT_ENROLLED');
+        await persist(bioId, 'ENROLLED', fpStatusRef.current);
         toast.success('Face enrolled & saved to device + CRM!');
       } else { setMachineStep('FAILED'); setEnrollStatus('failed'); }
     } else if (type === 'FINGERPRINT') {
@@ -253,17 +257,19 @@ export default function MapBioPage() {
   const getBadge = (m: any) => {
     const face = String(m.faceEnrollmentStatus || m.biometric?.face?.status || '').toUpperCase();
     const bio = String(m.biometricStatus || '').toUpperCase();
-    if (face === 'ENROLLED') return { label: 'Enrolled', cls: 'bg-emerald-100 text-emerald-800' };
+    const readiness = getBiometricReadiness(m);
+    if (!readiness.needsMapping) return { label: 'Ready', cls: 'bg-emerald-100 text-emerald-800' };
     if (bio === 'SKIPPED') return { label: 'Skipped', cls: 'bg-amber-100 text-amber-800' };
-    return { label: 'Missing', cls: 'bg-red-100 text-red-700' };
+    const missing = [!readiness.hasBiometricId && 'Bio ID', !readiness.faceEnrolled && 'Face', !readiness.fingerprintEnrolled && 'Fingerprint'].filter(Boolean);
+    return { label: `Missing ${missing.join(' + ')}`, cls: 'bg-orange-100 text-orange-800' };
   };
 
   const faceIsEnrolling = machineStep === 'FACE_STARTING' || machineStep === 'FACE_ENROLLING';
   const fpIsEnrolling = machineStep === 'FINGERPRINT_STARTING' || machineStep === 'FINGERPRINT_ENROLLING';
 
   return (
-    <div className="min-h-screen bg-stone-50 text-slate-800 font-sans">
-      <div className="sticky top-0 z-20 bg-white border-b border-stone-200 px-5 py-3.5 flex items-center justify-between shadow-sm">
+    <div className={`${styles.mapBio} min-h-screen text-slate-800 font-sans`}>
+      <div className={`${styles.header} sticky top-0 z-20 border-b border-stone-200 px-5 py-3.5 flex items-center justify-between shadow-sm`}>
         <div className="flex items-center gap-3">
           <button type="button" onClick={() => router.push('/dashboard/members')} className="p-2 rounded-xl hover:bg-stone-100 text-stone-500 hover:text-stone-800 transition-colors">
             <ArrowLeft className="w-4 h-4" />
@@ -279,8 +285,8 @@ export default function MapBioPage() {
         <span className="text-xs font-bold text-red-700 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200">{missingBioMembers.length} missing bio</span>
       </div>
 
-      <div className="flex" style={{ height: 'calc(100vh - 64px)' }}>
-        <div className="w-80 border-r border-stone-200 bg-white flex flex-col overflow-hidden shrink-0">
+      <div className={`${styles.layout} flex`}>
+        <div className={`${styles.sidebar} border-r border-stone-200 bg-white flex flex-col overflow-hidden shrink-0`}>
           <div className="p-3 border-b border-stone-100 space-y-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />

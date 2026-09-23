@@ -274,9 +274,31 @@ export const useGymStore = create<GymStore>((set, get) => ({
   fetchDashboardAnalytics: async () => {
     try {
       const res = await API.get('/analytics/dashboard');
-      set({ dashboardAnalytics: res.data });
+      if (res.data) {
+        set({ dashboardAnalytics: res.data });
+        return;
+      }
     } catch (err) {
-      console.error('Failed to fetch dashboard analytics:', err);
+      console.warn('API fetch dashboard analytics fallback to Firestore:', err);
+    }
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const mSnap = await getDocs(collection(db, 'members'));
+      const activeMembers = mSnap.docs.filter(d => {
+        const data = d.data();
+        return !data.isDeleted && data.status !== 'HOLD' && data.activationStatus !== 'PENDING_ACTIVATION';
+      }).length;
+      set({
+        dashboardAnalytics: {
+          totalMembers: mSnap.size,
+          activeMembers: activeMembers,
+          todayAttendance: 0,
+          revenue: 0
+        }
+      });
+    } catch (e) {
+      console.error('Failed to compute analytics from Firestore:', e);
     }
   },
 
@@ -299,24 +321,50 @@ export const useGymStore = create<GymStore>((set, get) => ({
     if (!force && get().members.length > 0 && (now - _membersCacheTs) < STALE_MS) return;
     try {
       const res = await API.get('/members');
-      // STRICT: only use real server data — NEVER fall back to hardcoded mock members.
-      // If API returns empty or fails, show empty list. Do NOT fabricate member data.
       const rawData = (res.data && Array.isArray(res.data)) ? res.data : [];
+      if (rawData.length > 0) {
+        const seen = new Set<string>();
+        const unique = (rawData as any[]).filter(m => {
+          const key = (m.memberId && m.memberId !== 'TWG-2026-0000')
+            ? `mid_${m.memberId.trim()}`
+            : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `id_${m.id}`);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        set({ members: unique });
+        _membersCacheTs = Date.now();
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend API fetchMembers failed, falling back to direct Firestore:', err);
+    }
+
+    // Direct Firestore fallback (for Vercel deployment where localhost backend is not reachable)
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const snap = await getDocs(collection(db, 'members'));
+      const list: any[] = [];
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        if (!d.isDeleted && !d.deletedAt) {
+          list.push({ id: docSnap.id, ...d });
+        }
+      });
       const seen = new Set<string>();
-      const unique = (rawData as any[]).filter(m => {
+      const unique = list.filter(m => {
         const key = (m.memberId && m.memberId !== 'TWG-2026-0000')
-          ? `mid_${m.memberId.trim()}`
-          : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `id_${m.id}`);
+          ? `mid_${String(m.memberId).trim()}`
+          : (m.phone ? `phone_${String(m.phone).replace(/\D/g, '')}` : `id_${m.id}`);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
       set({ members: unique });
       _membersCacheTs = Date.now();
-    } catch (err) {
-      console.error('Failed to fetch members:', err);
-      // On error, do NOT replace real members with mocks. Keep existing state as-is.
-      // If store is empty and the API is down, show empty list.
+    } catch (firestoreErr) {
+      console.error('Direct Firestore fetch members error:', firestoreErr);
       if (get().members.length === 0) {
         set({ members: [] });
       }
@@ -377,9 +425,18 @@ export const useGymStore = create<GymStore>((set, get) => ({
       const res = await API.get('/attendance');
       set({ attendance: res.data });
       _attendanceCacheTs = Date.now();
+      return;
     } catch (err) {
-      console.error('Failed to fetch attendance:', err);
+      console.warn('API fetch attendance failed, trying Firestore fallback:', err);
     }
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs, limit, query, orderBy } = await import('firebase/firestore');
+      const snap = await getDocs(query(collection(db, 'attendance_logs'), orderBy('timestamp', 'desc'), limit(100)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      set({ attendance: list });
+      _attendanceCacheTs = Date.now();
+    } catch (e) {}
   },
   triggerCheckIn: async (payload) => {
     await API.post('/attendance/checkin', payload);
@@ -444,10 +501,24 @@ export const useGymStore = create<GymStore>((set, get) => ({
     if (!force && get().payments.length > 0 && (now - _paymentsCacheTs) < STALE_MS) return;
     try {
       const res = await API.get('/billing');
-      set({ payments: res.data });
-      _paymentsCacheTs = Date.now();
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        set({ payments: res.data });
+        _paymentsCacheTs = Date.now();
+        return;
+      }
     } catch (err) {
-      console.error('Failed to fetch invoices:', err);
+      console.warn('API fetch payments failed, trying direct Firestore:', err);
+    }
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const snap = await getDocs(collection(db, 'payments'));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
+      set({ payments: list });
+      _paymentsCacheTs = Date.now();
+    } catch (e) {
+      console.error('Failed to fetch payments from Firestore:', e);
     }
   },
   addPayment: async (payment) => {
@@ -467,9 +538,21 @@ export const useGymStore = create<GymStore>((set, get) => ({
   fetchPlans: async () => {
     try {
       const res = await API.get('/memberships');
-      set({ plans: res.data });
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        set({ plans: res.data });
+        return;
+      }
     } catch (err) {
-      console.error('Failed to fetch plans:', err);
+      console.warn('API fetch plans failed, trying direct Firestore:', err);
+    }
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const snap = await getDocs(collection(db, 'plans'));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      set({ plans: list });
+    } catch (e) {
+      console.error('Failed to fetch plans from Firestore:', e);
     }
   },
   addPlan: async (plan) => {
