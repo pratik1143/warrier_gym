@@ -111,7 +111,7 @@ async function runAutomatedFollowupsTestSuite() {
     outstandingBalance: 0
   });
 
-  // Member F: Membership expiry in 5 days (not 7) -> should NOT create renewal follow-up on 2026-08-23
+  // Member F: Membership expiry in 5 days -> outside the 6–7 day reminder window
   const memberF = await db.addMember({
     id: 'test_mem_5d_expiry',
     name: 'Neha Singh',
@@ -122,8 +122,20 @@ async function runAutomatedFollowupsTestSuite() {
     outstandingBalance: 0
   });
 
+  // Member G: Active membership expiry in 6 days -> should create a renewal follow-up
+  const memberG = await db.addMember({
+    id: 'test_mem_renewal_6d',
+    name: 'Asha Verma',
+    phone: '9876543216',
+    plan: 'Monthly Standard',
+    status: 'active',
+    expiryDate: '2026-08-29',
+    outstandingBalance: 0
+  });
+
   // Clean any pre-existing test followups from previous runs
   await db.deleteFollowup(`AUTO_RENEWAL_${memberA.id}_2026-08-30`);
+  await db.deleteFollowup(`AUTO_RENEWAL_${memberG.id}_2026-08-29`);
   await db.deleteFollowup(`AUTO_PT_RENEWAL_${memberB.id}_2026-08-27`);
   await db.deleteFollowup(`AUTO_BALANCE_${memberC.id}_2026-08-25`);
 
@@ -132,6 +144,7 @@ async function runAutomatedFollowupsTestSuite() {
   console.log('Run 1 Result:', runResult1);
 
   assert(runResult1.generatedKeys.includes(`AUTO_RENEWAL_${memberA.id}_2026-08-30`), 'Member A Gym Renewal Follow-up created');
+  assert(runResult1.generatedKeys.includes(`AUTO_RENEWAL_${memberG.id}_2026-08-29`), 'Member G 6-day Gym Renewal Follow-up created');
   assert(runResult1.generatedKeys.includes(`AUTO_PT_RENEWAL_${memberB.id}_2026-08-27`), 'Member B PT Renewal Follow-up created');
   assert(runResult1.generatedKeys.includes(`AUTO_BALANCE_${memberC.id}_2026-08-25`), 'Member C Pending Balance Follow-up created');
   assert(!runResult1.generatedKeys.some(k => k.includes(memberD.id)), 'Member D (Zero balance) NOT created');
@@ -145,6 +158,9 @@ async function runAutomatedFollowupsTestSuite() {
   assert(dataA?.priority === 'Medium', 'Member A priority is Medium');
   assert(dataA?.source === 'automatic', 'Member A source is automatic');
   assert(dataA?.dueDate === '2026-08-23', 'Member A due date is Today (2026-08-23)');
+  assert(dataA?.reason === 'Membership ending in 7 days', 'Member A reminder says membership is ending in 7 days');
+  const dataG = allFls.find(f => f.id === `AUTO_RENEWAL_${memberG.id}_2026-08-29` || f.automationKey === `AUTO_RENEWAL_${memberG.id}_2026-08-29`);
+  assert(dataG?.reason === 'Membership ending in 6 days', 'Member G reminder says membership is ending in 6 days');
 
   const dataB = allFls.find(f => f.id === `AUTO_PT_RENEWAL_${memberB.id}_2026-08-27` || f.automationKey === `AUTO_PT_RENEWAL_${memberB.id}_2026-08-27`);
   assert(dataB?.type === 'PT RENEWAL', 'Member B type is PT RENEWAL');
@@ -162,7 +178,7 @@ async function runAutomatedFollowupsTestSuite() {
   const runResult2 = await generateAutomatedFollowups('2026-08-23');
   console.log('Run 2 Result:', runResult2);
   assert(runResult2.generatedCount === 0, 'Run 2 generatedCount is 0 (No duplicates created)');
-  assert(runResult2.skippedCount >= 3, 'Run 2 skippedCount >= 3 (All existing records safely skipped)');
+  assert(runResult2.skippedCount >= 4, 'Run 2 skippedCount >= 4 (All existing records safely skipped)');
 
   // TEST 4: Completed Follow-up Behaviour
   console.log('\n--- 4. Testing Completed Follow-up Behaviour ---');
@@ -205,7 +221,9 @@ async function runAutomatedFollowupsTestSuite() {
   await db.deleteMember(memberD.id);
   await db.deleteMember(memberE.id);
   await db.deleteMember(memberF.id);
+  await db.deleteMember(memberG.id);
   await db.deleteFollowup(`AUTO_RENEWAL_${memberA.id}_2026-08-30`);
+  await db.deleteFollowup(`AUTO_RENEWAL_${memberG.id}_2026-08-29`);
   await db.deleteFollowup(`AUTO_PT_RENEWAL_${memberB.id}_2026-08-27`);
   await db.deleteFollowup(`AUTO_BALANCE_${memberC.id}_2026-08-25`);
 

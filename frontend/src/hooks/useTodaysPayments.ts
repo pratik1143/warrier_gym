@@ -17,6 +17,18 @@ export function getISTDateStr(date: Date = new Date()): string {
   }).format(date);
 }
 
+export function getPaymentDateStr(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'object' && value !== null && 'toDate' in value && typeof value.toDate === 'function') {
+    return getISTDateStr(value.toDate());
+  }
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : getISTDateStr(value);
+  const valueStr = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(valueStr)) return valueStr;
+  const parsed = new Date(valueStr);
+  return Number.isNaN(parsed.getTime()) ? undefined : getISTDateStr(parsed);
+}
+
 export interface PaymentRecord {
   id: string;
   invoice?: string;
@@ -89,8 +101,16 @@ export function useTodaysPayments(): UseTodaysPaymentsResult {
   const [rawPayments, setRawPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Stable IST today string — computed once per mount (refreshes on page load)
-  const todayStr = useMemo(() => getISTDateStr(), []);
+  // Keep the date live even when the dashboard stays open past midnight in IST.
+  const [todayStr, setTodayStr] = useState(() => getISTDateStr());
+
+  useEffect(() => {
+    const midnightWatcher = window.setInterval(() => {
+      const currentDate = getISTDateStr();
+      setTodayStr((previousDate) => previousDate === currentDate ? previousDate : currentDate);
+    }, 15_000);
+    return () => window.clearInterval(midnightWatcher);
+  }, []);
 
   // ── Live Firestore listener ───────────────────────────────────────────────
   useEffect(() => {
@@ -180,9 +200,12 @@ export function useTodaysPayments(): UseTodaysPaymentsResult {
       const status = String(p.status || p.paymentStatus || '').toLowerCase();
       if (status !== 'paid' && status !== 'partial') return false;
 
-      // Strict IST date match — never fall back to createdAt
-      const pDate = String(p.paymentDate || p.date || '').split('T')[0];
-      if (pDate !== todayStr && !p.isRealTimeToday) return false;
+      // A real-time flag alone must never pull an older day's payment into today's total.
+      // Use the creation instant (converted to IST) for same-day bills entered around UTC midnight.
+      const pDate = p.isRealTimeToday && p.createdAt
+        ? getPaymentDateStr(p.createdAt)
+        : getPaymentDateStr(p.paymentDate || p.date || p.billingDate || p.createdAt);
+      if (pDate !== todayStr) return false;
 
       // Deduplicate by ID
       const key = String(p.id || p.invoice || p.invoiceNumber || '').trim();

@@ -57,7 +57,7 @@ async function runTodayQueueIntegrationTest() {
   assert(createdTask?.status === 'pending' || createdTask?.status === 'Pending', 'status is Pending');
   assert(createdTask?.source === 'automatic', 'source is Automatic');
   assert(createdTask?.type === 'GYM MEMBERSHIP RENEWAL', 'type is GYM MEMBERSHIP RENEWAL');
-  assert(createdTask?.reason === 'Membership renewal due in 7 days', 'reason is "Membership renewal due in 7 days"');
+  assert(createdTask?.reason === 'Membership ending in 7 days', 'reason says membership is ending in 7 days');
   assert(createdTask?.priority === 'Medium', 'priority is Medium');
 
   // 5. Verify Today's Queue filtering logic

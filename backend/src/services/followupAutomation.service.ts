@@ -51,7 +51,7 @@ export interface AutomatedFollowupResult {
 /**
  * Main Automated Follow-Up Generation Engine.
  * Checks:
- * 1. UPCOMING GYM MEMBERSHIP RENEWAL (7 days before expiry)
+ * 1. UPCOMING GYM MEMBERSHIP RENEWAL (6–7 days before expiry)
  * 2. PT RENEWAL (4 days before PT expiry)
  * 3. PENDING BALANCE (2 days before payment due date when balance > 0)
  * 4. PENDING ENQUIRIES (creates idempotent follow-up for every pending enquiry with nextFollowUpDate)
@@ -118,21 +118,22 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
     const assignedStaff = member.trainer || member.assignedStaff || 'Receptionist';
 
     // -------------------------------------------------------------
-    // RULE 1: UPCOMING GYM MEMBERSHIP RENEWAL (7 Days Before Expiry)
+    // RULE 1: UPCOMING GYM MEMBERSHIP RENEWAL (6–7 Days Before Expiry)
     // -------------------------------------------------------------
     const membershipExpiry = member.expiryDate ? member.expiryDate.split('T')[0] : null;
     const memberStatus = (member.status || '').toLowerCase();
 
     // Check only if member is active (not already expired in the past)
-    if (membershipExpiry && (memberStatus === 'active' || memberStatus === 'upcoming' || memberStatus === 'frozen')) {
+    if (membershipExpiry && memberStatus === 'active') {
       const daysToExpiry = getCalendarDaysDiff(membershipExpiry, todayStr);
 
-      if (daysToExpiry === 7) {
+      if (daysToExpiry >= 6 && daysToExpiry <= 7) {
         const automationKey = `AUTO_RENEWAL_${memberId}_${membershipExpiry}`;
 
         if (existingKeyMap.has(automationKey)) {
           skippedCount++;
         } else {
+          const renewalMessage = `Membership ending in ${daysToExpiry} days`;
           const payload = {
             id: automationKey,
             automationKey,
@@ -141,10 +142,10 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
             phone: memberPhone,
             memberPhone,
             type: 'GYM MEMBERSHIP RENEWAL',
-            reason: 'Membership renewal due in 7 days',
+            reason: renewalMessage,
             title: 'GYM MEMBERSHIP RENEWAL',
-            description: 'Membership renewal due in 7 days',
-            notes: 'Membership renewal due in 7 days',
+            description: `${renewalMessage} (${membershipExpiry})`,
+            notes: renewalMessage,
             priority: 'Medium',
             dueDate: todayStr,
             scheduledDate: todayStr,

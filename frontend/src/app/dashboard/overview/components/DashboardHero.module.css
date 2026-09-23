@@ -1,0 +1,35 @@
+.hero {
+  color: #202328;
+  background: linear-gradient(112deg, rgba(255, 255, 255, .96), rgba(255, 250, 246, .94) 53%, rgba(255, 239, 225, .9));
+  border: 1px solid rgba(234, 88, 12, .19);
+  box-shadow: 0 12px 34px rgba(124, 61, 23, .1);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.hero::before,
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hero::before {
+  background: radial-gradient(ellipse at 90% 0%, rgba(251, 146, 60, .17), transparent 41%), radial-gradient(ellipse at 4% 100%, rgba(249, 115, 22, .09), transparent 38%);
+}
+
+.hero::after {
+  background: linear-gradient(125deg, transparent 25%, rgba(255, 255, 255, .35) 48%, transparent 66%);
+  background-size: 220% 100%;
+  animation: glassSweep 8s ease-in-out infinite;
+}
+
+@keyframes glassSweep {
+  0%, 55% { background-position: 140% 0; }
+  90%, 100% { background-position: -90% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero::after { animation: none; }
+}

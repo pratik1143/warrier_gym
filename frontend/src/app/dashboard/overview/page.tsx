@@ -18,7 +18,7 @@ import API from "@/services/api";
 
 import { useFollowups } from "@/hooks/useFollowups";
 import { SYSTEM_START_DATE, SYSTEM_CONFIG } from "@/config/system";
-import { useTodaysPayments } from "@/hooks/useTodaysPayments";
+import { getPaymentDateStr, useTodaysPayments } from "@/hooks/useTodaysPayments";
 
 // New Next-Level Redesigned Overview Components
 import DashboardHero from "./components/DashboardHero";
@@ -29,11 +29,12 @@ import MembershipOverviewWidget from "./components/MembershipOverviewWidget";
 import RecentPaymentsTable from "./components/RecentPaymentsTable";
 import GymPulseWidget from "./components/GymPulseWidget";
 import PresentMembersModal from "./components/PresentMembersModal";
+import dashboardStyles from "./overview.module.css";
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 16 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.35, delay, ease: "easeOut" as const }
+  transition: { duration: 0.22, delay: delay * 0.45, ease: "easeOut" as const }
 });
 
 export default function OverviewCommandCenter() {
@@ -52,7 +53,7 @@ export default function OverviewCommandCenter() {
   const { deviceStatus } = useDeviceStore();
 
   // Live payment data — single source of truth
-  const { todaysTotal: todaysRealCollection, allPayments } = useTodaysPayments();
+  const { todaysTotal: todaysRealCollection, allPayments, todayStr } = useTodaysPayments();
   const payments = allPayments;
 
   // Helper to format date in YYYY-MM-DD in Asia/Kolkata timezone
@@ -66,27 +67,24 @@ export default function OverviewCommandCenter() {
     return formatter.format(d);
   };
 
-  const todayStr = useMemo(() => getLocalDateStr(new Date()), []);
   const yesterdayStr = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return getLocalDateStr(d);
-  }, []);
+    const d = new Date(`${todayStr}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }, [todayStr]);
   const sevenDaysAgoStr = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 6);
-    return getLocalDateStr(d);
-  }, []);
+    const d = new Date(`${todayStr}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 6);
+    return d.toISOString().slice(0, 10);
+  }, [todayStr]);
   const thirtyDaysAgoStr = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 29);
-    return getLocalDateStr(d);
-  }, []);
+    const d = new Date(`${todayStr}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 29);
+    return d.toISOString().slice(0, 10);
+  }, [todayStr]);
   const monthStartStr = useMemo(() => {
-    const d = new Date();
-    d.setDate(1);
-    return getLocalDateStr(d);
-  }, []);
+    return `${todayStr.slice(0, 7)}-01`;
+  }, [todayStr]);
 
   // Filter Dates State
   const [fromDate, setFromDate] = useState(todayStr);
@@ -116,6 +114,22 @@ export default function OverviewCommandCenter() {
   const [folTime, setFolTime] = useState("10:00");
   const [folPriority, setFolPriority] = useState<"High" | "Medium" | "Low">("Medium");
   const [folSaving, setFolSaving] = useState(false);
+
+  const displayedFromDate = dateRange === "Today" ? todayStr
+    : dateRange === "Yesterday" ? yesterdayStr
+    : dateRange === "7 Days" ? sevenDaysAgoStr
+    : dateRange === "30 Days" ? thirtyDaysAgoStr
+    : dateRange === "Month" ? monthStartStr : fromDate;
+  const displayedToDate = dateRange === "Yesterday" ? yesterdayStr : toDate;
+
+  const todaysBills = useMemo(() => allPayments.filter((payment: any) => {
+    if (!payment || payment.isSample || payment.isMock) return false;
+    if (payment.isHistorical || payment.imported || payment.isLegacyImport || payment.transactionType === "historical_import") return false;
+    const billDate = payment.isRealTimeToday && payment.createdAt
+      ? getPaymentDateStr(payment.createdAt)
+      : getPaymentDateStr(payment.paymentDate || payment.billingDate || payment.date || payment.createdAt);
+    return billDate === todayStr;
+  }), [allPayments, todayStr]);
 
 
   // Fetch enquiries on mount
@@ -169,14 +183,14 @@ export default function OverviewCommandCenter() {
   }, []);
 
   const headerDateStr = useMemo(() => {
-    return new Date().toLocaleDateString("en-IN", {
+    return new Date(`${todayStr}T12:00:00Z`).toLocaleDateString("en-IN", {
       weekday: "long",
       day: "numeric",
       month: "long",
       year: "numeric",
       timeZone: SYSTEM_CONFIG.timezone
     });
-  }, []);
+  }, [todayStr]);
 
   // 1. Unique Member Attendance for Today
   const presentTodayCount = useMemo(() => {
@@ -313,7 +327,7 @@ export default function OverviewCommandCenter() {
   };
 
   return (
-    <div className="w-full space-y-5 pb-8 text-left font-sans">
+    <div className={`${dashboardStyles.dashboard} w-full space-y-5 pb-8 text-left font-sans`}>
       
       {/* ── 1. HERO COMMAND CENTER ── */}
       <motion.div {...fadeUp(0)}>
@@ -321,8 +335,8 @@ export default function OverviewCommandCenter() {
           userName={user?.name || "Gym Owner"}
           dateStr={headerDateStr}
           greeting={greeting}
-          fromDate={fromDate}
-          toDate={toDate}
+          fromDate={displayedFromDate}
+          toDate={displayedToDate}
           dateRange={dateRange}
           onSelectPreset={handleSelectPreset}
           onDateChange={handleDateInputChange}
@@ -392,7 +406,8 @@ export default function OverviewCommandCenter() {
       {/* ── 8. RECENT PAYMENTS & INVOICES TABLE ── */}
       <motion.div {...fadeUp(0.42)}>
         <RecentPaymentsTable
-          payments={payments}
+          payments={todaysBills}
+          todayStr={todayStr}
         />
       </motion.div>
 

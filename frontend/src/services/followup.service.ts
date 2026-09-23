@@ -91,14 +91,15 @@ export const followupService = {
         const memberStatus = (member.status || '').toLowerCase();
         const assignedStaff = member.trainer || member.assignedStaff || 'Receptionist';
 
-        // RULE 1: GYM MEMBERSHIP RENEWAL (7 days before expiry)
+        // RULE 1: GYM MEMBERSHIP RENEWAL (6–7 days before expiry)
         const membershipExpiry = member.expiryDate ? member.expiryDate.split('T')[0] : null;
-        if (membershipExpiry && (memberStatus === 'active' || memberStatus === 'upcoming' || memberStatus === 'frozen')) {
+        if (membershipExpiry && memberStatus === 'active') {
           const daysToExpiry = getCalendarDaysDiff(membershipExpiry, todayStr);
-          if (daysToExpiry === 7) {
+          if (daysToExpiry >= 6 && daysToExpiry <= 7) {
             const key = `AUTO_RENEWAL_${memberId}_${membershipExpiry}`;
             if (!existingKeySet.has(key)) {
               existingKeySet.add(key);
+              const renewalMessage = `Membership ending in ${daysToExpiry} days`;
               const payload = {
                 id: key,
                 automationKey: key,
@@ -106,10 +107,10 @@ export const followupService = {
                 memberName,
                 phone: memberPhone,
                 type: 'GYM MEMBERSHIP RENEWAL',
-                reason: 'Membership renewal due in 7 days',
+                reason: renewalMessage,
                 title: 'GYM MEMBERSHIP RENEWAL',
-                description: 'Membership renewal due in 7 days',
-                notes: 'Membership renewal due in 7 days',
+                description: `${renewalMessage} (${membershipExpiry})`,
+                notes: renewalMessage,
                 priority: 'Medium',
                 dueDate: todayStr,
                 scheduledDate: todayStr,

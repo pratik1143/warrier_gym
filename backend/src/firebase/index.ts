@@ -817,70 +817,74 @@ export const db = {
   getDashboardAnalytics: async (): Promise<any> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const todayStr = new Date().toISOString().split('T')[0];
+      try {
+        const todayStr = new Date().toISOString().split('T')[0];
 
-      // 1. Members
-      const membersSnap = await firestore.collection('members').get();
-      const membersList = membersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const totalMembers = membersList.length;
-      const activeMembers = membersList.filter((m: any) => {
-        const startDate = m.startDate || m.joinDate;
-        if (startDate && startDate > todayStr) return false;
-        if (m.status === 'frozen' || m.status === 'Frozen' || m.status === 'blocked' || m.status === 'Blocked') return false;
-        return m.status === 'active' || m.status === 'Active' || (m.expiryDate && m.expiryDate >= todayStr);
-      }).length;
+        // 1. Members
+        const membersSnap = await firestore.collection('members').get();
+        const membersList = membersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const totalMembers = membersList.length;
+        const activeMembers = membersList.filter((m: any) => {
+          const startDate = m.startDate || m.joinDate;
+          if (startDate && startDate > todayStr) return false;
+          if (m.status === 'frozen' || m.status === 'Frozen' || m.status === 'blocked' || m.status === 'Blocked') return false;
+          return m.status === 'active' || m.status === 'Active' || (m.expiryDate && m.expiryDate >= todayStr);
+        }).length;
 
-      // 2. Today's Deduplicated Revenue (Strict Isolation: Only non-historical payments belonging strictly to TODAY)
-      const paymentsSnap = await firestore.collection('payments').get();
-      const seen = new Set<string>();
-      let todayRevenue = 0;
+        // 2. Today's Deduplicated Revenue (Strict Isolation: Only non-historical payments belonging strictly to TODAY)
+        const paymentsSnap = await firestore.collection('payments').get();
+        const seen = new Set<string>();
+        let todayRevenue = 0;
 
-      paymentsSnap.docs.forEach((doc: any) => {
-        const p = doc.data() as any;
-        if (!p || p.isSample || p.isMock) return;
+        paymentsSnap.docs.forEach((doc: any) => {
+          const p = doc.data() as any;
+          if (!p || p.isSample || p.isMock) return;
 
-        // Strictly exclude historical imports from today's collection
-        const isHistorical = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
-        if (isHistorical) return;
+          // Strictly exclude historical imports from today's collection
+          const isHistorical = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
+          if (isHistorical) return;
 
-        const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
-        if (status !== 'paid' && status !== 'partial') return;
+          const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
+          if (status !== 'paid' && status !== 'partial') return;
 
-        // Payment date must match today (NEVER fall back to createdAt!)
-        const pDate = String(p.paymentDate || p.date || '').split('T')[0];
-        if (pDate !== todayStr && !p.isRealTimeToday) return;
+          // Payment date must match today (NEVER fall back to createdAt!)
+          const pDate = String(p.paymentDate || p.date || '').split('T')[0];
+          if (pDate !== todayStr && !p.isRealTimeToday) return;
 
-        const idKey = String(doc.id || p.paymentId || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
-        if (idKey && seen.has(idKey)) return;
-        if (idKey) seen.add(idKey);
+          const idKey = String(doc.id || p.paymentId || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
+          if (idKey && seen.has(idKey)) return;
+          if (idKey) seen.add(idKey);
 
-        const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
-        todayRevenue += (isNaN(val) ? 0 : val);
-      });
+          const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
+          todayRevenue += (isNaN(val) ? 0 : val);
+        });
 
-      // 3. Today's Unique Attendance
-      const attendanceSnap = await firestore.collection('attendance_logs').get();
-      const uniqueAttendance = new Set<string>();
-      attendanceSnap.docs.forEach((doc: any) => {
-        const a = doc.data() as any;
-        if (!a) return;
-        const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || '').split('T')[0];
-        if (checkInDate === todayStr) {
-          const mKey = a.memberId || a.biometricId || a.deviceUserId || a.memberName;
-          if (mKey && String(mKey).trim() && !String(mKey).includes('unmapped')) {
-            uniqueAttendance.add(String(mKey).trim().toLowerCase());
+        // 3. Today's Unique Attendance
+        const attendanceSnap = await firestore.collection('attendance_logs').get();
+        const uniqueAttendance = new Set<string>();
+        attendanceSnap.docs.forEach((doc: any) => {
+          const a = doc.data() as any;
+          if (!a) return;
+          const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || '').split('T')[0];
+          if (checkInDate === todayStr) {
+            const mKey = a.memberId || a.biometricId || a.deviceUserId || a.memberName;
+            if (mKey && String(mKey).trim() && !String(mKey).includes('unmapped')) {
+              uniqueAttendance.add(String(mKey).trim().toLowerCase());
+            }
           }
-        }
-      });
+        });
 
-      return {
-        totalMembers,
-        activeMembers,
-        todayAttendance: uniqueAttendance.size,
-        revenue: todayRevenue,
-        todayCollection: todayRevenue,
-        lastUpdated: new Date().toISOString()
-      };
+        return {
+          totalMembers,
+          activeMembers,
+          todayAttendance: uniqueAttendance.size,
+          revenue: todayRevenue,
+          todayCollection: todayRevenue,
+          lastUpdated: new Date().toISOString()
+        };
+      } catch (err: any) {
+        console.warn('[Firestore] Error getting dashboard analytics, using fallback:', err?.message);
+      }
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1120,44 +1124,48 @@ export const db = {
   getPayments: async (options?: { memberId?: string; limit?: number }): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      if (options?.memberId) {
-        const memId = String(options.memberId).trim();
-        const candidateIds = new Set<string>([memId]);
-        try {
-          const mDoc = await firestore.collection('members').doc(memId).get();
-          if (mDoc.exists) {
-            const md = mDoc.data() as any;
-            if (md?.memberId) candidateIds.add(String(md.memberId).trim());
-            if (md?.uid) candidateIds.add(String(md.uid).trim());
-          } else {
-            const qCode = await firestore.collection('members').where('memberId', '==', memId).limit(1).get();
-            if (!qCode.empty) {
-              candidateIds.add(qCode.docs[0].id);
-              const md = qCode.docs[0].data() as any;
+      try {
+        if (options?.memberId) {
+          const memId = String(options.memberId).trim();
+          const candidateIds = new Set<string>([memId]);
+          try {
+            const mDoc = await firestore.collection('members').doc(memId).get();
+            if (mDoc.exists) {
+              const md = mDoc.data() as any;
+              if (md?.memberId) candidateIds.add(String(md.memberId).trim());
               if (md?.uid) candidateIds.add(String(md.uid).trim());
+            } else {
+              const qCode = await firestore.collection('members').where('memberId', '==', memId).limit(1).get();
+              if (!qCode.empty) {
+                candidateIds.add(qCode.docs[0].id);
+                const md = qCode.docs[0].data() as any;
+                if (md?.uid) candidateIds.add(String(md.uid).trim());
+              }
             }
+          } catch (e) {}
+
+          const allDocsSnap = await firestore.collection('payments').get();
+          let list = allDocsSnap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() as any }))
+            .filter(p => candidateIds.has(String(p.memberId || '')) || candidateIds.has(String(p.memberUid || '')));
+
+          list = list.sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
+          if (options.limit && options.limit > 0) {
+            list = list.slice(0, options.limit);
           }
-        } catch (e) {}
-
-        const allDocsSnap = await firestore.collection('payments').get();
-        let list = allDocsSnap.docs
-          .map(doc => ({ id: doc.id, ...doc.data() as any }))
-          .filter(p => candidateIds.has(String(p.memberId || '')) || candidateIds.has(String(p.memberUid || '')));
-
-        list = list.sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
-        if (options.limit && options.limit > 0) {
-          list = list.slice(0, options.limit);
+          return list;
         }
-        return list;
-      }
 
-      let q: admin.firestore.Query = firestore.collection('payments').orderBy('date', 'desc');
-      if (options?.limit && options.limit > 0) {
-        q = q.limit(options.limit);
+        let q: admin.firestore.Query = firestore.collection('payments').orderBy('date', 'desc');
+        if (options?.limit && options.limit > 0) {
+          q = q.limit(options.limit);
+        }
+        const snapshot = await q.get();
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+        return list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
+      } catch (err: any) {
+        console.warn('[Firestore] Error fetching payments, falling back to local database:', err?.message);
       }
-      const snapshot = await q.get();
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
-      return list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
     }
     let list = mockPayments;
     if (options?.memberId) {
@@ -1856,8 +1864,12 @@ export const db = {
   getDevices: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const snapshot = await firestore.collection('devices').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      try {
+        const snapshot = await firestore.collection('devices').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (err: any) {
+        console.warn('[Firestore] Error fetching devices, using local database fallback:', err?.message);
+      }
     }
     return mockDevices;
   },
@@ -1957,8 +1969,12 @@ export const db = {
   getAccessControlEvents: async (limitCount: number = 50): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const snapshot = await firestore.collection('access_control_events').orderBy('timestamp', 'desc').limit(limitCount).get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      try {
+        const snapshot = await firestore.collection('access_control_events').orderBy('timestamp', 'desc').limit(limitCount).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (err: any) {
+        console.warn('[Firestore] Error getting access control events, using fallback:', err?.message);
+      }
     }
     return mockAccessControlEvents.slice(0, limitCount);
   },
@@ -1966,8 +1982,12 @@ export const db = {
   getAccessLogs: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const snapshot = await firestore.collection('accessLogs').orderBy('timestamp', 'desc').limit(50).get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      try {
+        const snapshot = await firestore.collection('accessLogs').orderBy('timestamp', 'desc').limit(50).get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (err: any) {
+        console.warn('[Firestore] Error getting access logs, using fallback:', err?.message);
+      }
     }
     return mockAccessLogs;
   },
@@ -1975,8 +1995,12 @@ export const db = {
   getDoorStatus: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const snapshot = await firestore.collection('doorStatus').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      try {
+        const snapshot = await firestore.collection('doorStatus').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (err: any) {
+        console.warn('[Firestore] Error getting door status, using fallback:', err?.message);
+      }
     }
     return mockDoorStatus;
   },
@@ -1984,8 +2008,12 @@ export const db = {
   getTrainers: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const snapshot = await firestore.collection('trainers').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      try {
+        const snapshot = await firestore.collection('trainers').get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch (err: any) {
+        console.warn('[Firestore] Error getting trainers, using fallback:', err?.message);
+      }
     }
     return mockTrainers;
   },
@@ -2221,15 +2249,20 @@ export const db = {
     const firestore = getFirestoreDb();
     let rawPlans: any[] = [];
     if (firestore) {
-      const snapshot = await firestore.collection('plans').get();
-      if (snapshot.empty) {
-        // Seed default plans
-        for (const plan of mockPlans) {
-          await firestore.collection('plans').doc(plan.id).set(plan);
+      try {
+        const snapshot = await firestore.collection('plans').get();
+        if (snapshot.empty) {
+          // Seed default plans
+          for (const plan of mockPlans) {
+            await firestore.collection('plans').doc(plan.id).set(plan);
+          }
+          rawPlans = mockPlans;
+        } else {
+          rawPlans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         }
+      } catch (err: any) {
+        console.warn('[Firestore] Error getting plans, using local database fallback:', err?.message);
         rawPlans = mockPlans;
-      } else {
-        rawPlans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
     } else {
       rawPlans = mockPlans;

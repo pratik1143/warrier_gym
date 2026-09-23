@@ -24,6 +24,7 @@ import { HikvisionEventPopupEngine } from './components/HikvisionEventPopupEngin
 import UniversalSearchBar from './components/UniversalSearchBar';
 import LiveTimeCard from './components/LiveTimeCard';
 import SoftwareFooter from './components/SoftwareFooter';
+import layoutStyles from './layout.module.css';
 
 export default function DashboardLayout({
   children,
@@ -38,6 +39,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   
   const [mounted, setMounted] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [activeHeatmapFilter, setActiveHeatmapFilter] = useState('Yours');
   
@@ -246,11 +248,12 @@ export default function DashboardLayout({
   const checkinDays = attendance ? attendance.map((a: any) => new Date(a.checkIn || '').getDate()) : [];
 
   return (
-    <div className="min-h-screen w-full flex font-poppins text-slate-800 bg-[#FAFAF9] relative">
+    <div className="min-h-screen w-full flex font-poppins text-slate-800 bg-[#FCFAF8] relative">
+      {mobileSidebarOpen && <button type="button" className={layoutStyles.mobileBackdrop} aria-label="Close navigation menu" onClick={() => setMobileSidebarOpen(false)} />}
       {/* ─── Column 1: Left Navigation Sidebar ─── */}
       <aside 
         style={{ width: '240px' }}
-        className="fixed top-0 left-0 bottom-0 h-screen h-[100vh] bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between z-50 select-none overflow-hidden"
+        className={`${layoutStyles.sidebar} fixed top-0 left-0 bottom-0 h-screen h-[100vh] bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between z-50 select-none overflow-hidden ${mobileSidebarOpen ? layoutStyles.sidebarOpen : ''}`}
       >
         {/* Sidebar Header Brand Area */}
         <div className="px-1 flex items-center justify-start border-b border-stone-100 pb-4 shrink-0">
@@ -294,6 +297,7 @@ export default function DashboardLayout({
               <Link
                 key={idx}
                 href={item.to}
+                onClick={() => setMobileSidebarOpen(false)}
                 className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all ${
                   isActive 
                     ? 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] shadow-xs' 
@@ -345,14 +349,19 @@ export default function DashboardLayout({
       {/* ─── Main Workspace Content Area ─── */}
       <main 
         style={{ marginLeft: '240px', width: 'calc(100% - 240px)', minHeight: '100vh' }}
-        className="flex-1 min-w-0 p-4 sm:p-6 flex flex-col gap-4 text-left bg-[#FAFAF9] overflow-x-hidden"
+        className={`${layoutStyles.main} flex-1 min-w-0 p-4 sm:p-6 flex flex-col gap-4 text-left bg-[#FCFAF8] overflow-x-hidden`}
       >
         {/* Top Header Bar: Universal Search (Left/Center) + Live Time Card (Right) */}
-        <div className="w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 pb-1">
-          <div className="w-full sm:max-w-[460px] md:max-w-[500px]">
+        <div className="w-full flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 shrink-0 pb-1">
+          <button type="button" className={layoutStyles.mobileMenu} aria-label={mobileSidebarOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen((open) => !open)}>
+            {mobileSidebarOpen ? <X size={19} /> : <Menu size={19} />}
+          </button>
+          <div className="order-2 sm:order-none ml-auto sm:ml-0">
+            <LiveTimeCard />
+          </div>
+          <div className="order-3 sm:order-none basis-full sm:basis-auto w-full sm:max-w-[460px] md:max-w-[500px] sm:flex-1">
             <UniversalSearchBar />
           </div>
-          <LiveTimeCard />
         </div>
         {children}
         <SoftwareFooter />

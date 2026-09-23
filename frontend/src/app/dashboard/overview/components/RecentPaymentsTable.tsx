@@ -1,17 +1,19 @@
 "use client";
 
 import React from "react";
-import { Receipt, ArrowRight, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { Receipt, ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { getPaymentDateStr } from "@/hooks/useTodaysPayments";
 
 interface RecentPaymentsTableProps {
   payments: any[];
+  todayStr: string;
 }
 
-export default function RecentPaymentsTable({ payments }: RecentPaymentsTableProps) {
+export default function RecentPaymentsTable({ payments, todayStr }: RecentPaymentsTableProps) {
   const router = useRouter();
 
-  // Filter out historical noise and get latest 7 real transactions
+  // Show today's bills only; the full historical ledger stays available from Billing.
   const validPayments = payments
     .filter((p: any) => {
       if (!p || p.isSample || p.isMock) return false;
@@ -19,13 +21,14 @@ export default function RecentPaymentsTable({ payments }: RecentPaymentsTablePro
       if (isHist) return false;
       return true;
     })
+    .sort((a: any, b: any) => String(b.createdAt || b.paymentDate || b.date || '').localeCompare(String(a.createdAt || a.paymentDate || a.date || '')))
     .slice(0, 8);
 
-  const getStatusBadge = (p: any, amt: number) => {
+  const getStatusBadge = (p: any, amt: number, billed: number) => {
     const rawStatus = String(p.status || p.paymentStatus || "paid").toUpperCase();
     
     // Strict guard: Never show PAID ₹0 for someone who hasn't actually paid
-    if (amt === 0) {
+    if (rawStatus === "NOT BILLED" || (amt === 0 && billed === 0)) {
       return {
         label: "NOT BILLED",
         badgeClass: "bg-stone-100 text-slate-600 border-stone-200"
@@ -58,14 +61,14 @@ export default function RecentPaymentsTable({ payments }: RecentPaymentsTablePro
       <div className="flex items-center justify-between pb-3 border-b border-stone-100">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center font-black">
-            <Receipt size={17} />
+              <Receipt size={17} />
           </div>
           <div>
             <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight font-sans">
-              RECENT PAYMENTS & INVOICES
+              TODAY&apos;S BILLS & COLLECTION
             </h3>
             <p className="text-[11px] font-semibold text-slate-400">
-              Real-time billing transactions, gateway settlement & receipts
+              {todayStr} · Bills recorded today only
             </p>
           </div>
         </div>
@@ -83,7 +86,7 @@ export default function RecentPaymentsTable({ payments }: RecentPaymentsTablePro
       {/* Table */}
       {validPayments.length === 0 ? (
         <div className="p-8 text-center text-xs font-bold text-slate-400">
-          No recent billing transactions recorded in this period.
+          No bills recorded today yet. Today’s collection starts at ₹0.
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -93,7 +96,8 @@ export default function RecentPaymentsTable({ payments }: RecentPaymentsTablePro
                 <th className="pb-2.5">Member</th>
                 <th className="pb-2.5">Invoice</th>
                 <th className="pb-2.5">Package</th>
-                <th className="pb-2.5">Amount</th>
+                <th className="pb-2.5">Billed</th>
+                <th className="pb-2.5">Collected</th>
                 <th className="pb-2.5">Payment</th>
                 <th className="pb-2.5">Status</th>
                 <th className="pb-2.5 text-right">Date</th>
@@ -101,11 +105,13 @@ export default function RecentPaymentsTable({ payments }: RecentPaymentsTablePro
             </thead>
             <tbody className="divide-y divide-stone-100">
               {validPayments.map((p, idx) => {
-                const amt = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0))) || 0;
-                const statusInfo = getStatusBadge(p, amt);
+                const rawStatus = String(p.status || p.paymentStatus || '').toLowerCase();
+                const amt = Number(p.amountPaid ?? p.paid ?? ((rawStatus === 'paid' || rawStatus === 'partial') ? (p.amount ?? p.netPayable ?? 0) : 0)) || 0;
+                const billed = Number(p.netPayable ?? p.grandTotal ?? p.total ?? p.amount ?? 0) || 0;
+                const statusInfo = getStatusBadge(p, amt, billed);
                 const invNum = p.invoiceNumber || p.invoice || `INV-${String(p.id || "").slice(-5).toUpperCase()}`;
-                const dateStr = p.paymentDate || p.date || p.createdAt || "";
-                const formattedDate = dateStr ? new Date(dateStr).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today";
+                const dateStr = getPaymentDateStr(p.billingDate || p.createdAt || p.paymentDate || p.date);
+                const formattedDate = dateStr ? new Date(`${dateStr}T12:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "Today";
 
                 return (
                   <tr key={idx} className="group hover:bg-orange-50/40 transition-colors">
@@ -122,6 +128,9 @@ export default function RecentPaymentsTable({ payments }: RecentPaymentsTablePro
                       {p.plan || p.package || (p.isPT ? "PT Session" : "Regular Gym")}
                     </td>
                     <td className="py-3 font-black text-slate-900 font-sans">
+                      ₹{billed.toLocaleString("en-IN")}
+                    </td>
+                    <td className="py-3 font-black text-[#C2410C] font-sans">
                       ₹{amt.toLocaleString("en-IN")}
                     </td>
                     <td className="py-3 font-bold text-slate-600">

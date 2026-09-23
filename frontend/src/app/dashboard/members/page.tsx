@@ -39,7 +39,8 @@ import {
   Trophy,
   Dumbbell,
   Zap,
-  Upload
+  Upload,
+  ScanFace
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useGymStore } from "@/store";
@@ -905,6 +906,15 @@ export default function MembersPage() {
     return { total: (members || []).length, active, hold, expiring, expired };
   }, [members]);
 
+  // Members missing biometrics (skipped or never enrolled)
+  const missingBioCount = useMemo(() => {
+    return (members || []).filter((m: any) => {
+      const faceStatus = String(m.faceEnrollmentStatus || m.biometric?.face?.status || '').toUpperCase();
+      const bioStatus = String(m.biometricStatus || '').toUpperCase();
+      return faceStatus !== 'ENROLLED' || bioStatus === 'SKIPPED';
+    }).length;
+  }, [members]);
+
   return (
     <div className="space-y-6 pb-12 w-full text-slate-800 text-left font-sans">
       {/* ── 1. POLISHED WARRIOR HEADER ── */}
@@ -963,6 +973,19 @@ export default function MembersPage() {
           >
             <Camera size={14} />
             <span>Sync Photos</span>
+          </button>
+          <button
+            type="button"
+            className="relative flex items-center gap-2 px-4 py-2.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
+            onClick={() => router.push('/dashboard/members/map-bio')}
+          >
+            <ScanFace size={14} />
+            <span>Map Bio</span>
+            {missingBioCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
+                {missingBioCount}
+              </span>
+            )}
           </button>
           <button
             type="button"

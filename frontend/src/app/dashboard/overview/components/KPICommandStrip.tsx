@@ -140,7 +140,7 @@ export default function KPICommandStrip({
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3.5">
       {kpis.map((kpi, idx) => (
         <div
           key={idx}

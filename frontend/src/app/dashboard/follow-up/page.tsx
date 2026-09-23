@@ -799,7 +799,7 @@ export default function FollowUpManager() {
 
             if (task.type === 'GYM MEMBERSHIP RENEWAL' || task.type === 'Renewal') {
               typeBadgeClass = 'bg-[#FFF7ED] text-[#9A3412] border border-orange-200/60 font-black';
-              displayReason = displayReason || 'Membership renewal due in 7 days';
+              displayReason = displayReason || 'Membership ending in 6–7 days';
             } else if (task.type === 'PT RENEWAL' || task.type === 'PT') {
               typeBadgeClass = 'bg-purple-50 text-purple-800 border border-purple-200/80 font-black';
               displayReason = displayReason || 'Personal Training renewal due in 4 days';

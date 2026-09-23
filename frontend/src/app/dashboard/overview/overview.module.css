@@ -1,0 +1,40 @@
+.dashboard {
+  --orange: #ea580c;
+  --line: rgba(234, 88, 12, .14);
+  --glass-shadow: 0 9px 26px rgba(42, 31, 22, .045);
+}
+
+.dashboard :global(.bg-white.rounded-2xl),
+.dashboard :global(.bg-white.rounded-3xl) {
+  background-color: rgba(255, 255, 255, .83) !important;
+  border-color: rgba(234, 88, 12, .14) !important;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease;
+}
+
+.dashboard :global(.bg-white.rounded-2xl:hover),
+.dashboard :global(.bg-white.rounded-3xl:hover) {
+  border-color: rgba(234, 88, 12, .29) !important;
+  box-shadow: 0 12px 30px rgba(124, 61, 23, .09);
+}
+
+.dashboard :global(button),
+.dashboard :global(table tbody tr) {
+  transition-duration: .18s;
+}
+
+@media (max-width: 639px) {
+  .dashboard :global(.grid.grid-cols-1.lg\:grid-cols-12) { gap: 12px; }
+  .dashboard :global(.overflow-x-auto table) { min-width: 680px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard :global(*),
+  .dashboard :global(*::before),
+  .dashboard :global(*::after) {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}

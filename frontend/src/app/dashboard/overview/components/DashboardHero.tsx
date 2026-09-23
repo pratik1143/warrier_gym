@@ -2,6 +2,7 @@
 
 import React from "react";
 import { motion } from "framer-motion";
+import styles from "./DashboardHero.module.css";
 import { 
   UserPlus, 
   MessageSquare, 
@@ -62,7 +63,7 @@ export default function DashboardHero({
   ];
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#F97316] via-[#EA580C] to-[#9A3412] text-white p-6 sm:p-7 shadow-[0_12px_36px_rgba(234,88,12,0.22)] border border-orange-400/30">
+    <div className={`${styles.hero} relative overflow-hidden rounded-3xl p-5 sm:p-7 shadow-[0_12px_36px_rgba(234,88,12,0.11)]`}>
       {/* Background Ambient Glows */}
       <div className="absolute top-0 right-1/4 w-96 h-96 bg-amber-400/20 rounded-full blur-3xl pointer-events-none -translate-y-1/2" />
       <div className="absolute -bottom-16 left-10 w-72 h-72 bg-orange-300/15 rounded-full blur-2xl pointer-events-none" />
@@ -75,21 +76,21 @@ export default function DashboardHero({
         <div className="lg:col-span-7 flex flex-col justify-between space-y-4">
           <div className="space-y-1.5">
             {/* Live Indicator Pill */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/25 backdrop-blur-md border border-white/20 text-[10px] font-black uppercase tracking-[0.14em] text-white">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50/90 backdrop-blur-md border border-orange-200/80 text-[10px] font-black uppercase tracking-[0.14em] text-orange-800">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-40" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
               </span>
               <span>Warrior Gym OS · Real-Time Sync</span>
             </div>
 
             {/* Bold Headline */}
-            <h1 className="text-2xl sm:text-3xl lg:text-[34px] font-black tracking-tight leading-tight text-white drop-shadow-xs">
-              {greeting}, <span className="text-amber-200">{userName || "Gym Owner"}</span> 👋
+            <h1 className="text-2xl sm:text-3xl lg:text-[34px] font-black tracking-tight leading-tight text-slate-900 drop-shadow-xs">
+              {greeting}, <span className="text-[#EA580C]">{userName || "Gym Owner"}</span> 👋
             </h1>
 
             {/* Formatted Date */}
-            <p className="text-orange-100/90 text-xs sm:text-sm font-semibold tracking-wide">
+            <p className="text-slate-500 text-xs sm:text-sm font-semibold tracking-wide">
               {dateStr}
             </p>
           </div>
@@ -108,7 +109,7 @@ export default function DashboardHero({
             <button
               type="button"
               onClick={onNewEnquiry}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-black/25 hover:bg-black/35 text-white font-bold text-xs tracking-wide border border-white/25 shadow-xs transition-all duration-150 active:scale-95 cursor-pointer backdrop-blur-md"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/70 hover:bg-orange-50 text-slate-700 font-bold text-xs tracking-wide border border-orange-200/80 shadow-xs transition-all duration-150 active:scale-95 cursor-pointer backdrop-blur-md"
             >
               <MessageSquare size={14} />
               <span>+ New Enquiry</span>
@@ -117,7 +118,7 @@ export default function DashboardHero({
             <button
               type="button"
               onClick={onFollowUp}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-black/25 hover:bg-black/35 text-white font-bold text-xs tracking-wide border border-white/25 shadow-xs transition-all duration-150 active:scale-95 cursor-pointer backdrop-blur-md"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/70 hover:bg-orange-50 text-slate-700 font-bold text-xs tracking-wide border border-orange-200/80 shadow-xs transition-all duration-150 active:scale-95 cursor-pointer backdrop-blur-md"
             >
               <PhoneCall size={14} />
               <span>+ Follow Up</span>
@@ -126,9 +127,9 @@ export default function DashboardHero({
             <button
               type="button"
               onClick={onAttendance}
-              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs tracking-wide border border-white/20 transition-all duration-150 active:scale-95 cursor-pointer backdrop-blur-md"
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-orange-100/70 hover:bg-orange-100 text-slate-700 font-bold text-xs tracking-wide border border-orange-200/80 transition-all duration-150 active:scale-95 cursor-pointer backdrop-blur-md"
             >
-              <Fingerprint size={14} className="text-amber-200" />
+              <Fingerprint size={14} className="text-[#EA580C]" />
               <span>Attendance</span>
             </button>
           </div>
@@ -137,35 +138,35 @@ export default function DashboardHero({
         {/* Right Side: Compact "Gym Pulse" Area + Integrated Premium Range Selector */}
         <div className="lg:col-span-5 flex flex-col gap-3.5">
           {/* Glass Gym Pulse Card */}
-          <div className="bg-black/20 backdrop-blur-md border border-white/20 rounded-2xl p-3.5">
+          <div className="bg-white/65 backdrop-blur-xl border border-white/90 rounded-2xl p-3.5 shadow-[0_12px_34px_rgba(124,61,23,0.10)]">
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/15">
-              <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-200">
+              <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-[#C2410C]">
                 <Sparkles size={12} />
-                <span>Today's Gym Pulse</span>
+                <span>Today&apos;s Gym Pulse</span>
               </div>
-              <span className="text-[9.5px] font-bold text-orange-200/90">Real-Time</span>
+              <span className="text-[9.5px] font-bold text-slate-500">Real-Time</span>
             </div>
 
             {/* 4 Mini Stat Blocks */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="bg-white/10 rounded-xl p-2 text-center border border-white/10">
-                <div className="text-[9px] font-extrabold uppercase tracking-wider text-orange-100/80">Present</div>
-                <div className="text-base font-black text-white mt-0.5">{presentTodayCount}</div>
+              <div className="bg-white/75 rounded-xl p-2 text-center border border-orange-100">
+                <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Present</div>
+                <div className="text-base font-black text-slate-900 mt-0.5">{presentTodayCount}</div>
               </div>
 
-              <div className="bg-white/10 rounded-xl p-2 text-center border border-white/10">
-                <div className="text-[9px] font-extrabold uppercase tracking-wider text-orange-100/80">Active</div>
-                <div className="text-base font-black text-white mt-0.5">{activeMembersCount}</div>
+              <div className="bg-white/75 rounded-xl p-2 text-center border border-orange-100">
+                <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Active</div>
+                <div className="text-base font-black text-slate-900 mt-0.5">{activeMembersCount}</div>
               </div>
 
-              <div className="bg-white/10 rounded-xl p-2 text-center border border-white/10">
-                <div className="text-[9px] font-extrabold uppercase tracking-wider text-orange-100/80">Enquiries</div>
-                <div className="text-base font-black text-white mt-0.5">{pendingEnquiriesCount}</div>
+              <div className="bg-white/75 rounded-xl p-2 text-center border border-orange-100">
+                <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Enquiries</div>
+                <div className="text-base font-black text-slate-900 mt-0.5">{pendingEnquiriesCount}</div>
               </div>
 
-              <div className="bg-white/10 rounded-xl p-2 text-center border border-white/10">
-                <div className="text-[9px] font-extrabold uppercase tracking-wider text-orange-100/80">Collection</div>
-                <div className="text-base font-black text-amber-200 mt-0.5 truncate">
+              <div className="bg-white/75 rounded-xl p-2 text-center border border-orange-100">
+                <div className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Collection</div>
+                <div className="text-base font-black text-[#C2410C] mt-0.5 truncate">
                   ₹{todaysRealCollection >= 1000 ? `${(todaysRealCollection / 1000).toFixed(1)}k` : todaysRealCollection}
                 </div>
               </div>
@@ -186,7 +187,7 @@ export default function DashboardHero({
                     className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-150 cursor-pointer border ${
                       isActive
                         ? "bg-white text-[#EA580C] border-white shadow-sm scale-105"
-                        : "bg-black/20 text-white/90 border-white/15 hover:bg-white/20 hover:text-white"
+                        : "bg-white/65 text-slate-600 border-orange-100 hover:bg-white hover:text-[#C2410C]"
                     }`}
                   >
                     {preset}
@@ -202,20 +203,20 @@ export default function DashboardHero({
 
             {/* Direct Date Inputs */}
             <div className="flex items-center gap-1.5 justify-start lg:justify-end">
-              <div className="flex items-center gap-1.5 bg-black/25 border border-white/20 rounded-xl px-2.5 py-1 backdrop-blur-md">
-                <Calendar size={12} className="text-amber-200 shrink-0" />
+              <div className="flex items-center gap-1.5 bg-white/70 border border-orange-200/70 rounded-xl px-2.5 py-1 backdrop-blur-md">
+                <Calendar size={12} className="text-[#EA580C] shrink-0" />
                 <input
                   type="date"
                   value={fromDate}
                   onChange={(e) => onDateChange(e.target.value, toDate)}
-                  className="bg-transparent border-none text-white text-[11px] font-bold outline-none cursor-pointer w-28"
+                  className="bg-transparent border-none text-slate-700 text-[11px] font-bold outline-none cursor-pointer w-28"
                 />
-                <span className="text-orange-200 text-xs font-bold">→</span>
+                <span className="text-orange-500 text-xs font-bold">→</span>
                 <input
                   type="date"
                   value={toDate}
                   onChange={(e) => onDateChange(fromDate, e.target.value)}
-                  className="bg-transparent border-none text-white text-[11px] font-bold outline-none cursor-pointer w-28"
+                  className="bg-transparent border-none text-slate-700 text-[11px] font-bold outline-none cursor-pointer w-28"
                 />
               </div>
             </div>

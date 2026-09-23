@@ -2210,11 +2210,26 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                     </div>
                   )}
 
-                  <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-600 flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <Info className="w-4 h-4 text-stone-400 shrink-0" />
-                      Biometrics can also be assigned or re-synced anytime from the member profile.
-                    </span>
+                  {/* Skip Biometrics CTA */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-200">
+                    <div className="flex items-start gap-3 flex-1">
+                      <Info className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">Device not available right now?</p>
+                        <p className="text-[11px] text-amber-700 mt-0.5">You can skip biometrics and enroll the member's face/fingerprint later from the <strong>Map Bio</strong> page.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isMachineBusy}
+                      onClick={() => {
+                        setStep(5);
+                      }}
+                      className="shrink-0 px-4 py-2.5 bg-white hover:bg-amber-50 border-2 border-amber-300 hover:border-amber-400 text-amber-800 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <span>Skip Biometrics</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </motion.div>
               )}
