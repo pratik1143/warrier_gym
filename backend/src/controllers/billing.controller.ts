@@ -103,9 +103,9 @@ export const createInvoice = async (req: Request, res: Response) => {
       const newOutstanding = Math.max(0, totalBilled - newTotalPaid);
       const newPaymentStatus = newOutstanding <= 0 ? 'paid' : (newTotalPaid > 0 ? 'partial' : 'pending');
 
-      const finalExpiryTime = new Date(newExpiryString).getTime();
       const existingHistory = Array.isArray(m.membershipHistory) ? m.membershipHistory : [];
       const newHistoryEntry = {
+        transactionId: invoice.id,
         plan: plan || m.plan || 'Standard',
         startDate: req.body.startDate || m.startDate || todayYMD,
         expiryDate: newExpiryString,
@@ -115,16 +115,55 @@ export const createInvoice = async (req: Request, res: Response) => {
         createdAt: new Date().toISOString(),
       };
 
+      const canonicalTx = {
+        transactionId: invoice.id,
+        memberId: m.id,
+        memberCode: m.memberId || '',
+        biometricId: m.biometricId || m.deviceUserId || '',
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber || invoice.invoice || `INV-${invoice.id.slice(-6)}`,
+        packageId: req.body.packageId || 'pkg_standard',
+        packageName: plan || m.plan || 'General Membership',
+        billingDate: invoiceDate,
+        paymentDate: req.body.paymentDate || invoiceDate,
+        startDate: req.body.startDate || m.startDate || todayYMD,
+        expiryDate: newExpiryString,
+        originalAmount: origAmt,
+        discount: discAmt,
+        tax: taxAmt,
+        otherCharges: othAmt,
+        netPayable: finalNet,
+        amountPaid: finalPaid,
+        pendingAmount: newOutstanding,
+        paymentMethod: method || 'UPI',
+        paymentStatus: newOutstanding <= 0 ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'UNPAID'),
+        billingType: txType === 'pt_payment' ? 'PT' : 'MEMBERSHIP',
+        isHistorical: isHist,
+        createdAt: invoice.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const existingBillingHistory = Array.isArray(m.billingHistory) ? m.billingHistory : [];
+      const updatedBillingHistory = [canonicalTx, ...existingBillingHistory.filter((b: any) => b.transactionId !== invoice.id && b.invoiceNumber !== canonicalTx.invoiceNumber)];
+
       await db.updateMember(m.id, {
         plan: plan || m.plan || 'Standard',
         startDate: m.startDate || req.body.startDate || todayYMD,
         expiryDate: newExpiryString,
         status: m.status === 'upcoming' ? 'upcoming' : (newExpiryString >= todayYMD ? 'active' : 'expired'),
         paymentStatus: newPaymentStatus,
+        totalBilled: totalBilled,
         totalPaid: newTotalPaid,
+        amountPaid: newTotalPaid,
+        paid: newTotalPaid,
         outstandingBalance: newOutstanding,
+        pendingBalance: newOutstanding,
+        balanceAmount: newOutstanding,
         daysLeft: Math.ceil((finalExpiryTime - Date.now()) / (1000 * 60 * 60 * 24)),
         membershipHistory: [...existingHistory, newHistoryEntry],
+        billingHistory: updatedBillingHistory,
+        payments: updatedBillingHistory,
+        updatedAt: new Date().toISOString()
       });
 
       // Auto-resolve old stale renewal follow-ups

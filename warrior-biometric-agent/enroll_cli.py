@@ -57,6 +57,7 @@ def main():
     elif cmd == "enroll_fingerprint":
         emp_no = sys.argv[2] if len(sys.argv) > 2 else "101"
         name = sys.argv[3] if len(sys.argv) > 3 else "Member"
+        print(f"[FP REQUEST RECEIVED BY HIKVISION AGENT] employeeNo={emp_no}", file=sys.stderr)
         prov = provider.create_user(emp_no, name)
         res = provider.enroll_fingerprint(emp_no)
         print(json.dumps(res))

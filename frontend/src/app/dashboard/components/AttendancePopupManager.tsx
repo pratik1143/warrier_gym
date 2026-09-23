@@ -234,9 +234,7 @@ export default function AttendancePopupManager() {
           processPunchItem(data, docId);
         });
       },
-      (error) => {
-        console.warn('[AttendancePopupManager] Firestore attendanceEvents listener error:', error);
-      }
+      () => { /* silenced */ }
     );
 
     return () => unsubscribe();

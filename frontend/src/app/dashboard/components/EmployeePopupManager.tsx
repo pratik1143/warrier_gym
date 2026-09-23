@@ -56,9 +56,7 @@ export default function EmployeePopupManager() {
           }
         }
       });
-    }, (err) => {
-      console.warn("Firestore employeeNotifications query error:", err);
-    });
+    }, () => { /* silenced */ });
 
     return () => unsubscribe();
   }, []);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Edit3, Shield, Activity, Droplets, Calendar,
@@ -16,6 +16,7 @@ import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { paymentEngine } from '@/lib/engines/paymentEngine';
 import { calculateRealAttendance } from '@/lib/utils';
 import API from '@/services/api';
+import { billingRepository } from '@/services/billingRepository';
 import { useGymStore } from '@/store';
 import MemberAvatar from '../../components/MemberAvatar';
 import SmartPhotoCapture from '../../components/SmartPhotoCapture';
@@ -138,9 +139,7 @@ export default function ClientProfileSystem() {
 
       const sessions = buildAttendanceSessions(memberLogs);
       setRealAttendanceCount(sessions.length);
-    }, (error) => {
-      console.warn("Member attendance count snapshot notice:", error.message);
-    });
+    }, () => { /* silenced */ });
 
     return () => {
       isMounted = false;
@@ -156,21 +155,37 @@ export default function ClientProfileSystem() {
   const attendancePct  = isHold || !member ? 0 : calculateRealAttendance(member.joinDate, effectiveAttendanceCount);
   const healthScore    = isHold ? 0 : membershipEngine.calculateHealthScore(daysLeft, attendancePct);
 
-  // Payment totals from invoices (Single Source of Truth)
-  const isMemberPaid = !isHold && (member?.paymentStatus === 'paid' || (Number(member?.totalPaid) > 0 && member?.totalPaid >= member?.totalBilled));
-  const totalInvoiced = isHold ? 0 : memberInvoices.reduce((s, inv) => s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0), 0);
-  const totalPaid = isHold ? 0 : (isMemberPaid 
-    ? (totalInvoiced || Number(member?.totalPaid) || Number(member?.price) || Number(member?.amount) || 0)
-    : memberInvoices.reduce((s, inv) => {
-        if (inv.status === 'paid' || inv.paymentStatus === 'paid') {
-          return s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0);
-        }
-        return s + (Number(inv.paid) || Number(inv.amount) || 0);
-      }, 0));
+  // Payment totals from canonical sources (Single Source of Truth)
+  const canonicalSummary = useMemo(() => {
+    if (isHold) return { billed: 0, paid: 0, pending: 0, status: 'NOT_BILLED' as const };
 
-  const rawOutstanding = isHold ? 0 : (isMemberPaid ? 0 : paymentEngine.calculateOutstandingAmount(totalInvoiced, totalPaid));
-  const outstanding = Math.max(0, rawOutstanding);
-  const payStatus = isHold ? 'NO INVOICES' : (isMemberPaid ? 'PAID' : (outstanding <= 0 && totalInvoiced > 0 ? 'PAID' : (totalInvoiced === 0 ? 'NO INVOICES' : paymentEngine.calculatePaymentStatus(totalInvoiced, totalPaid))));
+    // 1. Primary: live memberInvoices from payments collection
+    if (memberInvoices && memberInvoices.length > 0) {
+      const summary = paymentEngine.calculateBillingSummary(memberInvoices);
+      const st = paymentEngine.calculatePaymentStatus(summary.totalBilled, summary.totalCollected, false);
+      return { billed: summary.totalBilled, paid: summary.totalCollected, pending: summary.totalPending, status: st };
+    }
+
+    // 2. Secondary: member.billingHistory on document
+    if (Array.isArray(member?.billingHistory) && member.billingHistory.length > 0) {
+      const summary = paymentEngine.calculateBillingSummary(member.billingHistory);
+      const st = paymentEngine.calculatePaymentStatus(summary.totalBilled, summary.totalCollected, false);
+      return { billed: summary.totalBilled, paid: summary.totalCollected, pending: summary.totalPending, status: st };
+    }
+
+    // 3. Fallback: stored member financial fields
+    const billed = Number(member?.totalBilled !== undefined ? member.totalBilled : (member?.amount || member?.price || 0));
+    const paid = Number(member?.totalPaid !== undefined ? member.totalPaid : (member?.paid || 0));
+    const pending = Math.max(0, billed - paid);
+    const st = paymentEngine.calculatePaymentStatus(billed, paid, false);
+    return { billed, paid, pending, status: st };
+  }, [memberInvoices, member, isHold]);
+
+  const totalInvoiced = canonicalSummary.billed;
+  const totalPaid = canonicalSummary.paid;
+  const outstanding = canonicalSummary.pending;
+  const payStatus = canonicalSummary.status;
+  const isMemberPaid = payStatus === 'PAID';
 
   // ── SELF HEAL & FALLBACK member fetch ───────────────────────────
   useEffect(() => {
@@ -234,38 +249,24 @@ export default function ClientProfileSystem() {
     if (!id) return;
     let isMounted = true;
 
-    const fetchFallbackInvoices = async () => {
-      try {
-        const res = await API.get(`/billing?memberId=${id}`);
-        const list = res.data || [];
-        if (isMounted) setMemberInvoices(list);
-      } catch (e) {
-        console.warn('API fallback invoices fetch failed:', e);
+    const targetMember = member || { id };
+    const unsub = billingRepository.subscribeMemberBilling(
+      targetMember,
+      (list) => {
+        if (isMounted) {
+          setMemberInvoices(list);
+        }
+      },
+      (err) => {
+        console.warn('Member invoices subscription notice:', err?.message || err);
       }
-    };
-
-    const unsub = onSnapshot(collection(db, 'payments'), (snap) => {
-      if (!isMounted) return;
-      const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      const candidateIds = new Set([id, member?.id, member?.memberId, member?.uid].filter(Boolean));
-      const cleanPhone = (member?.phone || '').replace(/\D/g, '');
-      const filtered = allDocs.filter((p: any) => {
-        if (!p) return false;
-        if (p.memberId && candidateIds.has(p.memberId)) return true;
-        if (p.memberPhone && cleanPhone && p.memberPhone.replace(/\D/g, '') === cleanPhone) return true;
-        return false;
-      });
-      setMemberInvoices(filtered);
-    }, (error) => {
-      console.warn("Member invoices snapshot error:", error.message);
-      if (isMounted) fetchFallbackInvoices();
-    });
+    );
 
     return () => {
       isMounted = false;
       unsub();
     };
-  }, [id]);
+  }, [id, member]);
 
   if (loading) {
     return (
@@ -608,7 +609,7 @@ export default function ClientProfileSystem() {
                 },
                 {
                   label: 'PAYMENT',
-                  value: payStatus === 'PAID' ? 'PAID' : (payStatus === 'NO INVOICES' ? 'NO INVOICE' : 'DUE'),
+                  value: payStatus === 'PAID' ? 'PAID' : ((payStatus as string) === 'NO INVOICES' || payStatus === 'NOT_BILLED' ? 'NO INVOICE' : 'DUE'),
                   color: payStatus === 'PAID' ? '#10b981' : '#f59e0b',
                   icon: '💳',
                 },

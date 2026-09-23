@@ -1079,7 +1079,15 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
     const agentRoot = path.resolve(rootDir, 'warrior-biometric-agent');
     const scriptPath = path.resolve(agentRoot, 'enroll_cli.py');
 
+    if (type === 'FINGERPRINT' || type === 'BOTH') {
+      console.log(`[FP REQUEST RECEIVED BY BACKEND] employeeNo=${bioId}`);
+      console.log(`[FP REQUEST SENT TO LOCAL AGENT] employeeNo=${bioId}`);
+    }
+
     exec(`py "${scriptPath}" ${cliCmd} ${bioId} "${nameStr}"`, { cwd: agentRoot }, async (err, stdout, stderr) => {
+      if (stderr) {
+        console.log(stderr.trim());
+      }
       let resultData: any = null;
       try {
         if (stdout) resultData = JSON.parse(stdout.trim());
@@ -1157,19 +1165,23 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
       if (isSuccess) {
         return res.json({
           success: true,
+          status: resultData?.status || 'ENROLLING',
           biometricUserId: bioId,
           enrollmentType: type,
-          message: `${type} enrollment completed on Hikvision terminal`,
+          message: resultData?.message || `${type} enrollment command active on Hikvision terminal`,
           deviceResult: resultData
         });
       } else if (requiresTerminalAction) {
         return res.json({
           success: false,
+          supported: resultData?.supported === true,
+          reason: resultData?.reason || 'REMOTE_FINGERPRINT_ENROLLMENT_NOT_SUPPORTED',
           requiresTerminalAction: true,
-          status: resultData?.status || 'WAITING_FOR_TERMINAL',
+          status: resultData?.status || 'TERMINAL_ENROLLMENT_REQUIRED',
           biometricUserId: bioId,
           enrollmentType: type,
-          message: resultData?.errorMessage || `Person ${bioId} created on Hikvision terminal. Terminal action required.`,
+          message: resultData?.message || `Person ${bioId} created on Hikvision terminal. Terminal action required.`,
+          instruction: resultData?.instruction || `Tap Terminal Screen → Menu → User #${bioId} → Fingerprint → Scan finger 3 times.`,
           deviceResult: resultData
         });
       } else {

@@ -165,7 +165,7 @@ class StaffDirectoryService {
         }
       }
     } catch (err) {
-      console.warn('[StaffService] Reconciliation sync notice:', err);
+      // silenced — expected without Firebase auth
     }
   }
 
@@ -225,7 +225,7 @@ class StaffDirectoryService {
         directoryMap.set(key, staffItem);
       });
     } catch (err) {
-      console.warn('[StaffService] Firestore employees fetch failed, checking API:', err);
+      // silenced — falls back to REST API
       try {
         const res = await API.get('/employees');
         if (Array.isArray(res.data)) {
@@ -316,7 +316,7 @@ class StaffDirectoryService {
         }
       });
     } catch (err) {
-      console.warn('[StaffService] Firestore trainers fetch warning:', err);
+      // silenced — expected without Firebase auth
     }
 
     return Array.from(directoryMap.values()).filter(item => !item.isDeleted && !this.isFakeStaff(item));

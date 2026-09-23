@@ -116,9 +116,7 @@ export default function DashboardLayout({
     const unsubscribeFeed = onSnapshot(qFeed, (snapshot) => {
       const logs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
       setRealtimeFeed(logs);
-    }, (err) => {
-      console.warn("Firestore dashboard feed listener error:", err);
-    });
+    }, () => { /* silenced: permission-denied expected without Firebase auth */ });
 
     // 3. Listen for push notifications from device service (checkin, alert, enrollment)
     const notifCollection = collection(fDb, 'notifications');
@@ -166,18 +164,14 @@ export default function DashboardLayout({
           });
         }
       });
-    }, (err) => {
-      console.warn("Firestore dashboard notifications listener error:", err);
-    });
+    }, () => { /* silenced */ });
 
     // 4. Listen for gym_presence for Live Members Engine
     const presenceCollection = collection(fDb, 'gym_presence');
     const unsubscribePresence = onSnapshot(presenceCollection, (snapshot) => {
       const presenceList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       useGymStore.getState().setGymPresence(presenceList);
-    }, (err) => {
-      console.warn("Firestore dashboard presence listener error:", err);
-    });
+    }, () => { /* silenced */ });
 
     // 5. Listen for devices status in real-time
     const devicesCollection = collection(fDb, 'devices');
@@ -195,9 +189,7 @@ export default function DashboardLayout({
       
       useDeviceStore.getState().setDeviceStatus(status);
       useGymStore.setState({ deviceStatus: status });
-    }, (err) => {
-      console.warn("Firestore dashboard devices listener error:", err);
-    });
+    }, () => { /* silenced */ });
 
     return () => {
       unsubscribeFeed();

@@ -373,6 +373,88 @@ export const createMember = async (req: Request, res: Response) => {
       });
     }
 
+    // Link Canonical Transactions to Member Profile
+    const canonicalBillingHistory: any[] = [];
+    const canonicalMembershipHistory: any[] = [];
+
+    if (payment) {
+      canonicalBillingHistory.push({
+        transactionId: payment.id,
+        memberId: member.id,
+        memberCode: member.memberId || '',
+        biometricId: member.biometricId || member.deviceUserId || '',
+        invoiceId: payment.id,
+        invoiceNumber: payment.invoiceNumber || invoiceNumber,
+        packageId: payment.packageId || 'p_mon',
+        packageName: plan || 'Monthly Standard',
+        billingDate: startJoinDate,
+        paymentDate: startJoinDate,
+        startDate: memStartDate,
+        expiryDate: finalExpiry,
+        originalAmount: origAmount,
+        discount: discAmount,
+        tax: taxAmount,
+        otherCharges: othCharges,
+        netPayable: netPayable,
+        amountPaid: amountPaid,
+        pendingAmount: outstandingAmount,
+        paymentMethod: paymentMethod || 'UPI',
+        paymentStatus: outstandingAmount <= 0 ? 'PAID' : (amountPaid > 0 ? 'PARTIAL' : 'UNPAID'),
+        billingType: 'MEMBERSHIP',
+        isHistorical: false,
+        createdAt: payment.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      canonicalMembershipHistory.push({
+        transactionId: payment.id,
+        plan: plan || 'Monthly Standard',
+        startDate: memStartDate,
+        expiryDate: finalExpiry,
+        amount: netPayable,
+        paid: amountPaid,
+        invoiceId: invoiceNumber,
+        createdAt: payment.createdAt || new Date().toISOString()
+      });
+    }
+
+    if (ptPayment) {
+      canonicalBillingHistory.push({
+        transactionId: ptPayment.id,
+        memberId: member.id,
+        memberCode: member.memberId || '',
+        biometricId: member.biometricId || member.deviceUserId || '',
+        invoiceId: ptPayment.id,
+        invoiceNumber: ptPayment.invoiceNumber,
+        packageId: ptPayment.packageId,
+        packageName: ptPayment.packageName,
+        billingDate: ptPayment.billingDate,
+        paymentDate: ptPayment.paymentDate,
+        startDate: ptPayment.startDate,
+        expiryDate: ptPayment.expiryDate,
+        originalAmount: ptPayment.originalAmount,
+        discount: ptPayment.discountAmount,
+        tax: ptPayment.taxAmount,
+        otherCharges: 0,
+        netPayable: ptPayment.netPayable,
+        amountPaid: ptPayment.amountPaid,
+        pendingAmount: ptPayment.pendingAmount,
+        paymentMethod: ptPayment.paymentMethod,
+        paymentStatus: ptPayment.pendingAmount <= 0 ? 'PAID' : (ptPayment.amountPaid > 0 ? 'PARTIAL' : 'UNPAID'),
+        billingType: 'PT',
+        isHistorical: false,
+        createdAt: ptPayment.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await db.updateMember(member.id, {
+      billingHistory: canonicalBillingHistory,
+      payments: canonicalBillingHistory,
+      membershipHistory: canonicalMembershipHistory,
+      updatedAt: new Date().toISOString()
+    });
+
     console.log(`[Credentials Notification] Sent credentials to ${name} (${loginEmail}) via simulated SMS & WhatsApp. Password: ${password || '1234567'}`);
 
     // Trigger Automated Emails
@@ -381,7 +463,7 @@ export const createMember = async (req: Request, res: Response) => {
       triggerPaymentEmail(payment).catch(err => console.error('[Automation] Payment email failed:', err));
     }
 
-    res.status(201).json({ ...member, invoice: payment, ptInvoice: ptPayment });
+    res.status(201).json({ ...member, billingHistory: canonicalBillingHistory, membershipHistory: canonicalMembershipHistory, invoice: payment, ptInvoice: ptPayment });
   } catch (error: any) {
     console.error('Failed to create member:', error);
     res.status(500).json({ error: error.message });

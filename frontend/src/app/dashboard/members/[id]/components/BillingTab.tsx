@@ -15,6 +15,7 @@ import { cleanPlanName, formatDate } from '@/lib/utils';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 import API from '@/services/api';
+import { billingRepository, CanonicalTransaction } from '@/services/billingRepository';
 import RenewalWizardModal from '../../components/RenewalWizardModal';
 import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
 import EditBillingModal from './EditBillingModal';
@@ -77,87 +78,47 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
     };
   }, [openDropdown]);
 
-  // Real-time listener for member invoices
+  // Canonical Real-time listener for member invoices with API Fallback
   useEffect(() => {
     if (!member) return;
     setLoading(true);
 
-    const fallbackInvoices = Array.isArray(member.billingHistory) && member.billingHistory.length > 0
-      ? member.billingHistory
-      : (Array.isArray(member.payments) && member.payments.length > 0 ? member.payments : []);
+    const unsub = billingRepository.subscribeMemberBilling(
+      member,
+      (liveData: any[]) => {
+        const combinedMap = new Map<string, any>();
 
-    const candidateIds = new Set([member.id, member.uid, member.memberId, member.docId].filter(Boolean));
-    const cleanPhone = (member.phone || '').replace(/\D/g, '');
-
-    const unsub = onSnapshot(collection(db, 'payments'), (snap) => {
-      const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      const liveData = allDocs.filter((p: any) => {
-        if (!p) return false;
-        if (p.memberId && candidateIds.has(p.memberId)) return true;
-        if (p.memberPhone && cleanPhone && p.memberPhone.replace(/\D/g, '') === cleanPhone) return true;
-        return false;
-      });
-      const combinedMap = new Map<string, any>();
-
-      if (liveData.length > 0) {
-        liveData.forEach((inv: any) => {
-          // If member is on HOLD, filter out fake zero-amount legacy invoices
-          if (isHold && Number(inv.amount || inv.netPayable || 0) === 0 && Number(inv.amountPaid || inv.paid || 0) === 0) {
-            return;
-          }
-          const key = inv.id || inv.invoiceNumber || inv.invoice;
-          combinedMap.set(key, inv);
-        });
-      } else if (!isHold && fallbackInvoices.length > 0) {
-        fallbackInvoices.forEach((inv: any, idx: number) => {
-          const key = inv.id || inv.invoiceNumber || inv.invoice || `inv_${idx}`;
-          combinedMap.set(key, inv);
-        });
-      } else if (!isHold && member) {
-        const amountPaid = Number(member.amountPaid !== undefined ? member.amountPaid : (member.paid ?? member.totalPaid ?? member.amount ?? member.price ?? 0));
-        const balanceAmount = Number(member.balanceAmount !== undefined ? member.balanceAmount : (member.balance ?? member.outstandingBalance ?? 0));
-        const totalBilled = Number(member.totalBilled !== undefined ? member.totalBilled : (amountPaid + balanceAmount));
-        if (totalBilled > 0 || amountPaid > 0) {
-          const autoInv = {
-            id: `inv_auto_${member.id || Date.now()}`,
-            invoiceNumber: member.clientId ? `INV-LEG-${member.clientId}` : (member.memberId ? member.memberId.replace('TWG-2026-', '') : '670'),
-            invoice: member.clientId ? `INV-LEG-${member.clientId}` : (member.memberId ? member.memberId.replace('TWG-2026-', '') : '670'),
-            plan: member.packageName || member.plan || 'General Membership',
-            packageName: member.packageName || member.plan || 'General Membership',
-            amount: totalBilled,
-            totalBilled: totalBilled,
-            packagePrice: totalBilled,
-            paid: amountPaid,
-            amountPaid: amountPaid,
-            pendingAmount: balanceAmount,
-            balanceAmount: balanceAmount,
-            discount: 0,
-            method: member.paymentMethod || member.method || 'Imported',
-            status: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
-            paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
-            date: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
-            startDate: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
-            expiryDate: member.expiryDate || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          };
-          combinedMap.set(autoInv.id, autoInv);
+        if (liveData && liveData.length > 0) {
+          liveData.forEach((inv: any) => {
+            // If member is on HOLD, filter out fake zero-amount legacy invoices
+            if (isHold && Number(inv.amount || inv.netPayable || 0) === 0 && Number(inv.amountPaid || inv.paid || 0) === 0) {
+              return;
+            }
+            const key = inv.id || inv.transactionId || inv.invoiceNumber || inv.invoice;
+            combinedMap.set(key, inv);
+          });
+        } else if (!isHold && Array.isArray(member.billingHistory) && member.billingHistory.length > 0) {
+          member.billingHistory.forEach((inv: any) => {
+            const key = inv.transactionId || inv.id || inv.invoiceNumber || inv.invoice;
+            combinedMap.set(key, inv);
+          });
         }
+
+        const sorted = Array.from(combinedMap.values()).sort((a: any, b: any) =>
+          new Date(b.date || b.paymentDate || b.createdAt || b.startDate || 0).getTime() -
+          new Date(a.date || a.paymentDate || a.createdAt || a.startDate || 0).getTime()
+        );
+
+        setInvoices(sorted);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn('BillingTab subscription fallback notice:', err);
       }
-
-      const sorted = Array.from(combinedMap.values()).sort((a: any, b: any) =>
-        new Date(b.date || b.createdAt || b.startDate || 0).getTime() -
-        new Date(a.date || a.createdAt || a.startDate || 0).getTime()
-      );
-
-      setInvoices(sorted);
-      setLoading(false);
-    }, (err) => {
-      console.warn("Firestore payments listener notice:", err);
-      setInvoices(fallbackInvoices);
-      setLoading(false);
-    });
+    );
 
     return () => unsub();
-  }, [member]);
+  }, [member, isHold]);
 
   // Filter for billing types: ALL, MEMBERSHIP, PT
   const [billingTypeFilter, setBillingTypeFilter] = useState<'all' | 'membership' | 'pt'>('all');

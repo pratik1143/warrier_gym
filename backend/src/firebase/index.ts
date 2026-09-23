@@ -1120,19 +1120,43 @@ export const db = {
   getPayments: async (options?: { memberId?: string; limit?: number }): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      let q: admin.firestore.Query = firestore.collection('payments');
       if (options?.memberId) {
-        q = q.where('memberId', '==', options.memberId);
+        const memId = String(options.memberId).trim();
+        const candidateIds = new Set<string>([memId]);
+        try {
+          const mDoc = await firestore.collection('members').doc(memId).get();
+          if (mDoc.exists) {
+            const md = mDoc.data() as any;
+            if (md?.memberId) candidateIds.add(String(md.memberId).trim());
+            if (md?.uid) candidateIds.add(String(md.uid).trim());
+          } else {
+            const qCode = await firestore.collection('members').where('memberId', '==', memId).limit(1).get();
+            if (!qCode.empty) {
+              candidateIds.add(qCode.docs[0].id);
+              const md = qCode.docs[0].data() as any;
+              if (md?.uid) candidateIds.add(String(md.uid).trim());
+            }
+          }
+        } catch (e) {}
+
+        const allDocsSnap = await firestore.collection('payments').get();
+        let list = allDocsSnap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() as any }))
+          .filter(p => candidateIds.has(String(p.memberId || '')) || candidateIds.has(String(p.memberUid || '')));
+
+        list = list.sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
+        if (options.limit && options.limit > 0) {
+          list = list.slice(0, options.limit);
+        }
+        return list;
       }
-      // If no memberId filter, order by date
-      if (!options?.memberId) {
-        q = q.orderBy('date', 'desc');
-      }
+
+      let q: admin.firestore.Query = firestore.collection('payments').orderBy('date', 'desc');
       if (options?.limit && options.limit > 0) {
         q = q.limit(options.limit);
       }
       const snapshot = await q.get();
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
       return list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
     }
     let list = mockPayments;

@@ -7,7 +7,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { db } from '@/lib/firebase';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
+import { billingRepository } from '@/services/billingRepository';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 
@@ -272,7 +273,7 @@ export default function CreateNewBillModal({
       const computedPayStatus = outstanding <= 0 ? 'paid' : (paidAmt > 0 ? 'partial' : 'unpaid');
       const computedDaysLeft = membershipEngine.calculateDaysLeft(data.expiryDate);
 
-      const billPayload = {
+      const billPayload: any = {
         memberId: member.id,
         memberName: member.name,
         memberPhone: member.phone || '',
@@ -307,19 +308,23 @@ export default function CreateNewBillModal({
         isRealTimeToday: true,
       };
 
-      // 1. Post to store / backend API
+      // 1. Create canonical bill via repository (atomic backend execution + idempotency protection)
+      const idempotencyKey = `pay_${member.id}_${data.plan}_${new Date().toISOString().split('T')[0]}_${Date.now()}`;
+      billPayload.idempotencyKey = idempotencyKey;
+
+      let createdInvoice: any = null;
       try {
-        await addPayment(billPayload);
-      } catch (apiErr) {
-        console.warn('Backend billing API call error, falling back to direct Firestore write:', apiErr);
+        createdInvoice = await billingRepository.createBill(billPayload);
+      } catch (apiErr: any) {
+        console.warn('Backend billing API call error:', apiErr);
       }
 
-      // 2. Direct Firestore fallback guarantee
-      await setDoc(doc(db, 'payments', `inv_${Date.now()}`), billPayload);
+      const txId = createdInvoice?.id || `tx_${Date.now()}`;
 
-      // 3. Update Member Document: set status to 'active' (HOLD -> ACTIVE)
+      // 2. Update Member Document: set status to 'active' (HOLD -> ACTIVE) & Link Canonical History
       const existingHistory = Array.isArray(member.membershipHistory) ? member.membershipHistory : [];
       const newHistoryEntry = {
+        transactionId: txId,
         plan: data.plan,
         startDate: data.startDate,
         expiryDate: data.expiryDate,
@@ -330,9 +335,49 @@ export default function CreateNewBillModal({
       };
       const updatedHistory = [...existingHistory, newHistoryEntry];
 
+      const canonicalTx = {
+        transactionId: txId,
+        memberId: member.id,
+        memberCode: member.memberId || '',
+        biometricId: member.biometricId || member.deviceUserId || '',
+        invoiceId: txId,
+        invoiceNumber: invNum,
+        packageId: data.plan,
+        packageName: data.plan,
+        billingDate: new Date().toISOString().split('T')[0],
+        paymentDate: new Date().toISOString().split('T')[0],
+        startDate: data.startDate,
+        expiryDate: data.expiryDate,
+        originalAmount: origAmt,
+        discount: discAmt,
+        tax: taxAmt,
+        otherCharges: 0,
+        netPayable: netPay,
+        amountPaid: paidAmt,
+        pendingAmount: outstanding,
+        paymentMethod: data.method,
+        paymentStatus: computedPayStatus,
+        billingType: 'MEMBERSHIP',
+        isHistorical: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const existingBilling = Array.isArray(member.billingHistory) ? member.billingHistory : [];
+      const updatedBillingHistory = [canonicalTx, ...existingBilling.filter((b: any) => b.invoiceNumber !== invNum && b.transactionId !== txId)];
+
       const newTotalPaid = (Number(member.totalPaid) || 0) + paidAmt;
       const newTotalBilled = (Number(member.totalBilled) || 0) + netPay;
       const newOutstandingBalance = Math.max(0, newTotalBilled - newTotalPaid);
+
+      // Explicit Biometric Safety: Ensure billing NEVER wipes or resets biometric fields
+      const biometricSafetyUpdates: any = {};
+      if (member.biometricId) biometricSafetyUpdates.biometricId = member.biometricId;
+      if (member.deviceUserId) biometricSafetyUpdates.deviceUserId = member.deviceUserId;
+      if (member.biometricUserId) biometricSafetyUpdates.biometricUserId = member.biometricUserId;
+      if (member.faceEnrollmentStatus) biometricSafetyUpdates.faceEnrollmentStatus = member.faceEnrollmentStatus;
+      if (member.fingerprintEnrollmentStatus) biometricSafetyUpdates.fingerprintEnrollmentStatus = member.fingerprintEnrollmentStatus;
+      if (member.biometric) biometricSafetyUpdates.biometric = member.biometric;
 
       await updateDoc(doc(db, 'members', member.id), {
         plan: data.plan,
@@ -358,11 +403,16 @@ export default function CreateNewBillModal({
         balance: newOutstandingBalance,
         balanceAmount: newOutstandingBalance,
         membershipHistory: updatedHistory,
+        billingHistory: updatedBillingHistory,
+        payments: updatedBillingHistory,
         updatedAt: new Date().toISOString(),
+        ...biometricSafetyUpdates,
       });
 
       toast.success(`Bill ${invNum} generated! ${member.name} is now ACTIVE!`);
-      await fetchMembers();
+      const { fetchMembers, fetchPayments } = useGymStore.getState();
+      await fetchMembers(true);
+      await fetchPayments(true);
       if (onSaved) onSaved();
       onClose();
     } catch (err: any) {

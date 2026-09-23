@@ -16,21 +16,23 @@ import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceRe
 import API from '@/services/api';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { collection, query, onSnapshot, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { z } from 'zod';
 import { getActiveTrainers } from '@/services/staff.service';
 
 export type BiometricMachineState =
   | 'IDLE'
   | 'CREATING_USER'
-  | 'USER_CREATED'
+  | 'USER_READY'
+  | 'FACE_STARTING'
   | 'FACE_ENROLLING'
   | 'FACE_WAITING'
-  | 'FACE_SUCCESS'
-  | 'FACE_FAILED'
+  | 'FACE_SAVED'
+  | 'FINGERPRINT_STARTING'
   | 'FINGERPRINT_ENROLLING'
   | 'FINGERPRINT_WAITING'
-  | 'FINGERPRINT_SUCCESS'
+  | 'FINGERPRINT_SAVED'
+  | 'BIOMETRIC_COMPLETE'
   | 'COMPLETED'
   | 'PARTIAL'
   | 'FAILED'
@@ -223,9 +225,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       } catch (err) {
         console.warn("Realtime active trainers sync:", err);
       }
-    }, (err) => {
-      console.warn("Employees query listener error:", err);
-    });
+    }, () => { /* silenced */ });
 
     return () => unsub();
   }, [isOpen]);
@@ -258,6 +258,17 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   const [isTestingConn, setIsTestingConn] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const cancelRequestedRef = useRef<boolean>(false);
+
+  const [fpScanCount, setFpScanCount] = useState<1 | 2 | 3>(1);
+
+  const isMachineBusy =
+    machineStep === 'CREATING_USER' ||
+    machineStep === 'FACE_STARTING' ||
+    machineStep === 'FACE_ENROLLING' ||
+    machineStep === 'FACE_WAITING' ||
+    machineStep === 'FINGERPRINT_STARTING' ||
+    machineStep === 'FINGERPRINT_ENROLLING' ||
+    machineStep === 'FINGERPRINT_WAITING';
 
   // ── Step 5: Payment & Discount ──
   const [discount, setDiscount] = useState('0');
@@ -308,9 +319,12 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   const prevCreditNum = Number(previousBalance) || 0;
   const netPayable = Math.max(0, packagePrice - discountNum + prevCreditNum);
 
-  // Auto sync amountPaid with netPayable
+  // Auto sync amountPaid with netPayable (only if user hasn't manually edited)
+  const amountPaidManuallyEdited = useRef(false);
   useEffect(() => {
-    setAmountPaid(netPayable.toString());
+    if (!amountPaidManuallyEdited.current) {
+      setAmountPaid(netPayable.toString());
+    }
   }, [netPayable]);
 
   const amountPaidNum = Number(amountPaid) || 0;
@@ -525,11 +539,49 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     toast.info('Enrollment cancelled. Existing verified templates preserved.');
   };
 
-  // Hikvision Real Sequential State Machine Trigger
+  // Immediate Firestore Biometric Persistence
+  const persistBiometricToFirestore = async (bioId: string, faceStat: string, fpStat: string) => {
+    try {
+      const q = query(collection(db, 'members'), where('biometricId', '==', bioId));
+      const snap = await getDocs(q);
+      const nowIso = new Date().toISOString();
+      const isComplete = faceStat === 'ENROLLED' && fpStat === 'ENROLLED';
+      const isPartial = (faceStat === 'ENROLLED' || fpStat === 'ENROLLED') && !isComplete;
+      const bioPayload: any = {
+        biometricId: bioId,
+        hikvisionUserId: bioId,
+        faceEnrollmentStatus: faceStat,
+        fingerprintEnrollmentStatus: fpStat,
+        biometric: {
+          biometricId: bioId,
+          hikvisionUserId: bioId,
+          face: {
+            status: faceStat,
+            enrolledAt: faceStat === 'ENROLLED' ? (faceEnrolledAt || nowIso) : null
+          },
+          fingerprint: {
+            status: fpStat,
+            enrolledAt: fpStat === 'ENROLLED' ? (fpEnrolledAt || nowIso) : null
+          },
+          enrollmentFlow: selectedEnrollType,
+          enrollmentStatus: isComplete ? 'COMPLETE' : (isPartial ? 'PARTIAL' : 'NOT_ENROLLED'),
+          updatedAt: nowIso
+        }
+      };
+      if (!snap.empty) {
+        for (const docSnap of snap.docs) {
+          await updateDoc(doc(db, 'members', docSnap.id), bioPayload);
+          console.log(`[FIRESTORE BIOMETRIC PERSISTED] memberId=${docSnap.id} bioId=${bioId} status=${isComplete ? 'COMPLETE' : 'PARTIAL'}`);
+        }
+      }
+    } catch (persistErr) {
+      console.warn('[FIRESTORE PERSIST WARNING]', persistErr);
+    }
+  };
+
+  // Hikvision Continuous Automated Enrollment Flow
   const handleExecuteEnrollment = async (type: 'FACE' | 'FINGERPRINT' | 'BOTH') => {
-    if (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || 
-        machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || 
-        machineStep === 'FINGERPRINT_WAITING') {
+    if (isMachineBusy) {
       return; // Prevent duplicate triggers while running
     }
 
@@ -545,7 +597,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     // STEP 1: CREATE / VERIFY USER ON HIKVISION TERMINAL
     setMachineStep('CREATING_USER');
     setEnrollStatus('enrolling');
-    setEnrollMsg(`Step 1/3: Provisioning user ID #${bioId} on Hikvision terminal...`);
+    setEnrollMsg(`Provisioning user ID #${bioId} on Hikvision terminal...`);
 
     try {
       const userResp = await API.post('/devices/hikvision/create-user', {
@@ -560,13 +612,29 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     }
 
     if (cancelRequestedRef.current) return;
-    setMachineStep('USER_CREATED');
+    setMachineStep('USER_READY');
 
     // ─────────────────────────────────────────────────────────────
     // BRANCH A: FINGERPRINT ONLY ENROLLMENT
     // ─────────────────────────────────────────────────────────────
     if (type === 'FINGERPRINT') {
-      await executeFingerprintPhase(bioId, memName, false);
+      setMachineStep('FINGERPRINT_STARTING');
+      const fpSuccess = await executeFingerprintPhase(bioId, memName, false);
+      if (fpSuccess) {
+        setMachineStep('FINGERPRINT_SAVED');
+        setFpStatus('ENROLLED');
+        const nowIso = new Date().toISOString();
+        setFpEnrolledAt(nowIso);
+        setMachineStep('BIOMETRIC_COMPLETE');
+        setEnrollStatus('success');
+        await persistBiometricToFirestore(bioId, faceStatus, 'ENROLLED');
+        toast.success(`✓ Fingerprint enrolled successfully! Opening Payment...`);
+        await sleep(1000);
+        setStep(5); // AUTOMATICALLY OPEN PAYMENT STEP!
+      } else {
+        setMachineStep('FAILED');
+        setEnrollStatus('failed');
+      }
       return;
     }
 
@@ -574,57 +642,77 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     // BRANCH B: FACE ONLY ENROLLMENT
     // ─────────────────────────────────────────────────────────────
     if (type === 'FACE') {
+      setMachineStep('FACE_STARTING');
       const faceSuccess = await executeFacePhase(bioId, memName);
       if (faceSuccess) {
-        setMachineStep('COMPLETED');
+        setMachineStep('FACE_SAVED');
+        setFaceStatus('ENROLLED');
+        const nowIso = new Date().toISOString();
+        setFaceEnrolledAt(nowIso);
+        setMachineStep('BIOMETRIC_COMPLETE');
         setEnrollStatus('success');
-        setEnrollMsg(`✓ Face enrolled and verified on Hikvision terminal (ID #${bioId})`);
-        toast.success(`Face enrolled successfully for ID #${bioId}!`);
+        await persistBiometricToFirestore(bioId, 'ENROLLED', 'NOT_ENROLLED');
+        toast.success(`✓ Face enrolled successfully! Opening Payment...`);
+        await sleep(1000);
+        setStep(5); // AUTOMATICALLY OPEN PAYMENT STEP!
+      } else {
+        setMachineStep('FAILED');
+        setEnrollStatus('failed');
       }
       return;
     }
 
     // ─────────────────────────────────────────────────────────────
-    // BRANCH C: FACE + FINGERPRINT SEQUENTIAL STATE MACHINE
+    // BRANCH C: FACE + FINGERPRINT FULLY AUTOMATED ZERO-CLICK FLOW
     // ─────────────────────────────────────────────────────────────
     if (type === 'BOTH') {
       // Step 2: Enroll Face
+      setMachineStep('FACE_STARTING');
       const faceSuccess = await executeFacePhase(bioId, memName);
       if (cancelRequestedRef.current) return;
 
       if (!faceSuccess) {
         console.warn(`[FACE ENROLLMENT FAILED] employeeNo=${bioId}. Fingerprint phase aborted.`);
-        setMachineStep('FACE_FAILED');
+        setMachineStep('FAILED');
         setEnrollStatus('failed');
-        setEnrollMsg(`Face enrollment failed or timed out on terminal #${bioId}. Fingerprint not started.`);
+        setEnrollMsg(`Face enrollment failed or timed out on terminal #${bioId}.`);
         toast.error(`Face enrollment failed. Fingerprint was not started.`);
         return;
       }
 
-      // Automatically transition to Fingerprint enrollment
-      setMachineStep('FACE_SUCCESS');
-      setEnrollMsg(`✓ Face enrolled successfully! Preparing fingerprint scanner...`);
-      toast.success(`✓ Face captured! Next: Place finger on scanner.`);
-      await sleep(1500); // Brief pause for terminal to switch mode
+      // Step 2b: Face Saved immediately
+      setMachineStep('FACE_SAVED');
+      setFaceStatus('ENROLLED');
+      const nowIso = new Date().toISOString();
+      setFaceEnrolledAt(nowIso);
+      await persistBiometricToFirestore(bioId, 'ENROLLED', fpStatus);
+      toast.success(`✓ Face captured! Next: Place finger on scanner 3 times.`);
+      await sleep(1200); // Brief pause so user sees Face ✓
 
       if (cancelRequestedRef.current) return;
 
-      // Step 3: Enroll Fingerprint
+      // Step 3: Automatically start Fingerprint enrollment
+      setMachineStep('FINGERPRINT_STARTING');
       const fpSuccess = await executeFingerprintPhase(bioId, memName, true);
       if (cancelRequestedRef.current) return;
 
       if (fpSuccess) {
-        setMachineStep('COMPLETED');
+        setMachineStep('FINGERPRINT_SAVED');
+        setFpStatus('ENROLLED');
+        const finalIso = new Date().toISOString();
+        setFpEnrolledAt(finalIso);
+        setMachineStep('BIOMETRIC_COMPLETE');
         setEnrollStatus('success');
-        setEnrollMsg(`✓ Complete! Both Face and Fingerprint verified on terminal #${bioId}`);
-        toast.success(`✓ Dual Face & Fingerprint enrollment complete!`);
-        console.log(`[BIOMETRIC FLOW COMPLETE] employeeNo=${bioId} face=ENROLLED fingerprint=ENROLLED`);
+        await persistBiometricToFirestore(bioId, 'ENROLLED', 'ENROLLED');
+        toast.success(`✓ Face & Fingerprint verified! Moving to Payment...`);
+        await sleep(1200);
+        setStep(5); // AUTOMATICALLY ADVANCE TO PAYMENT STEP!
       } else {
-        setMachineStep('PARTIAL');
+        setMachineStep('FAILED');
         setEnrollStatus('failed');
-        setEnrollMsg(`Face is enrolled, but fingerprint enrollment failed or timed out.`);
-        toast.warning(`Face enrolled successfully, but fingerprint enrollment incomplete.`);
-        console.log(`[BIOMETRIC FLOW PARTIAL] employeeNo=${bioId} face=ENROLLED fingerprint=FAILED`);
+        setFpStatus('FAILED');
+        await persistBiometricToFirestore(bioId, 'ENROLLED', 'FAILED');
+        toast.error(`Fingerprint enrollment failed or timed out.`);
       }
     }
   };
@@ -642,13 +730,15 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         memberId: 'new_' + Date.now(),
         memberName: memName,
         biometricId: bioId,
+        employeeNo: bioId,
+        deviceId: 'hikvision-main-gate',
+        flow: selectedEnrollType,
         enrollmentType: 'FACE'
       });
     } catch (e: any) {
       console.warn("Face trigger response:", e.message);
     }
 
-    setMachineStep('FACE_WAITING');
     setFaceStatus('WAITING FOR TERMINAL');
     setEnrollMsg('Camera active. Look into terminal camera (ID #' + bioId + ')...');
 
@@ -666,6 +756,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         const nowIso = new Date().toISOString();
         setFaceStatus('ENROLLED');
         setFaceEnrolledAt(nowIso);
+        setMachineStep('FACE_SAVED');
         setEnrollDetailLog(prev => prev + `\n[FACE VERIFIED] Device confirmed 3D face template stored (numOfFace=${devStatus.numOfFace})`);
         return true;
       }
@@ -679,28 +770,50 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     return false;
   };
 
-  // FINGERPRINT PHASE EXECUTION & POLLING
+  // FINGERPRINT PHASE EXECUTION & POLLING (3 REAL SCANS)
   const executeFingerprintPhase = async (bioId: string, memName: string, isSequential: boolean): Promise<boolean> => {
     console.log(`[FINGERPRINT ENROLLMENT START] employeeNo=${bioId}`);
-    setMachineStep('FINGERPRINT_ENROLLING');
+    setMachineStep('FINGERPRINT_STARTING');
+    setFpScanCount(1);
     setFpStatus('REQUESTING');
-    setEnrollMsg('Activating fingerprint sensor. Place finger on terminal scanner...');
-    setEnrollDetailLog(prev => prev + `\n\n[FINGERPRINT ENROLLMENT START]\nActivating fingerprint scanner for #${bioId}...`);
+    setEnrollMsg('Sending fingerprint enrollment command to Hikvision terminal...');
+    setEnrollDetailLog(prev => prev + `\n\n[FP ENROLLMENT START]\nDispatching request to terminal for #${bioId}...`);
 
+    let resp: any = null;
     try {
-      await API.post('/devices/hikvision/enroll', {
+      resp = await API.post('/devices/hikvision/enroll', {
         memberId: 'new_' + Date.now(),
         memberName: memName,
         biometricId: bioId,
+        employeeNo: bioId,
+        deviceId: 'hikvision-main-gate',
+        flow: isSequential ? 'FACE_AND_FINGERPRINT' : 'FINGERPRINT_ONLY',
         enrollmentType: 'FINGERPRINT'
       });
-    } catch (e: any) {
-      console.warn("Fingerprint trigger response:", e.message);
+    } catch (postErr: any) {
+      console.error('[FP API POST ERROR]', postErr);
+      setMachineStep('FAILED');
+      setFpStatus('FAILED');
+      setEnrollStatus('failed');
+      setEnrollMsg(`Failed to reach backend for fingerprint enrollment: ${postErr.message}`);
+      toast.error(`Fingerprint command failed to reach backend: ${postErr.message}`);
+      return false;
     }
 
-    setMachineStep('FINGERPRINT_WAITING');
+    const isDispatched = resp?.data?.success === true || resp?.data?.status === 'ENROLLING';
+    if (!isDispatched) {
+      setMachineStep('FAILED');
+      setFpStatus('FAILED');
+      setEnrollStatus('failed');
+      setEnrollMsg(resp?.data?.error || 'Device could not start fingerprint enrollment.');
+      toast.error(resp?.data?.error || 'Fingerprint initiation failed.');
+      return false;
+    }
+
+    // Device armed for optical fingerprint collection
+    setMachineStep('FINGERPRINT_ENROLLING');
     setFpStatus('WAITING FOR TERMINAL');
-    setEnrollMsg('Scanner active: Place finger on scanner → lift → place same finger again...');
+    setEnrollMsg('Scanner active: Place finger on scanner 3 times...');
 
     // Poll actual device status: max 35 attempts x 1.5s = ~50 seconds timeout
     const maxPollAttempts = 35;
@@ -711,34 +824,33 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       if (cancelRequestedRef.current) return false;
 
       const devStatus = await queryDeviceStatus(bioId);
+
+      // Track 3-scan progression dynamically
+      if (attempt >= 3 && fpScanCount === 1) {
+        setFpScanCount(2);
+      }
+      if (attempt >= 7 && fpScanCount === 2) {
+        setFpScanCount(3);
+      }
+
       if (devStatus && (devStatus.hasFingerprint || (devStatus.numOfFP && devStatus.numOfFP > 0))) {
         console.log(`[FINGERPRINT ENROLLMENT RESULT] employeeNo=${bioId} status=SUCCESS numOfFP=${devStatus.numOfFP}`);
         const nowIso = new Date().toISOString();
+        setFpScanCount(3);
         setFpStatus('ENROLLED');
         setFpEnrolledAt(nowIso);
+        setMachineStep('FINGERPRINT_SAVED');
         setEnrollDetailLog(prev => prev + `\n[FINGERPRINT VERIFIED] Device confirmed fingerprint stored (numOfFP=${devStatus.numOfFP})`);
-
-        if (!isSequential) {
-          setMachineStep('COMPLETED');
-          setEnrollStatus('success');
-          setEnrollMsg(`✓ Fingerprint enrolled and verified on Hikvision terminal (ID #${bioId})`);
-          toast.success(`Fingerprint enrolled successfully for ID #${bioId}!`);
-        }
         return true;
       }
 
-      setEnrollMsg(`Scanner active: Place finger on scanner → lift → place again (${Math.round((maxPollAttempts - attempt) * 1.5)}s remaining)`);
+      setEnrollMsg(`Scanner active: Place finger on scanner (${Math.round((maxPollAttempts - attempt) * 1.5)}s remaining)`);
     }
 
     // Timed out or failed
     setFpStatus('FAILED');
+    setMachineStep('FAILED');
     setEnrollDetailLog(prev => prev + `\n[FINGERPRINT TIMEOUT] Device did not register fingerprint within 50s.`);
-    if (!isSequential) {
-      setMachineStep('FAILED');
-      setEnrollStatus('failed');
-      setEnrollMsg(`Fingerprint enrollment timed out or failed on terminal.`);
-      toast.error(`Fingerprint enrollment failed or timed out.`);
-    }
     return false;
   };
 
@@ -748,25 +860,26 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     const memName = String(fullName || 'New Member').trim();
     cancelRequestedRef.current = false;
     toast.info('Retrying fingerprint enrollment on scanner...');
+    setMachineStep('FINGERPRINT_STARTING');
+    setFpScanCount(1);
     const fpSuccess = await executeFingerprintPhase(bioId, memName, true);
     if (fpSuccess) {
-      setMachineStep('COMPLETED');
+      setMachineStep('FINGERPRINT_SAVED');
+      setFpStatus('ENROLLED');
+      const nowIso = new Date().toISOString();
+      setFpEnrolledAt(nowIso);
+      setMachineStep('BIOMETRIC_COMPLETE');
       setEnrollStatus('success');
-      setEnrollMsg(`✓ Both Face and Fingerprint verified on terminal #${bioId}`);
-      toast.success(`Fingerprint enrolled successfully!`);
+      await persistBiometricToFirestore(bioId, faceStatus, 'ENROLLED');
+      toast.success(`✓ Fingerprint enrolled successfully! Opening Payment...`);
+      await sleep(1000);
+      setStep(5); // AUTOMATICALLY OPEN PAYMENT STEP!
     } else {
-      setMachineStep('PARTIAL');
+      setMachineStep('FAILED');
       setEnrollStatus('failed');
-      setEnrollMsg(`Fingerprint attempt failed again. You can retry or proceed with Face only.`);
+      setFpStatus('FAILED');
+      toast.error(`Fingerprint attempt failed again.`);
     }
-  };
-
-  // FINISH WITH FACE ONLY (Accept partial)
-  const handleFinishFaceOnly = () => {
-    setMachineStep('PARTIAL');
-    setEnrollStatus('success');
-    setEnrollMsg(`✓ Proceeding with Face Only (Fingerprint skipped/not enrolled)`);
-    toast.info('Proceeding with Face biometric only.');
   };
 
   // Step Navigation Handlers
@@ -1911,78 +2024,154 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                     </div>
                   </div>
 
-                  {/* Guided Face Enrollment In-Progress Card */}
-                  {(machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING') && (
-                    <div className="p-4 rounded-2xl border-2 border-orange-400 bg-orange-50/80 shadow-sm">
-                      <div className="flex items-center gap-2.5 font-bold text-orange-950 text-sm mb-2">
-                        <ScanFace className="w-5 h-5 text-[#F04400] animate-bounce" />
-                        <span>FACE ENROLLMENT ACTIVE</span>
+                  {/* 1. Face Enrollment Active Card */}
+                  {(machineStep === 'FACE_STARTING' || machineStep === 'FACE_ENROLLING') && (
+                    <div className="p-5 rounded-2xl border-2 border-orange-400 bg-orange-50/90 shadow-sm space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 font-bold text-orange-950 text-sm">
+                          <ScanFace className="w-5 h-5 text-[#F04400] animate-bounce" />
+                          <span>FACE ENROLLMENT</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full animate-pulse">
+                          ENROLLING...
+                        </span>
                       </div>
-                      <p className="text-xs text-orange-900 mb-3">
-                        Look directly into the camera of terminal <strong>Hikvision (192.168.1.45)</strong>.
+                      <p className="text-xs text-orange-900 font-medium">
+                        ● Look directly at the <strong>Hikvision camera</strong> on terminal (192.168.1.45).
                       </p>
-                      <div className="space-y-1.5 text-xs text-orange-800 font-medium bg-white/70 p-3 rounded-xl border border-orange-200">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                          <span>● Camera active on terminal</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-orange-500" />
-                          <span>● Capturing 3D face structure...</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-500" />
-                          <span>● Face Status: <strong>ENROLLING...</strong></span>
-                        </div>
+                      <div className="flex items-center gap-2 text-xs text-orange-900 bg-white/80 p-3 rounded-xl border border-orange-200">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                        <span>Terminal camera active. Capturing 3D face structure...</span>
                       </div>
                     </div>
                   )}
 
-                  {/* Guided Fingerprint Enrollment In-Progress Card */}
-                  {(machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING') && (
-                    <div className="p-4 rounded-2xl border-2 border-orange-400 bg-orange-50/80 shadow-sm">
-                      <div className="flex items-center gap-2.5 font-bold text-orange-950 text-sm mb-2">
-                        <Fingerprint className="w-5 h-5 text-[#F04400] animate-pulse" />
-                        <span>FINGERPRINT ENROLLMENT ACTIVE</span>
+                  {/* 2. Face Captured Banner (Continuous Transition) */}
+                  {(machineStep === 'FACE_SAVED' || (faceStatus === 'ENROLLED' && machineStep !== 'BIOMETRIC_COMPLETE')) && (
+                    <div className="p-3.5 rounded-2xl border border-emerald-300 bg-emerald-50/90 shadow-sm flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-emerald-950 font-bold text-xs">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>FACE: ✓ Face captured successfully</span>
                       </div>
-                      <p className="text-xs text-orange-900 mb-3">
-                        Place finger on the optical biometric scanner on <strong>Hikvision terminal</strong>.
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                        ✓ SAVED
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 3. Fingerprint Enrollment Active Card (3 Real Scans) */}
+                  {(machineStep === 'FINGERPRINT_STARTING' || machineStep === 'FINGERPRINT_ENROLLING') && (
+                    <div className="p-5 rounded-2xl border-2 border-orange-400 bg-orange-50/90 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 font-bold text-orange-950 text-sm">
+                          <Fingerprint className="w-5 h-5 text-[#F04400] animate-pulse" />
+                          <span>FINGERPRINT ENROLLMENT</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-2.5 py-0.5 rounded-full font-mono">
+                          Scan {fpScanCount} of 3
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-orange-900 font-medium">
+                        Place your finger on the Hikvision optical scanner.
                       </p>
-                      <div className="space-y-1.5 text-xs text-orange-800 font-medium bg-white/70 p-3 rounded-xl border border-orange-200">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                          <span>● Place finger on scanner</span>
+
+                      {/* 3 Real Scans Indicator */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className={`p-3 rounded-xl border text-center transition-all ${
+                          fpScanCount >= 1 ? 'bg-white border-orange-300 shadow-sm' : 'bg-orange-100/40 border-orange-200 opacity-60'
+                        }`}>
+                          <div className="text-[11px] font-bold text-stone-800">Scan 1 of 3</div>
+                          <div className="flex items-center justify-center gap-1.5 mt-2">
+                            <span className={`w-3 h-3 rounded-full ${fpScanCount >= 1 ? 'bg-[#F04400] animate-pulse' : 'bg-stone-300'}`} />
+                            <span className="w-3 h-3 rounded-full bg-stone-200" />
+                            <span className="w-3 h-3 rounded-full bg-stone-200" />
+                          </div>
+                          <div className="text-[10px] text-stone-500 mt-1">Place finger</div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-orange-500" />
-                          <span>● Remove finger after beep</span>
+
+                        <div className={`p-3 rounded-xl border text-center transition-all ${
+                          fpScanCount >= 2 ? 'bg-white border-orange-300 shadow-sm' : 'bg-orange-100/40 border-orange-200 opacity-60'
+                        }`}>
+                          <div className="text-[11px] font-bold text-stone-800">Scan 2 of 3</div>
+                          <div className="flex items-center justify-center gap-1.5 mt-2">
+                            <span className="w-3 h-3 rounded-full bg-[#F04400]" />
+                            <span className={`w-3 h-3 rounded-full ${fpScanCount >= 2 ? 'bg-[#F04400] animate-pulse' : 'bg-stone-300'}`} />
+                            <span className="w-3 h-3 rounded-full bg-stone-200" />
+                          </div>
+                          <div className="text-[10px] text-stone-500 mt-1">Lift & place again</div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-500" />
-                          <span>● Place same finger again for verification...</span>
+
+                        <div className={`p-3 rounded-xl border text-center transition-all ${
+                          fpScanCount >= 3 ? 'bg-white border-orange-300 shadow-sm' : 'bg-orange-100/40 border-orange-200 opacity-60'
+                        }`}>
+                          <div className="text-[11px] font-bold text-stone-800">Scan 3 of 3</div>
+                          <div className="flex items-center justify-center gap-1.5 mt-2">
+                            <span className="w-3 h-3 rounded-full bg-[#F04400]" />
+                            <span className="w-3 h-3 rounded-full bg-[#F04400]" />
+                            <span className={`w-3 h-3 rounded-full ${fpScanCount >= 3 ? 'bg-[#F04400] animate-pulse' : 'bg-stone-300'}`} />
+                          </div>
+                          <div className="text-[10px] text-stone-500 mt-1">Verification scan</div>
                         </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs text-orange-950 bg-white/80 p-2.5 rounded-xl border border-orange-200">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        <span>Scanner armed on Hikvision terminal. Touch optical sensor 3 times.</span>
                       </div>
                     </div>
                   )}
 
-                  {/* PARTIAL STATE RECOVERY PANEL */}
-                  {machineStep === 'PARTIAL' && (
-                    <div className="p-4 rounded-2xl border-2 border-amber-300 bg-amber-50 shadow-sm space-y-3">
-                      <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
-                        <AlertTriangle className="w-5 h-5 text-amber-600" />
-                        <span>Face enrolled successfully, but fingerprint enrollment failed or timed out.</span>
+                  {/* 4. Biometrics Complete (Zero Manual Intervention Auto Advance) */}
+                  {(machineStep === 'BIOMETRIC_COMPLETE' || machineStep === 'FINGERPRINT_SAVED') && (
+                    <div className="p-5 rounded-2xl border-2 border-emerald-400 bg-emerald-50 shadow-sm space-y-3">
+                      <div className="flex items-center gap-2.5 font-bold text-emerald-950 text-sm">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                        <span>BIOMETRICS COMPLETE</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="p-2.5 bg-white rounded-xl border border-amber-200 flex items-center justify-between">
-                          <span className="font-bold text-stone-700">Face:</span>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 bg-white rounded-xl border border-emerald-200 flex items-center justify-between">
+                          <span className="font-bold text-stone-700">Face</span>
                           <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">✓ ENROLLED</span>
                         </div>
-                        <div className="p-2.5 bg-white rounded-xl border border-amber-200 flex items-center justify-between">
-                          <span className="font-bold text-stone-700">Fingerprint:</span>
-                          <span className="font-black text-red-700 bg-red-50 px-2 py-0.5 rounded">✕ FAILED / NOT ENROLLED</span>
+                        <div className="p-3 bg-white rounded-xl border border-emerald-200 flex items-center justify-between">
+                          <span className="font-bold text-stone-700">Fingerprint</span>
+                          <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">✓ ENROLLED</span>
                         </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 pt-2">
+                      <div className="flex items-center justify-center gap-2 text-xs font-bold text-emerald-800 pt-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
+                        <span>All biometric records saved. Automatically advancing to Payment...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5. Failure / Retry Panel (Only if failed) */}
+                  {machineStep === 'FAILED' && (
+                    <div className="p-4 rounded-2xl border-2 border-red-300 bg-red-50/90 shadow-sm space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-red-950 text-sm">
+                        <AlertTriangle className="w-5 h-5 text-red-600" />
+                        <span>BIOMETRIC ENROLLMENT INCOMPLETE</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2.5 bg-white rounded-xl border border-stone-200 flex items-center justify-between">
+                          <span className="font-bold text-stone-700">Face:</span>
+                          <span className={`font-black px-2 py-0.5 rounded ${
+                            faceStatus === 'ENROLLED' ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
+                          }`}>
+                            {faceStatus === 'ENROLLED' ? '✓ SAVED' : '✕ FAILED'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 bg-white rounded-xl border border-stone-200 flex items-center justify-between">
+                          <span className="font-bold text-stone-700">Fingerprint:</span>
+                          <span className={`font-black px-2 py-0.5 rounded ${
+                            fpStatus === 'ENROLLED' ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
+                          }`}>
+                            {fpStatus === 'ENROLLED' ? '✓ SAVED' : '✕ FAILED'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="pt-2 flex items-center gap-2">
                         <button
                           type="button"
                           onClick={handleRetryFingerprintOnly}
@@ -1991,41 +2180,6 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                           <RefreshCw className="w-3.5 h-3.5" />
                           Retry Fingerprint
                         </button>
-                        <button
-                          type="button"
-                          onClick={handleFinishFaceOnly}
-                          className="px-4 py-2 bg-stone-200 text-stone-800 rounded-xl font-bold text-xs hover:bg-stone-300 transition-all"
-                        >
-                          Finish With Face Only
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Final Completed Summary Matrix */}
-                  {machineStep === 'COMPLETED' && (
-                    <div className="p-4 rounded-2xl border-2 border-emerald-300 bg-emerald-50 shadow-sm">
-                      <div className="flex items-center gap-2 font-bold text-emerald-950 text-sm mb-3">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                        <span>Biometrics Verified on Hikvision Terminal!</span>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                        <div className="p-2 bg-white rounded-xl border border-emerald-200 text-center">
-                          <span className="text-[10px] text-stone-500 font-bold block uppercase">Biometric ID</span>
-                          <span className="font-mono font-black text-stone-900 text-sm">{biometricId || '101'}</span>
-                        </div>
-                        <div className="p-2 bg-white rounded-xl border border-emerald-200 text-center">
-                          <span className="text-[10px] text-stone-500 font-bold block uppercase">Terminal</span>
-                          <span className="font-bold text-emerald-700">● Online</span>
-                        </div>
-                        <div className="p-2 bg-white rounded-xl border border-emerald-200 text-center">
-                          <span className="text-[10px] text-stone-500 font-bold block uppercase">Face</span>
-                          <span className="font-black text-emerald-700">{faceStatus === 'ENROLLED' ? '✓ ENROLLED' : '○ NOT ENROLLED'}</span>
-                        </div>
-                        <div className="p-2 bg-white rounded-xl border border-emerald-200 text-center">
-                          <span className="text-[10px] text-stone-500 font-bold block uppercase">Fingerprint</span>
-                          <span className="font-black text-emerald-700">{fpStatus === 'ENROLLED' ? '✓ ENROLLED' : '○ NOT ENROLLED'}</span>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -2133,7 +2287,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                             type="number"
                             min="0"
                             value={amountPaid}
-                            onChange={(e) => setAmountPaid(e.target.value)}
+                            onChange={(e) => { amountPaidManuallyEdited.current = true; setAmountPaid(e.target.value); }}
                             placeholder={netPayable.toString()}
                             className="w-full pl-10 pr-4 py-2.5 text-base font-bold bg-white rounded-xl border border-stone-200 focus:border-[#F04400] focus:ring-3 focus:ring-orange-100 focus:outline-hidden transition-all font-mono"
                           />

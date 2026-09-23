@@ -122,12 +122,12 @@ export function useTodaysPayments(): UseTodaysPaymentsResult {
           }
         },
         (err) => {
-          console.warn('[useTodaysPayments] listener error:', err);
+          // silenced — falls back to REST API
           fetchFallback();
         }
       );
     } catch (err) {
-      console.warn('[useTodaysPayments] failed to attach:', err);
+      // silenced — falls back to REST API
       fetchFallback();
     }
     return () => { if (unsub) unsub(); };

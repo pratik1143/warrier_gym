@@ -23,62 +23,67 @@ export type GymImageCategory =
   | 'cta'
   | 'background';
 
-// All local gym images with category tags (Set to black placeholder)
+// All local gym images with category tags
 const gymImageMap: Record<string, { path: string; alt: string; categories: GymImageCategory[] }> = {
   gymInMohali: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym',
-    categories: ['hero', 'about', 'background'],
+    path: '/gym_images/warrior-deadlift-platform.webp',
+    alt: 'The Warrior Gym Olympic Deadlift Platform & Bumper Plates',
+    categories: ['hero', 'about', 'background', 'strength'],
   },
   gymInSohana: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym',
-    categories: ['hero', 'gallery', 'background'],
+    path: '/gym_images/warrior-spin-bikes.webp',
+    alt: 'The Warrior Gym Nex-Gen Spin Cycling Studio',
+    categories: ['cardio', 'gallery', 'functional'],
   },
   gymNearMe: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym',
-    categories: ['hero', 'cta', 'plans'],
+    path: '/gym_images/warrior-cardio-arena.webp',
+    alt: 'The Warrior Gym Cardio Arena & Spin Bikes',
+    categories: ['hero', 'cta', 'plans', 'cardio'],
   },
   gymNearby: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym Facilities',
-    categories: ['about', 'gallery', 'equipment'],
+    path: '/gym_images/warrior-hack-squat.webp',
+    alt: 'The Warrior Gym Hack Squat & Lower Body Station',
+    categories: ['about', 'gallery', 'equipment', 'strength'],
   },
   gymNearLandran: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym',
-    categories: ['contact', 'reception', 'about'],
+    path: '/gym_images/warrior-preacher-curl.webp',
+    alt: 'The Warrior Gym Preacher Arm Curl Station with EZ Bar',
+    categories: ['contact', 'reception', 'about', 'equipment'],
   },
   affordableMembership: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym Membership',
-    categories: ['membership', 'plans', 'reception'],
+    path: '/gym_images/warrior-leg-press.webp',
+    alt: 'The Warrior Gym 45-Degree Incline Leg Press Machine',
+    categories: ['membership', 'plans', 'equipment', 'strength'],
   },
   personalTrainingMohali: {
-    path: '/black_placeholder.svg',
-    alt: 'Personal Training — The Warrior Gym',
+    path: '/gym_images/warrior-dumbbells-zone.webp',
+    alt: 'The Warrior Gym Personal Training & Free Weights Area',
     categories: ['trainers', 'services', 'functional'],
   },
   personalTraining: {
-    path: '/black_placeholder.svg',
-    alt: 'Personal Training — The Warrior Gym',
+    path: '/gym_images/warrior-deadlift-platform.webp',
+    alt: 'Personal Training — The Warrior Gym Olympic Platform',
     categories: ['trainers', 'mobile_app', 'transformation'],
   },
   strengthTraining: {
-    path: '/black_placeholder.svg',
-    alt: 'Strength Training — The Warrior Gym',
+    path: '/gym_images/warrior-dumbbells-rack.webp',
+    alt: 'Strength Training — The Warrior Gym Free Weights Dumbbell Line',
     categories: ['strength', 'equipment', 'services', 'gallery'],
   },
   weightLoss: {
-    path: '/black_placeholder.svg',
-    alt: 'Weight Loss Training — The Warrior Gym',
+    path: '/gym_images/warrior-cardio-treadmills.webp',
+    alt: 'Weight Loss & Cardio — The Warrior Gym Commercial Treadmills',
     categories: ['cardio', 'transformation', 'services', 'gallery'],
   },
   gymNearAirport: {
-    path: '/black_placeholder.svg',
-    alt: 'The Warrior Gym Facility',
+    path: '/gym_images/warrior-adductor-machines.webp',
+    alt: 'The Warrior Gym Adductor & Resistance Training Floor',
     categories: ['hero', 'cta', 'gallery', 'background', 'plans'],
+  },
+  plateLoadedSquat: {
+    path: '/gym_images/warrior-plate-loaded.webp',
+    alt: 'The Warrior Gym Plate-Loaded Squat & Heavy Weight Tree',
+    categories: ['strength', 'equipment', 'functional', 'gallery'],
   },
 };
 

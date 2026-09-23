@@ -493,12 +493,12 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
                     {historyList.map((h: any, idx: number) => (
                       <div key={idx} className="p-2.5 bg-white/10 backdrop-blur-md rounded-xl flex justify-between items-center text-xs">
                         <div>
-                          <div className="font-bold text-white">{h.packageName}</div>
+                          <div className="font-bold text-white">{h.packageName || h.plan || member.plan || 'Membership'}</div>
                           <div className="text-[10px] text-slate-300">{h.startDate} → {h.expiryDate || 'Active'}</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-black text-amber-400">₹{(h.amount || 0).toLocaleString('en-IN')}</div>
-                          <div className="text-[9px] uppercase font-bold text-slate-300">{h.invoiceNumber || 'Paid'}</div>
+                          <div className="font-black text-amber-400">₹{Number(h.paid !== undefined ? h.paid : (h.amount || 0)).toLocaleString('en-IN')}</div>
+                          <div className="text-[9px] uppercase font-bold text-slate-300">{h.invoiceNumber || h.invoiceId || 'PAID'}</div>
                         </div>
                       </div>
                     ))}

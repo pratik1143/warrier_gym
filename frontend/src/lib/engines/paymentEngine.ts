@@ -19,6 +19,25 @@ export const paymentEngine = {
     return 'NOT BILLED';
   },
 
+  calculateBillingSummary: (invoices: any[]): { totalBilled: number; totalCollected: number; totalPending: number } => {
+    let totalBilled = 0;
+    let totalCollected = 0;
+    let totalPending = 0;
+
+    (invoices || []).forEach((inv: any) => {
+      if (!inv || inv.status === 'VOID' || inv.status === 'void' || inv.isDuplicate) return;
+      const net = Number(inv.netPayable !== undefined ? inv.netPayable : (inv.totalBilled !== undefined ? inv.totalBilled : (inv.amount || 0)));
+      const paid = Number(inv.amountPaid !== undefined ? inv.amountPaid : (inv.paid !== undefined ? inv.paid : 0));
+      const pending = Math.max(0, net - paid);
+
+      totalBilled += net;
+      totalCollected += paid;
+      totalPending += pending;
+    });
+
+    return { totalBilled, totalCollected, totalPending };
+  },
+
   selfHealPaymentData: async (invoice: any) => {
     if (!invoice || !invoice.id) return invoice;
 
