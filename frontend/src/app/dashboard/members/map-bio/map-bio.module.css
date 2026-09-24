@@ -16,8 +16,8 @@
   border-color: rgba(234, 88, 12, .14) !important;
 }
 
-.mapBio :global([class~="bg-violet-50"]) { background-color: #fff7ed !important; }
-.mapBio :global([class~="bg-violet-100"]) { background-color: #ffedd5 !important; }
+.mapBio :global([class*="bg-violet-50"]) { background-color: #fff7ed !important; }
+.mapBio :global([class*="bg-violet-100"]) { background-color: #ffedd5 !important; }
 .mapBio :global([class~="text-violet-300"]),
 .mapBio :global([class~="text-violet-400"]),
 .mapBio :global([class~="text-violet-500"]),

@@ -154,7 +154,7 @@ export default function MembersPage() {
     });
 
     return uniqueRaw.map((m: any) => {
-      let expiryDate = typeof m.expiryDate === 'string' ? m.expiryDate : (m.expiryDate ? new Date(m.expiryDate).toISOString().split('T')[0] : '');
+      const expiryDate = typeof m.expiryDate === 'string' ? m.expiryDate : (m.expiryDate ? new Date(m.expiryDate).toISOString().split('T')[0] : '');
       const todayStr = new Date().toISOString().split('T')[0];
       const rawJoin = m.startDate || m.joinDate || m.createdAt;
       const joinStr = typeof rawJoin === 'string'
@@ -1080,7 +1080,6 @@ export default function MembersPage() {
         member={createBillTargetMember}
         onClose={() => setCreateBillTargetMember(null)}
         onSaved={() => {
-          fetchMembers(true);
           setStatusFilter('active');
         }}
       />
@@ -1677,10 +1676,10 @@ export default function MembersPage() {
                     Bio Biography
                   </span>
                   <p className="text-[10px] text-slate-500 leading-relaxed italic mt-0.5">
-                    "
+                    &quot;
                     {selectedTrainerForView.bio ||
                       "Dedicated professional trainer."}
-                    "
+                    &quot;
                   </p>
                 </div>
                 <div>

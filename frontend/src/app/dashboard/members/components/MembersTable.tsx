@@ -6,7 +6,7 @@ import {
   MoreHorizontal, Phone, MessageSquare, Edit, RotateCcw, Snowflake, 
   Trash2, Eye, CreditCard, ChevronLeft, ChevronRight, Check, X, 
   AlertTriangle, CheckCircle2, UserCheck, PauseCircle, Clock, 
-  ExternalLink, Sparkles, User, Dumbbell, Calendar, ChevronDown
+  ExternalLink, Sparkles, User, Dumbbell, Calendar, ChevronDown, ScanFace
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
@@ -14,6 +14,7 @@ import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { calculateRealAttendance, formatDate } from '@/lib/utils';
 import MemberAvatar from '../../components/MemberAvatar';
 import toast from '@/lib/toast';
+import { getBiometricReadiness } from '@/lib/biometricStatus';
 
 export interface FilterState {
   gender: string;
@@ -60,6 +61,7 @@ export default function MembersTable({
   onRenew,
   onFreeze,
   onDelete,
+  onMapBiometric,
   onCreateBill,
   onQuickPreview,
 }: MembersTableProps) {
@@ -505,6 +507,14 @@ export default function MembersTable({
           {paginatedMembers.map((m: any) => {
             const isHold = String(m.status || m.membershipStatus || '').toLowerCase() === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
             const daysLeft = isHold ? 0 : (m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0);
+            const queuedMembership = !isHold && Array.isArray(m.membershipHistory)
+              ? m.membershipHistory
+                  .filter((item: any) => item?.startDate && membershipEngine.calculateDaysUntilStart(String(item.startDate)) > 0)
+                  .sort((a: any, b: any) => String(a.startDate).localeCompare(String(b.startDate)))[0]
+              : null;
+            const queuedMembershipStartsIn = queuedMembership
+              ? membershipEngine.calculateDaysUntilStart(String(queuedMembership.startDate))
+              : 0;
             const isExpired = !isHold && daysLeft <= 0;
             const isExpiring = !isHold && daysLeft > 0 && daysLeft <= 15;
 
@@ -572,8 +582,8 @@ export default function MembersTable({
                         <span className="text-[11px] font-mono text-stone-400 font-medium">
                           #{m.clientId ? `TWG-${m.clientId}` : (m.memberId || 'TWG-MEMBER')}
                         </span>
-                        <span className="text-[10px] font-mono font-bold bg-orange-50 text-[#EA580C] px-1.5 py-0.2 rounded border border-orange-100">
-                          BIO: {m.biometricId || m.deviceUserId || '—'}
+                          <span className="text-[10px] font-mono font-bold bg-orange-50 text-[#EA580C] px-1.5 py-0.2 rounded border border-orange-100">
+                          BIO: {m.biometricId || m.deviceUserId || m.biometricUserId || '—'}
                         </span>
                       </div>
                     </div>
@@ -645,6 +655,11 @@ export default function MembersTable({
                           <span className="text-[10px] text-stone-400 block">
                             {formatDate(m.expiryDate)}
                           </span>
+                          {queuedMembership && queuedMembershipStartsIn > 0 && (
+                            <span className="text-[9px] font-semibold text-orange-700 block mt-0.5">
+                              {queuedMembership.plan || 'Renewal'} queued · starts in {queuedMembershipStartsIn}d
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -753,6 +768,20 @@ export default function MembersTable({
                             <span>Full Profile</span>
                           </button>
 
+                          {onMapBiometric && getBiometricReadiness(m).needsMapping && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                onMapBiometric(m);
+                              }}
+                              className="w-full px-2.5 py-1.5 text-left rounded-lg hover:bg-orange-50 text-orange-800 font-semibold flex items-center gap-2"
+                            >
+                              <ScanFace className="w-3.5 h-3.5 text-orange-600" />
+                              <span>Map Face / Bio</span>
+                            </button>
+                          )}
+
                           {onRenew && !isHold && (
                             <button
                               type="button"
@@ -823,6 +852,14 @@ export default function MembersTable({
           {paginatedMembers.map((m: any) => {
             const isHold = String(m.status || m.membershipStatus || '').toLowerCase() === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
             const daysLeft = isHold ? 0 : (m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0);
+            const queuedMembership = !isHold && Array.isArray(m.membershipHistory)
+              ? m.membershipHistory
+                  .filter((item: any) => item?.startDate && membershipEngine.calculateDaysUntilStart(String(item.startDate)) > 0)
+                  .sort((a: any, b: any) => String(a.startDate).localeCompare(String(b.startDate)))[0]
+              : null;
+            const queuedMembershipStartsIn = queuedMembership
+              ? membershipEngine.calculateDaysUntilStart(String(queuedMembership.startDate))
+              : 0;
             const isExpired = !isHold && daysLeft <= 0;
 
             return (
@@ -871,6 +908,11 @@ export default function MembersTable({
                         {isHold ? 'HOLD' : (daysLeft > 0 ? `${daysLeft} Days` : 'Expired')}
                       </span>
                     </div>
+                    {queuedMembership && queuedMembershipStartsIn > 0 && (
+                      <div className="text-right text-[10px] font-semibold text-orange-700">
+                        {queuedMembership.plan || 'Renewal'} queued · starts in {queuedMembershipStartsIn} days
+                      </div>
+                    )}
                   </div>
                 </div>
 

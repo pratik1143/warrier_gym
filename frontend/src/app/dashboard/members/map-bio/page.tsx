@@ -31,6 +31,21 @@ export default function MapBioPage() {
   const [search, setSearch] = useState('');
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [showAll, setShowAll] = useState(false);
+  const autoSelectedMember = useRef(false);
+
+  // The route's selected-member query is applied after the member store hydrates.
+  useEffect(() => {
+    if (autoSelectedMember.current || members.length === 0) return;
+    const memberId = new URLSearchParams(window.location.search).get('memberId');
+    if (!memberId) return;
+    const target = members.find((member: any) => String(member.id) === memberId);
+    if (!target) return;
+    autoSelectedMember.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowAll(true);
+    setSelectedMember(target);
+    router.replace('/dashboard/members/map-bio', { scroll: false });
+  }, [members, router]);
 
   const missingBioMembers = useMemo(() =>
     (members || []).filter((m: any) => {
@@ -68,9 +83,11 @@ export default function MapBioPage() {
 
   const isBusy = ['CREATING_USER','FACE_STARTING','FACE_ENROLLING','FINGERPRINT_STARTING','FINGERPRINT_ENROLLING'].includes(machineStep);
 
+  // Reset device controls when the operator selects a different member.
   useEffect(() => {
     if (!selectedMember) return;
-    setBiometricId(String(selectedMember.biometricId || selectedMember.deviceUserId || ''));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBiometricId(String(selectedMember.biometricId || selectedMember.biometricUserId || selectedMember.deviceUserId || selectedMember.hikvisionUserId || ''));
     setMachineStep('IDLE'); setEnrollStatus('idle');
     setEnrollMsg(''); setEnrollDetailLog('');
     const savedFaceStatus = String(selectedMember.faceEnrollmentStatus || selectedMember.biometric?.face?.status || '').toUpperCase();
@@ -81,6 +98,7 @@ export default function MapBioPage() {
     fpStatusRef.current = savedFingerprintStatus === 'ENROLLED' ? 'ENROLLED' : 'NOT ENROLLED';
     faceStatusRef.current = savedFaceStatus === 'ENROLLED' ? 'ENROLLED' : 'NOT ENROLLED';
     cancelRef.current = false;
+    // eslint-enable react-hooks/set-state-in-effect
   }, [selectedMember?.id]);
 
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -255,7 +273,6 @@ export default function MapBioPage() {
   };
 
   const getBadge = (m: any) => {
-    const face = String(m.faceEnrollmentStatus || m.biometric?.face?.status || '').toUpperCase();
     const bio = String(m.biometricStatus || '').toUpperCase();
     const readiness = getBiometricReadiness(m);
     if (!readiness.needsMapping) return { label: 'Ready', cls: 'bg-emerald-100 text-emerald-800' };

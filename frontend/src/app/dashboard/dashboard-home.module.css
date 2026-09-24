@@ -1,0 +1,117 @@
+.dashboard {
+  --orange: #ed5a0b;
+  --orange-soft: rgba(237, 90, 11, .09);
+  --glass-line: rgba(155, 102, 66, .13);
+  gap: clamp(1rem, 1.6vw, 1.5rem);
+  padding-bottom: 1.5rem;
+  background:
+    radial-gradient(ellipse at 7% 0%, rgba(255, 226, 199, .28), transparent 34%),
+    #faf9f7;
+}
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  min-height: 6.5rem;
+  padding: clamp(1.15rem, 2.2vw, 1.65rem) clamp(1.25rem, 2.5vw, 2rem) !important;
+  border-color: rgba(237, 90, 11, .14) !important;
+  background:
+    radial-gradient(ellipse at 95% -25%, rgba(255, 188, 125, .25), transparent 34%),
+    linear-gradient(105deg, rgba(255,255,255,.97), rgba(255,249,243,.9)) !important;
+  box-shadow: 0 12px 36px rgba(83, 48, 25, .055), inset 0 1px 0 rgba(255,255,255,.9) !important;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.hero::after {
+  position: absolute;
+  z-index: -1;
+  top: -4rem;
+  right: 8rem;
+  width: 12rem;
+  height: 12rem;
+  border: 1px solid rgba(237,90,11,.08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5rem rgba(237,90,11,.025), 0 0 0 3rem rgba(237,90,11,.018);
+  content: '';
+  pointer-events: none;
+}
+
+.kpiGrid {
+  align-items: stretch;
+}
+
+.dashboard :global(.bg-white.rounded-2xl),
+.dashboard :global(.bg-white.rounded-3xl) {
+  border-color: var(--glass-line) !important;
+  background: rgba(255,255,255,.78) !important;
+  box-shadow: 0 5px 20px rgba(53, 36, 24, .035), inset 0 1px 0 rgba(255,255,255,.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease, background .22s ease;
+}
+
+.dashboard :global(.bg-white.rounded-2xl:hover),
+.dashboard :global(.bg-white.rounded-3xl:hover) {
+  border-color: rgba(237,90,11,.25) !important;
+  box-shadow: 0 12px 30px rgba(91, 53, 28, .075), inset 0 1px 0 rgba(255,255,255,.96);
+}
+
+.kpiCard {
+  position: relative;
+  min-height: 7.4rem;
+  overflow: hidden;
+}
+
+.kpiCard::after {
+  position: absolute;
+  right: -2.6rem;
+  bottom: -3.8rem;
+  width: 7rem;
+  height: 7rem;
+  border: 1px solid rgba(237,90,11,.065);
+  border-radius: 50%;
+  content: '';
+  pointer-events: none;
+  transition: transform .35s ease;
+}
+
+.kpiCard:hover::after {
+  transform: scale(1.28);
+}
+
+.collectionCard {
+  border-color: rgba(237,90,11,.22) !important;
+  background: linear-gradient(125deg, rgba(255,255,255,.95), rgba(255,247,239,.94)) !important;
+  box-shadow: 0 8px 25px rgba(237,90,11,.075), inset 0 1px 0 white !important;
+}
+
+.collectionCard :global(h3) {
+  color: #a83c07;
+  letter-spacing: -.035em;
+}
+
+.dashboard :global(button) {
+  transition-duration: .18s;
+}
+
+@media (min-width: 1280px) {
+  .kpiCard { min-height: 7.7rem; }
+}
+
+@media (max-width: 639px) {
+  .dashboard { gap: .85rem; }
+  .hero { border-radius: 1.1rem !important; }
+  .kpiCard { min-height: 6.7rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard :global(*),
+  .dashboard :global(*::before),
+  .dashboard :global(*::after) {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

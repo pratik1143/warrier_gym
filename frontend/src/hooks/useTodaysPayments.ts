@@ -155,6 +155,14 @@ export function useTodaysPayments(): UseTodaysPaymentsResult {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const resolveAmount = (p: PaymentRecord): number => {
+    // A partially paid invoice's face value is not the amount collected.
+    // Only count the payment amount for partial records; never fall back to `amount`.
+    if (
+      String(p.status || p.paymentStatus || '').toLowerCase() === 'partial' &&
+      p.amountPaid === undefined &&
+      p.paid === undefined
+    ) return 0;
+
     const val =
       p.amountPaid !== undefined ? p.amountPaid :
       p.paid      !== undefined ? p.paid :

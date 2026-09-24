@@ -44,7 +44,10 @@ export const createInvoice = async (req: Request, res: Response) => {
       (memberName && item.name?.toLowerCase().trim() === memberName.toLowerCase().trim())
     );
 
-    const todayYMD = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayYMD = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(now);
     const txType = req.body.transactionType || (req.body.billingType === 'PT' || req.body.invoiceType === 'PT' ? 'pt_payment' : (req.body.type === 'POS' ? 'other_payment' : 'membership_payment'));
     const isHist = req.body.isHistorical ?? (txType === 'historical_import' || req.body.imported || false);
     const invoiceDate = date || todayYMD;
@@ -83,8 +86,8 @@ export const createInvoice = async (req: Request, res: Response) => {
     // Automatically extend membership expiry if member exists
     if (m) {
       let newExpiryString = '';
-      if (req.body.newExpiryDate) {
-        newExpiryString = req.body.newExpiryDate;
+      if (req.body.newExpiryDate || req.body.expiryDate) {
+        newExpiryString = req.body.newExpiryDate || req.body.expiryDate;
       } else {
         let daysToAdd = 30;
         if (plan === 'Quarterly' || plan === '3 Months') daysToAdd = 90;
@@ -146,11 +149,16 @@ export const createInvoice = async (req: Request, res: Response) => {
       const existingBillingHistory = Array.isArray(m.billingHistory) ? m.billingHistory : [];
       const updatedBillingHistory = [canonicalTx, ...existingBillingHistory.filter((b: any) => b.transactionId !== invoice.id && b.invoiceNumber !== canonicalTx.invoiceNumber)];
 
+      const expiryTime = new Date(`${newExpiryString}T23:59:59.999+05:30`).getTime();
+      const nextStatus = newExpiryString >= todayYMD ? 'active' : 'expired';
+
       await db.updateMember(m.id, {
         plan: plan || m.plan || 'Standard',
         startDate: m.startDate || req.body.startDate || todayYMD,
         expiryDate: newExpiryString,
-        status: m.status === 'upcoming' ? 'upcoming' : (newExpiryString >= todayYMD ? 'active' : 'expired'),
+        status: nextStatus,
+        membershipStatus: nextStatus.toUpperCase(),
+        activationStatus: nextStatus.toUpperCase(),
         paymentStatus: newPaymentStatus,
         totalBilled: totalBilled,
         totalPaid: newTotalPaid,
@@ -159,7 +167,7 @@ export const createInvoice = async (req: Request, res: Response) => {
         outstandingBalance: newOutstanding,
         pendingBalance: newOutstanding,
         balanceAmount: newOutstanding,
-        daysLeft: Math.ceil((finalExpiryTime - Date.now()) / (1000 * 60 * 60 * 24)),
+        daysLeft: Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)),
         membershipHistory: [...existingHistory, newHistoryEntry],
         billingHistory: updatedBillingHistory,
         payments: updatedBillingHistory,
@@ -250,8 +258,107 @@ export const updateInvoice = async (req: Request, res: Response) => {
 export const deleteInvoice = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const memberIdQuery = (req.query.memberId as string) || req.body?.memberId;
+
+    // 1. Mark payment as deleted in payments collection
     await db.deletePayment(id);
-    res.json({ success: true, message: 'Payment deleted successfully' });
+
+    // 2. Find associated member to synchronize member financials and status
+    const members = await db.getMembers();
+    let m = memberIdQuery ? members.find(item => item.id === memberIdQuery || item.memberId === memberIdQuery) : null;
+
+    if (!m) {
+      m = members.find(item => {
+        const bHist = Array.isArray(item.billingHistory) ? item.billingHistory : [];
+        const mHist = Array.isArray(item.membershipHistory) ? item.membershipHistory : [];
+        const pHist = Array.isArray(item.payments) ? item.payments : [];
+        return (
+          bHist.some((b: any) => b.transactionId === id || b.invoiceId === id || b.invoiceNumber === id || b.invoice === id) ||
+          mHist.some((h: any) => h.transactionId === id || h.invoiceId === id) ||
+          pHist.some((p: any) => p.transactionId === id || p.invoiceId === id || p.invoiceNumber === id || p.id === id)
+        );
+      }) || null;
+    }
+
+    if (m) {
+      const now = new Date();
+      const todayYMD = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(now);
+
+      const existingBilling = Array.isArray(m.billingHistory) ? m.billingHistory : [];
+      const updatedBillingHistory = existingBilling.filter((b: any) =>
+        b.transactionId !== id && b.invoiceId !== id && b.invoiceNumber !== id && b.invoice !== id && b.id !== id
+      );
+
+      const existingMembership = Array.isArray(m.membershipHistory) ? m.membershipHistory : [];
+      const updatedMembershipHistory = existingMembership.filter((h: any) =>
+        h.transactionId !== id && h.invoiceId !== id && h.invoiceNumber !== id && h.id !== id
+      );
+
+      const existingPt = Array.isArray(m.ptHistory) ? m.ptHistory : [];
+      const updatedPtHistory = existingPt.filter((p: any) =>
+        p.transactionId !== id && p.invoiceId !== id && p.invoiceNumber !== id && p.id !== id
+      );
+
+      const newTotalBilled = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.netPayable || b.amount || 0)), 0);
+      const newTotalPaid = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.amountPaid || b.paid || 0)), 0);
+      const newOutstanding = Math.max(0, newTotalBilled - newTotalPaid);
+      const newPaymentStatus = newOutstanding <= 0 ? (newTotalPaid > 0 ? 'paid' : 'pending') : (newTotalPaid > 0 ? 'partial' : 'pending');
+
+      const updates: any = {
+        billingHistory: updatedBillingHistory,
+        payments: updatedBillingHistory,
+        membershipHistory: updatedMembershipHistory,
+        ptHistory: updatedPtHistory,
+        totalBilled: newTotalBilled,
+        amount: newTotalBilled,
+        price: newTotalBilled,
+        totalPaid: newTotalPaid,
+        amountPaid: newTotalPaid,
+        paid: newTotalPaid,
+        outstandingBalance: newOutstanding,
+        pendingBalance: newOutstanding,
+        balance: newOutstanding,
+        balanceAmount: newOutstanding,
+        paymentStatus: newPaymentStatus,
+        updatedAt: now.toISOString()
+      };
+
+      if (updatedMembershipHistory.length === 0 && updatedBillingHistory.length === 0) {
+        const isExcelImport = m.source === 'excel_import' || !m.phone;
+        const revertStatus = isExcelImport ? 'hold' : 'inactive';
+        updates.status = revertStatus;
+        updates.membershipStatus = revertStatus.toUpperCase();
+        updates.activationStatus = revertStatus.toUpperCase();
+        updates.plan = '';
+        updates.packageName = '';
+        updates.membershipPlan = '';
+        updates.expiryDate = '';
+        updates.membershipExpiryDate = '';
+        updates.daysLeft = 0;
+      } else if (updatedMembershipHistory.length > 0) {
+        const sorted = [...updatedMembershipHistory].sort((a: any, b: any) =>
+          new Date(b.expiryDate || 0).getTime() - new Date(a.expiryDate || 0).getTime()
+        );
+        const latest = sorted[0];
+        const latestExpiry = latest.expiryDate || '';
+        const expiryTime = latestExpiry ? new Date(`${latestExpiry}T23:59:59.999+05:30`).getTime() : 0;
+        const nextStatus = latestExpiry >= todayYMD ? 'active' : 'expired';
+
+        updates.plan = latest.plan || m.plan;
+        updates.startDate = latest.startDate || m.startDate;
+        updates.expiryDate = latestExpiry;
+        updates.status = nextStatus;
+        updates.membershipStatus = nextStatus.toUpperCase();
+        updates.activationStatus = nextStatus.toUpperCase();
+        updates.daysLeft = expiryTime ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+      }
+
+      await db.updateMember(m.id, updates);
+    }
+
+    res.json({ success: true, message: 'Payment deleted and member synchronized successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

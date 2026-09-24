@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Users, Clock, Plus, ArrowUpRight, Unlock, Phone, MessageSquare, 
@@ -14,13 +14,15 @@ import { db as fDb, isFirebaseReady } from '@/lib/firebase';
 import API from '@/services/api';
 import { useFollowups } from '@/hooks/useFollowups';
 import AttendanceCalendarSection from './components/AttendanceCalendarSection';
-import { getISTDateStr } from '@/hooks/useTodaysPayments';
+import { useTodaysPayments } from '@/hooks/useTodaysPayments';
+import styles from './dashboard-home.module.css';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { pendingCount: followupsCount, todaysCount } = useFollowups();
+  const { todaysTotal: todaysCollection, todaysPayments, todayStr, loading: paymentsLoading } = useTodaysPayments();
   const {
-    members, attendance, gymPresence, payments, fetchMembers, fetchAttendance, fetchPayments,
+    members, attendance, gymPresence, fetchMembers, fetchAttendance, fetchPayments,
     triggerGateUnlock, dashboardAnalytics, fetchDashboardAnalytics, deviceStatus
   } = useGymStore();
 
@@ -31,7 +33,6 @@ export default function DashboardPage() {
   const [empAttendance, setEmpAttendance] = useState<any[]>([]);
   const [memberAttendance, setMemberAttendance] = useState<any[]>([]);
   const [realtimeMembers, setRealtimeMembers] = useState<any[]>([]);
-  const [realtimePayments, setRealtimePayments] = useState<any[]>([]);
   const [enquiriesCount, setEnquiriesCount] = useState<number>(0);
   const [activeHeatmapFilter, setActiveHeatmapFilter] = useState('Yours');
 
@@ -73,18 +74,11 @@ export default function DashboardPage() {
       }).catch(() => {});
     });
 
-    const unsubPayments = onSnapshot(collection(fDb, 'payments'), (snap) => {
-      setRealtimePayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (err) => {
-      console.warn("Firestore payments listener notice:", err);
-    });
-
     return () => {
       unsubEmployees();
       unsubEmpAtt();
       unsubMemberAtt();
       unsubEnq();
-      unsubPayments();
     };
   }, []);
 
@@ -233,43 +227,6 @@ export default function DashboardPage() {
   const membersExpiringSoon = evaluatedMembers.filter(m => m.ai.daysLeft > 0 && m.ai.daysLeft <= 15).slice(0, 5);
   const renewalOpportunities = evaluatedMembers.filter(m => m.ai.renewalChance > 70).slice(0, 5);
 
-  const todaysCollection = useMemo(() => {
-    // IST-correct today string (fixes UTC midnight boundary bug)
-    const todayStr = getISTDateStr();
-    const seen = new Set<string>();
-
-    const activeList = (realtimePayments && realtimePayments.length > 0) ? realtimePayments : (payments || []);
-    let total = 0;
-
-    if (Array.isArray(activeList) && activeList.length > 0) {
-      activeList.forEach((p: any) => {
-        if (!p || p.isSample || p.isMock) return;
-        // Exclude soft-deleted payments
-        if (p.deleted === true) return;
-
-        // Strictly exclude historical imports from today's collection
-        const isHistorical = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
-        if (isHistorical) return;
-
-        const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
-        if (status !== 'paid' && status !== 'partial') return;
-
-        // Payment date must match today IST (NEVER fall back to createdAt)
-        const pDate = String(p.paymentDate || p.date || '').split('T')[0];
-        if (pDate !== todayStr && !p.isRealTimeToday) return;
-
-        const key = String(p.id || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
-        if (key && seen.has(key)) return;
-        if (key) seen.add(key);
-
-        const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
-        total += (isNaN(val) ? 0 : val);
-      });
-    }
-
-    return total;
-  }, [realtimePayments, payments]);
-
   const expiringSoonCount = realtimeMembers.filter((m: any) => {
     const left = daysUntilExpiry(m.expiryDate);
     return left >= 0 && left <= 30;
@@ -280,10 +237,10 @@ export default function DashboardPage() {
   const checkinDays = attendance ? attendance.map((a: any) => new Date(a.checkIn || '').getDate()) : [];
 
   return (
-    <div className="flex flex-col gap-5 w-full text-slate-800 text-left bg-[#FDFDFD]">
+    <div className={`${styles.dashboard} flex flex-col gap-5 w-full text-slate-800 text-left bg-[#FDFDFD]`}>
       
       {/* ─── 1. PAGE HEADER ─── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs">
+      <div className={`${styles.hero} flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs`}>
         <div>
           <h1 className="font-rowdies text-2xl font-bold text-slate-900 uppercase tracking-tight leading-none">
             Dashboard
@@ -303,26 +260,26 @@ export default function DashboardPage() {
       </div>
 
       {/* ─── 2. TOP KPI CARDS (ROW 1) ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+      <div className={`${styles.kpiGrid} grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full`}>
         {/* Card 1: Today's Follow-ups */}
-        <div 
+        <button type="button"
           onClick={() => router.push('/dashboard/follow-up')}
-          className="bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group"
+          className={`${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <AlertTriangle size={20} />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today's Follow-ups</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today&apos;s Follow-ups</span>
             <h3 className="text-xl font-black text-slate-900 mt-0.5">{todaysCount} Follow-ups</h3>
             <p className="text-[9px] text-[#EA580C] font-bold mt-0.5">Click to view follow-up list →</p>
           </div>
-        </div>
+        </button>
 
         {/* Card 2: Total Enquiry */}
-        <div 
+        <button type="button"
           onClick={() => router.push('/dashboard/enquiries')}
-          className="bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group"
+          className={`${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <ClipboardList size={20} />
@@ -332,12 +289,12 @@ export default function DashboardPage() {
             <h3 className="text-xl font-black text-slate-900 mt-0.5">{enquiriesCount} Enquiries</h3>
             <p className="text-[9px] text-[#EA580C] font-bold mt-0.5">Click to view enquiry leads →</p>
           </div>
-        </div>
+        </button>
 
         {/* Card 3: Expiring Soon Clients */}
-        <div 
+        <button type="button"
           onClick={() => router.push('/dashboard/expired')}
-          className="bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group"
+          className={`${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <Clock size={20} />
@@ -347,24 +304,26 @@ export default function DashboardPage() {
             <h3 className="text-xl font-black text-slate-900 mt-0.5">{expiringSoonCount} Clients</h3>
             <p className="text-[9px] text-[#EA580C] font-bold mt-0.5">Click to view expiring list →</p>
           </div>
-        </div>
+        </button>
 
         {/* Card 4: Today's Collection */}
-        <div 
+        <button type="button"
           onClick={() => router.push('/dashboard/billing')}
-          className="bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group"
+          className={`${styles.collectionCard} ${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <DollarSign size={20} />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today's Collection</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today&apos;s Collection</span>
             <h3 className="text-xl font-black text-slate-900 mt-0.5">
-              ₹{todaysCollection.toLocaleString('en-IN')}
+              {paymentsLoading ? '—' : `₹${todaysCollection.toLocaleString('en-IN')}`}
             </h3>
-            <p className="text-[9px] text-emerald-600 font-bold mt-0.5">Collected today →</p>
+            <p className="text-[9px] text-orange-800/75 font-bold mt-0.5">
+              {paymentsLoading ? 'Syncing payments…' : `${todaysPayments.length} bill${todaysPayments.length === 1 ? '' : 's'} · ${todayStr} IST`}
+            </p>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* ─── 3. SECONDARY OPERATIONS CARDS (ROW 2) ─── */}

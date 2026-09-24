@@ -145,67 +145,75 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
         return (inv.id && inv.id !== invId) && (!targetInvNum || iNum !== targetInvNum);
       });
 
-      // 2. Perform Atomic Firestore Batch Operation
-      const batch = writeBatch(db);
-
-      if (invId) {
-        batch.delete(doc(db, 'payments', invId));
-      }
-
-      if (member.id) {
-        if (isPtBill) {
-          // CRITICAL SAFETY RULE: Deleting a PT bill MUST NEVER affect membership expiryDate, startDate, or plan!
-          const updatedPtHistory = (Array.isArray(member.ptHistory) ? member.ptHistory : []).filter((h: any) => {
-            const hNum = h.invoiceNumber || h.invoice || h.id;
-            return hNum !== targetInvNum && h.id !== invId;
-          });
-
-          const netPay = Number(invoiceToDelete.netPayable || invoiceToDelete.amount || 0);
-          const paidAmt = Number(invoiceToDelete.amountPaid !== undefined ? invoiceToDelete.amountPaid : (invoiceToDelete.paid || 0));
-
-          const newTotalBilled = Math.max(0, (Number(member.totalBilled) || 0) - netPay);
-          const newTotalPaid = Math.max(0, (Number(member.totalPaid) || 0) - paidAmt);
-
-          batch.update(doc(db, 'members', member.id), {
-            ptHistory: updatedPtHistory,
-            totalBilled: newTotalBilled,
-            totalPaid: newTotalPaid,
-            outstandingBalance: Math.max(0, newTotalBilled - newTotalPaid),
-            updatedAt: new Date().toISOString(),
-          });
-        } else {
-          // Deleting a membership bill recalculates membership history
-          const remainingMembershipInvoices = remainingInvoices.filter((inv: any) => inv.billingType !== 'pt');
-          const timeline = membershipEngine.rebuildMemberMembershipTimeline(member, remainingMembershipInvoices);
-
-          batch.update(doc(db, 'members', member.id), {
-            membershipHistory: timeline.recalculatedHistory,
-            startDate: timeline.startDate,
-            expiryDate: timeline.expiryDate,
-            plan: timeline.plan,
-            daysLeft: timeline.daysLeft,
-            status: timeline.status,
-            totalBilled: timeline.totalBilled,
-            totalPaid: timeline.totalPaid,
-            outstandingBalance: timeline.outstandingBalance,
-            amount: timeline.totalBilled,
-            paidAmount: timeline.totalPaid,
-            paymentStatus: timeline.outstandingBalance <= 0 ? 'paid' : (timeline.totalPaid > 0 ? 'partial' : 'pending'),
-            'ai.daysLeft': timeline.daysLeft,
-            updatedAt: new Date().toISOString(),
-          });
-        }
-      }
-
-      await batch.commit();
-
-      // 3. Optional Backend API sync fallback
+      let backendSuccess = false;
+      // 2. Call Backend Admin API (Runs on Admin SDK, bypasses client permission restrictions)
       try {
-        if (targetInvNum) {
-          await API.delete(`/billing/${targetInvNum}`);
+        const deleteKey = targetInvNum || invId;
+        if (deleteKey) {
+          await API.delete(`/billing/${deleteKey}?memberId=${member.id}`);
+          backendSuccess = true;
         }
-      } catch (e) {
-        // Backend API fallback notice
+      } catch (apiErr: any) {
+        console.warn('Backend API delete failed, trying client batch fallback:', apiErr?.message || apiErr);
+      }
+
+      // 3. Client Firestore batch fallback if client has direct permissions
+      try {
+        const batch = writeBatch(db);
+
+        if (invId) {
+          batch.delete(doc(db, 'payments', invId));
+        }
+
+        if (member.id) {
+          if (isPtBill) {
+            const updatedPtHistory = (Array.isArray(member.ptHistory) ? member.ptHistory : []).filter((h: any) => {
+              const hNum = h.invoiceNumber || h.invoice || h.id;
+              return hNum !== targetInvNum && h.id !== invId;
+            });
+
+            const netPay = Number(invoiceToDelete.netPayable || invoiceToDelete.amount || 0);
+            const paidAmt = Number(invoiceToDelete.amountPaid !== undefined ? invoiceToDelete.amountPaid : (invoiceToDelete.paid || 0));
+
+            const newTotalBilled = Math.max(0, (Number(member.totalBilled) || 0) - netPay);
+            const newTotalPaid = Math.max(0, (Number(member.totalPaid) || 0) - paidAmt);
+
+            batch.update(doc(db, 'members', member.id), {
+              ptHistory: updatedPtHistory,
+              totalBilled: newTotalBilled,
+              totalPaid: newTotalPaid,
+              outstandingBalance: Math.max(0, newTotalBilled - newTotalPaid),
+              updatedAt: new Date().toISOString(),
+            });
+          } else {
+            const remainingMembershipInvoices = remainingInvoices.filter((inv: any) => inv.billingType !== 'pt');
+            const timeline = membershipEngine.rebuildMemberMembershipTimeline(member, remainingMembershipInvoices);
+
+            batch.update(doc(db, 'members', member.id), {
+              membershipHistory: timeline.recalculatedHistory,
+              startDate: timeline.startDate,
+              expiryDate: timeline.expiryDate,
+              plan: timeline.plan,
+              daysLeft: timeline.daysLeft,
+              status: timeline.status,
+              totalBilled: timeline.totalBilled,
+              totalPaid: timeline.totalPaid,
+              outstandingBalance: timeline.outstandingBalance,
+              amount: timeline.totalBilled,
+              paidAmount: timeline.totalPaid,
+              paymentStatus: timeline.outstandingBalance <= 0 ? 'paid' : (timeline.totalPaid > 0 ? 'partial' : 'pending'),
+              'ai.daysLeft': timeline.daysLeft,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+
+        await batch.commit();
+      } catch (clientBatchErr: any) {
+        if (!backendSuccess) {
+          throw clientBatchErr;
+        }
+        console.warn('Client-side batch skipped due to permissions; backend already completed deletion.');
       }
 
       // 4. Update local state immediately
