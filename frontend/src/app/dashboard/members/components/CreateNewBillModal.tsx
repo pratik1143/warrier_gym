@@ -391,40 +391,49 @@ export default function CreateNewBillModal({
       if (member.fingerprintEnrollmentStatus) biometricSafetyUpdates.fingerprintEnrollmentStatus = member.fingerprintEnrollmentStatus;
       if (member.biometric) biometricSafetyUpdates.biometric = member.biometric;
 
-      await updateDoc(doc(db, 'members', member.id), {
-        plan: data.plan,
-        packageName: data.plan,
-        membershipPlan: data.plan,
-        startDate: member.startDate || data.startDate,
-        membershipStartDate: member.startDate || data.startDate,
-        expiryDate: data.expiryDate,
-        membershipExpiryDate: data.expiryDate,
-        status: 'active', // Explicit HOLD -> ACTIVE transition
-        membershipStatus: 'ACTIVE',
-        activationStatus: 'ACTIVE',
-        daysLeft: computedDaysLeft,
-        paymentStatus: computedPayStatus,
-        totalBilled: newTotalBilled,
-        amount: newTotalBilled,
-        price: newTotalBilled,
-        totalPaid: newTotalPaid,
-        amountPaid: newTotalPaid,
-        paid: newTotalPaid,
-        outstandingBalance: newOutstandingBalance,
-        pendingBalance: newOutstandingBalance,
-        balance: newOutstandingBalance,
-        balanceAmount: newOutstandingBalance,
-        membershipHistory: updatedHistory,
-        billingHistory: updatedBillingHistory,
-        payments: updatedBillingHistory,
-        updatedAt: now.toISOString(),
-        ...biometricSafetyUpdates,
-      });
+      // 2. Client-side Firestore sync fallback (Backend Admin SDK already committed this atomically)
+      try {
+        await updateDoc(doc(db, 'members', member.id), {
+          plan: data.plan,
+          packageName: data.plan,
+          membershipPlan: data.plan,
+          startDate: member.startDate || data.startDate,
+          membershipStartDate: member.startDate || data.startDate,
+          expiryDate: data.expiryDate,
+          membershipExpiryDate: data.expiryDate,
+          status: 'active', // Explicit HOLD -> ACTIVE transition
+          membershipStatus: 'ACTIVE',
+          activationStatus: 'ACTIVE',
+          daysLeft: computedDaysLeft,
+          paymentStatus: computedPayStatus,
+          totalBilled: newTotalBilled,
+          amount: newTotalBilled,
+          price: newTotalBilled,
+          totalPaid: newTotalPaid,
+          amountPaid: newTotalPaid,
+          paid: newTotalPaid,
+          outstandingBalance: newOutstandingBalance,
+          pendingBalance: newOutstandingBalance,
+          balance: newOutstandingBalance,
+          balanceAmount: newOutstandingBalance,
+          membershipHistory: updatedHistory,
+          billingHistory: updatedBillingHistory,
+          payments: updatedBillingHistory,
+          updatedAt: now.toISOString(),
+          ...biometricSafetyUpdates,
+        });
+      } catch (clientDocErr) {
+        console.warn('Direct client updateDoc skipped (already committed by backend Admin SDK):', clientDocErr);
+      }
 
       toast.success(`Bill ${invNum} generated! ${member.name} is now ACTIVE!`);
-      const { fetchMembers, fetchPayments } = useGymStore.getState();
-      await fetchMembers(true);
-      await fetchPayments(true);
+      try {
+        const { fetchMembers, fetchPayments } = useGymStore.getState();
+        await fetchMembers(true);
+        await fetchPayments(true);
+      } catch (e) {
+        console.warn('Store refresh notice:', e);
+      }
       if (onSaved) onSaved();
       onClose();
     } catch (err: any) {
