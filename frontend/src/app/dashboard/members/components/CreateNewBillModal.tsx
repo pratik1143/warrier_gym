@@ -378,8 +378,9 @@ export default function CreateNewBillModal({
       const existingBilling = Array.isArray(member.billingHistory) ? member.billingHistory : [];
       const updatedBillingHistory = [canonicalTx, ...existingBilling.filter((b: any) => b.invoiceNumber !== invNum && b.transactionId !== txId)];
 
-      const newTotalPaid = (Number(member.totalPaid) || 0) + paidAmt;
-      const newTotalBilled = (Number(member.totalBilled) || 0) + netPay;
+      // Canonical recalculation: derive totalPaid and totalBilled from unique billing history
+      const newTotalPaid = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.amountPaid || b.paid || 0)), 0);
+      const newTotalBilled = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.netPayable || b.amount || 0)), 0);
       const newOutstandingBalance = Math.max(0, newTotalBilled - newTotalPaid);
 
       // Explicit Biometric Safety: Ensure billing NEVER wipes or resets biometric fields

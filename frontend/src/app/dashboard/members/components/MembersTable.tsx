@@ -518,8 +518,16 @@ export default function MembersTable({
             const isExpired = !isHold && daysLeft <= 0;
             const isExpiring = !isHold && daysLeft > 0 && daysLeft <= 15;
 
-            const rawPaid = Number(m.amountPaid !== undefined ? m.amountPaid : (m.paid ?? m.totalPaid ?? 0));
-            const rawBalance = Number(m.balanceAmount !== undefined ? m.balanceAmount : (m.balance ?? m.outstandingBalance ?? 0));
+            // Self-healing display: derive rawPaid from member's canonical unique billing history if available
+            const histPaid = Array.isArray(m.billingHistory) && m.billingHistory.length > 0
+              ? m.billingHistory.reduce((s: number, b: any) => s + Number(b.amountPaid || b.paid || 0), 0)
+              : null;
+            const rawPaid = histPaid !== null ? histPaid : Number(m.amountPaid !== undefined ? m.amountPaid : (m.paid ?? m.totalPaid ?? 0));
+            const histBilled = Array.isArray(m.billingHistory) && m.billingHistory.length > 0
+              ? m.billingHistory.reduce((s: number, b: any) => s + Number(b.netPayable || b.amount || 0), 0)
+              : null;
+            const rawBilled = histBilled !== null ? histBilled : Number(m.totalBilled || m.amount || rawPaid);
+            const rawBalance = Math.max(0, rawBilled - rawPaid);
             const isSelected = selectedIds.has(m.id);
 
             const attScore = isHold ? 0 : calculateRealAttendance(m.joinDate, m.attendanceCount || 0);

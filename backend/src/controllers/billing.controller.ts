@@ -100,11 +100,6 @@ export const createInvoice = async (req: Request, res: Response) => {
         const newExpiry = new Date(currentExpiry.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
         newExpiryString = newExpiry.toISOString().split('T')[0];
       }
-      
-      const newTotalPaid = (Number(m.totalPaid) || 0) + finalPaid;
-      const totalBilled = Number(m.totalBilled) || finalNet;
-      const newOutstanding = Math.max(0, totalBilled - newTotalPaid);
-      const newPaymentStatus = newOutstanding <= 0 ? 'paid' : (newTotalPaid > 0 ? 'partial' : 'pending');
 
       const existingHistory = Array.isArray(m.membershipHistory) ? m.membershipHistory : [];
       const newHistoryEntry = {
@@ -137,9 +132,9 @@ export const createInvoice = async (req: Request, res: Response) => {
         otherCharges: othAmt,
         netPayable: finalNet,
         amountPaid: finalPaid,
-        pendingAmount: newOutstanding,
+        pendingAmount: 0,
         paymentMethod: method || 'UPI',
-        paymentStatus: newOutstanding <= 0 ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'UNPAID'),
+        paymentStatus: 'PAID',
         billingType: txType === 'pt_payment' ? 'PT' : 'MEMBERSHIP',
         isHistorical: isHist,
         createdAt: invoice.createdAt || new Date().toISOString(),
@@ -148,6 +143,14 @@ export const createInvoice = async (req: Request, res: Response) => {
 
       const existingBillingHistory = Array.isArray(m.billingHistory) ? m.billingHistory : [];
       const updatedBillingHistory = [canonicalTx, ...existingBillingHistory.filter((b: any) => b.transactionId !== invoice.id && b.invoiceNumber !== canonicalTx.invoiceNumber)];
+
+      // Canonical recalculation: derive totalPaid and totalBilled from unique billing history
+      const newTotalPaid = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.amountPaid || b.paid || 0)), 0);
+      const totalBilled = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.netPayable || b.amount || 0)), 0);
+      const newOutstanding = Math.max(0, totalBilled - newTotalPaid);
+      const newPaymentStatus = newOutstanding <= 0 ? 'paid' : (newTotalPaid > 0 ? 'partial' : 'pending');
+      canonicalTx.pendingAmount = newOutstanding;
+      canonicalTx.paymentStatus = newOutstanding <= 0 ? 'PAID' : (finalPaid > 0 ? 'PARTIAL' : 'UNPAID');
 
       const expiryTime = new Date(`${newExpiryString}T23:59:59.999+05:30`).getTime();
       const nextStatus = newExpiryString >= todayYMD ? 'active' : 'expired';
