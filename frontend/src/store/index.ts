@@ -325,9 +325,11 @@ export const useGymStore = create<GymStore>((set, get) => ({
       if (rawData.length > 0) {
         const seen = new Set<string>();
         const unique = (rawData as any[]).filter(m => {
-          const key = (m.memberId && m.memberId !== 'TWG-2026-0000')
-            ? `mid_${m.memberId.trim()}`
-            : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `id_${m.id}`);
+          const key = m.id
+            ? `id_${String(m.id).trim()}`
+            : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+              ? `mid_${String(m.memberId).trim()}`
+              : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && m.phone.replace(/\D/g, '') ? `phone_${m.phone.replace(/\D/g, '')}` : `rnd_${Math.random()}`));
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -354,9 +356,11 @@ export const useGymStore = create<GymStore>((set, get) => ({
       });
       const seen = new Set<string>();
       const unique = list.filter(m => {
-        const key = (m.memberId && m.memberId !== 'TWG-2026-0000')
-          ? `mid_${String(m.memberId).trim()}`
-          : (m.phone ? `phone_${String(m.phone).replace(/\D/g, '')}` : `id_${m.id}`);
+        const key = m.id
+          ? `id_${String(m.id).trim()}`
+          : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+            ? `mid_${String(m.memberId).trim()}`
+            : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

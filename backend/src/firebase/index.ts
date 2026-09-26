@@ -530,11 +530,13 @@ export const db = {
 
         const seenKeys = new Set<string>();
         const deduplicatedList = activeMembers.filter((m: any) => {
-          const key = m.clientId
-            ? `cid_${String(m.clientId).trim()}`
-            : (m.memberId && m.memberId !== 'TWG-2026-0000')
-              ? `mid_${String(m.memberId).trim()}`
-              : (m.id ? `id_${String(m.id).trim()}` : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `rnd_${Math.random()}`));
+          const key = m.id
+            ? `id_${String(m.id).trim()}`
+            : (m.clientId
+              ? `cid_${String(m.clientId).trim()}`
+              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+                ? `mid_${String(m.memberId).trim()}`
+                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
           if (seenKeys.has(key)) return false;
           seenKeys.add(key);
           return true;
