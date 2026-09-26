@@ -1764,12 +1764,14 @@ export const syncHikvisionMemberPhotos = async (req: Request, res: Response) => 
             continue;
           }
 
+          const dataUrl = `data:image/jpeg;base64,${downloadOutput.base64}`;
+
           // Update Member Document: PRESERVE STATUS (HOLD remains HOLD, active remains active!)
           const updatePayload: any = {
             biometricId: bioId,
             employeeId: bioId,
             hikvisionUserId: bioId,
-            photoUrl: saveResult.photoUrl,
+            photoUrl: dataUrl,
             photoStoragePath: saveResult.photoStoragePath,
             photoSource: 'HIKVISION',
             photoSyncedAt: nowIso,
@@ -1777,9 +1779,9 @@ export const syncHikvisionMemberPhotos = async (req: Request, res: Response) => 
             facePhotoSource: 'HIKVISION',
             faceEnrollmentStatus: 'ENROLLED',
             faceEnrolledAt: nowIso,
-            photo: saveResult.photoUrl,
-            avatarUrl: saveResult.photoUrl,
-            avatar: saveResult.photoUrl,
+            photo: dataUrl,
+            avatarUrl: dataUrl,
+            avatar: dataUrl,
             updatedAt: nowIso
           };
 
