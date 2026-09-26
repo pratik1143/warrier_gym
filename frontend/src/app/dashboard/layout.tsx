@@ -102,10 +102,7 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!isFirebaseReady || !fDb) return;
 
-    // Silently guarantee active Firebase session for Firestore security rules
-    if (!auth.currentUser) {
-      signInWithEmailAndPassword(auth, 'owner@thewarriorgym.in', '1234567').catch(() => {});
-    }
+
 
     // Safe Firestore Timestamp → JS Date converter
     const toJsDate = (val: any): Date | null => {

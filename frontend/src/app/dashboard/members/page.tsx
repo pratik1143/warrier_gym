@@ -248,6 +248,32 @@ export default function MembersPage() {
     fetchPlans();
 
     if (isFirebaseReady && fDb) {
+      // 1. Immediate one-shot read for instant render
+      getDocs(collection(fDb, 'members')).then((snapshot) => {
+        if (!snapshot.empty) {
+          const list: any[] = [];
+          snapshot.forEach(docSnap => {
+            const d = docSnap.data();
+            if (!d.isDeleted && !d.deletedAt) {
+              list.push({ id: docSnap.id, ...d });
+            }
+          });
+          const seen = new Set<string>();
+          const unique = list.filter(m => {
+            const key = m.id
+              ? `id_${String(m.id).trim()}`
+              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+                ? `mid_${String(m.memberId).trim()}`
+                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          useGymStore.setState({ members: unique });
+        }
+      }).catch(e => console.warn('Members immediate read error:', e));
+
+      // 2. Real-time updates listener
       const unsubMembers = onSnapshot(collection(fDb, 'members'), (snapshot) => {
         const list: any[] = [];
         snapshot.forEach(docSnap => {

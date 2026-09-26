@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, setLogLevel } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -16,7 +16,17 @@ const firebaseConfig = {
 // Initialize Firebase (singleton pattern for Next.js)
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
-const db = getFirestore(app);
+
+// Use auto-detect long polling to eliminate Chrome net::ERR_QUIC_PROTOCOL_ERROR.QUIC_TOO_MANY_RTOS
+let db: any;
+try {
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+  });
+} catch (_) {
+  db = getFirestore(app);
+}
+
 const storage = getStorage(app);
 
 // Suppress Firestore internal connection warning log noise
