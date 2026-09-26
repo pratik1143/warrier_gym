@@ -40,6 +40,21 @@ function runPython(cmd: string): Promise<any> {
   });
 }
 
+const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+async function downloadWithRetry(bioId: string, faceURL: string, maxRetries = 3): Promise<any> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const res = await runPython(`py "${pythonScript}" download "${bioId}" "" "${faceURL || ''}"`);
+    if (res && res.success && res.base64) {
+      return res;
+    }
+    if (attempt < maxRetries) {
+      await sleep(1000);
+    }
+  }
+  return { success: false, error: 'Download failed after retries' };
+}
+
 async function main() {
   console.log('====================================================');
   console.log('🚀 PULLING ALL HIKVISION PHOTOS DIRECTLY TO FIRESTORE');
@@ -71,7 +86,8 @@ async function main() {
 
   let matchedCount = 0;
   let downloadedCount = 0;
-  let skippedCount = 0;
+  let skippedNoFace = 0;
+  let notFoundCount = 0;
   let failedCount = 0;
   const nowIso = new Date().toISOString();
 
@@ -81,31 +97,36 @@ async function main() {
     fs.mkdirSync(localUploadDir, { recursive: true });
   }
 
-  console.log('3. Matching members and syncing face photos...');
+  console.log('3. Matching members and syncing face photos to Firestore in real-time...\n');
 
-  for (const member of members as any[]) {
+  for (let i = 0; i < members.length; i++) {
+    const member = members[i] as any;
     const bioId = String(member.biometricId || member.employeeId || member.hikvisionUserId || member.deviceUserId || '').trim();
+    const memName = member.name || 'Member';
+
     if (!bioId) {
+      notFoundCount++;
       continue;
     }
 
     const machUser = terminalMap.get(bioId.toLowerCase());
     if (!machUser) {
+      notFoundCount++;
       continue;
     }
 
     matchedCount++;
     const hasFace = Boolean(machUser.hasFace || machUser.numOfFace > 0 || machUser.faceURL);
     if (!hasFace) {
-      console.log(`ℹ️ [Bio #${bioId}] ${member.name}: User exists on terminal but has no face photo enrolled.`);
+      skippedNoFace++;
+      console.log(`[${i + 1}/${members.length}] ℹ️ [Bio #${bioId}] ${memName}: Enrolled on machine but has no face photo.`);
       continue;
     }
 
-    console.log(`📸 [Bio #${bioId}] Downloading face photo for "${member.name}"...`);
-    const downloadRes = await runPython(`py "${pythonScript}" download "${bioId}" "" "${machUser.faceURL || ''}"`);
+    const downloadRes = await downloadWithRetry(bioId, machUser.faceURL || '');
 
     if (!downloadRes || !downloadRes.success || !downloadRes.base64) {
-      console.warn(`⚠️ [Bio #${bioId}] Failed to download face photo:`, downloadRes?.error);
+      console.warn(`[${i + 1}/${members.length}] ⚠️ [Bio #${bioId}] Failed to download face photo:`, downloadRes?.error);
       failedCount++;
       continue;
     }
@@ -120,7 +141,7 @@ async function main() {
       fs.writeFileSync(path.join(userDir, 'profile.jpg'), Buffer.from(base64Data, 'base64'));
     } catch (e) {}
 
-    // Update Firestore Document
+    // Update Firestore Document directly
     const updatePayload: any = {
       biometricId: bioId,
       employeeId: bioId,
@@ -141,22 +162,27 @@ async function main() {
     try {
       await firestore.collection('members').doc(member.docId).set(updatePayload, { merge: true });
       downloadedCount++;
-      console.log(`✅ [Bio #${bioId}] "${member.name}" photo saved to Firestore successfully! (${downloadRes.sizeBytes || base64Data.length} bytes)`);
+      console.log(`[${i + 1}/${members.length}] ✅ [Bio #${bioId}] "${memName}" -> Saved to Firestore! (${Math.round((downloadRes.sizeBytes || base64Data.length) / 1024)} KB)`);
     } catch (fsErr: any) {
-      console.error(`❌ [Bio #${bioId}] Failed updating Firestore for ${member.name}:`, fsErr.message);
+      console.error(`[${i + 1}/${members.length}] ❌ [Bio #${bioId}] Failed updating Firestore for ${memName}:`, fsErr.message);
       failedCount++;
     }
+
+    // Small throttle between requests to prevent machine overload
+    await sleep(250);
   }
 
-  console.log('====================================================');
+  console.log('\n====================================================');
   console.log('🎉 PHOTO SYNC COMPLETED SUMMARY');
   console.log('====================================================');
   console.log(`Total CRM Members:       ${members.length}`);
   console.log(`Terminal Users Found:    ${terminalUsers.length}`);
   console.log(`Matched by Biometric ID: ${matchedCount}`);
   console.log(`Successfully Synced:     ${downloadedCount}`);
+  console.log(`Skipped (No Face):       ${skippedNoFace}`);
+  console.log(`Not Found on Machine:    ${notFoundCount}`);
   console.log(`Failed Downloads:        ${failedCount}`);
-  console.log('====================================================');
+  console.log('====================================================\n');
 
   process.exit(0);
 }
