@@ -319,6 +319,40 @@ export const useGymStore = create<GymStore>((set, get) => ({
   fetchMembers: async (force = false) => {
     const now = Date.now();
     if (!force && get().members.length > 0 && (now - _membersCacheTs) < STALE_MS) return;
+
+    // 1. Instant Firestore fetch (works seamlessly on Vercel & local)
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const snap = await getDocs(collection(db, 'members'));
+      if (!snap.empty) {
+        const list: any[] = [];
+        snap.forEach(docSnap => {
+          const d = docSnap.data();
+          if (!d.isDeleted && !d.deletedAt) {
+            list.push({ id: docSnap.id, ...d });
+          }
+        });
+        const seen = new Set<string>();
+        const unique = list.filter(m => {
+          const key = m.id
+            ? `id_${String(m.id).trim()}`
+            : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+              ? `mid_${String(m.memberId).trim()}`
+              : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        set({ members: unique });
+        _membersCacheTs = Date.now();
+        return;
+      }
+    } catch (firestoreErr) {
+      console.warn('Direct Firestore fetch members fallback to API:', firestoreErr);
+    }
+
+    // 2. Fallback to REST API
     try {
       const res = await API.get('/members');
       const rawData = (res.data && Array.isArray(res.data)) ? res.data : [];
@@ -336,42 +370,9 @@ export const useGymStore = create<GymStore>((set, get) => ({
         });
         set({ members: unique });
         _membersCacheTs = Date.now();
-        return;
       }
     } catch (err) {
-      console.warn('Backend API fetchMembers failed, falling back to direct Firestore:', err);
-    }
-
-    // Direct Firestore fallback (for Vercel deployment where localhost backend is not reachable)
-    try {
-      const { db } = await import('@/lib/firebase');
-      const { collection, getDocs } = await import('firebase/firestore');
-      const snap = await getDocs(collection(db, 'members'));
-      const list: any[] = [];
-      snap.forEach(docSnap => {
-        const d = docSnap.data();
-        if (!d.isDeleted && !d.deletedAt) {
-          list.push({ id: docSnap.id, ...d });
-        }
-      });
-      const seen = new Set<string>();
-      const unique = list.filter(m => {
-        const key = m.id
-          ? `id_${String(m.id).trim()}`
-          : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-            ? `mid_${String(m.memberId).trim()}`
-            : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      set({ members: unique });
-      _membersCacheTs = Date.now();
-    } catch (firestoreErr) {
-      console.error('Direct Firestore fetch members error:', firestoreErr);
-      if (get().members.length === 0) {
-        set({ members: [] });
-      }
+      console.warn('Backend API fetchMembers failed:', err);
     }
   },
   addMember: async (member) => {
