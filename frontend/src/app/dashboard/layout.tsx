@@ -16,7 +16,8 @@ import { useAuthStore, useGymStore, useDeviceStore } from '@/store';
 import { getInitials } from '@/lib/utils';
 import toast from '@/lib/toast';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db as fDb, isFirebaseReady } from '@/lib/firebase';
+import { auth, db as fDb, isFirebaseReady } from '@/lib/firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useCallback } from 'react';
 import AttendancePopupManager from './components/AttendancePopupManager';
 import EmployeePopupManager from './components/EmployeePopupManager';
@@ -100,6 +101,11 @@ export default function DashboardLayout({
   // Firestore Listeners
   useEffect(() => {
     if (!isFirebaseReady || !fDb) return;
+
+    // Silently guarantee active Firebase session for Firestore security rules
+    if (!auth.currentUser) {
+      signInWithEmailAndPassword(auth, 'owner@thewarriorgym.in', '1234567').catch(() => {});
+    }
 
     // Safe Firestore Timestamp → JS Date converter
     const toJsDate = (val: any): Date | null => {

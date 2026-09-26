@@ -43,12 +43,48 @@ export const useAuthStore = create<AuthStore>((set) => ({
   login: async (credentials) => {
     set({ isLoading: true });
     try {
-      // ── Demo Account Bypass (no Firebase account needed) ──────────────
+      // Step 1: Authenticate with Firebase for real accounts
+      let userCredential = null;
+      let idToken = '';
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
+        idToken = await userCredential.user.getIdToken();
+      } catch (fbAuthErr: any) {
+        console.warn('Direct Firebase Auth failed, checking demo credentials fallback:', fbAuthErr.message);
+      }
+
+      if (userCredential && userCredential.user) {
+        // Step 2: Send Firebase ID token to backend to get user profile if reachable
+        try {
+          const res = await API.post('/auth/login', { idToken, email: credentials.email });
+          const user = res.data;
+          localStorage.setItem('warrior_gym_user', JSON.stringify(user));
+          set({ user, isAuthenticated: true, isLoading: false });
+          return user;
+        } catch (backendErr) {
+          // Backend unavailable — build user from Firebase token claims
+          const fbUser = userCredential.user;
+          const user: User = {
+            uid: fbUser.uid,
+            name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Gym Owner',
+            email: fbUser.email || credentials.email,
+            role: 'gym_owner' as const,
+            branch: 'Mohali, Punjab',
+            gymId: 'gym_001',
+            token: idToken,
+          };
+          localStorage.setItem('warrior_gym_user', JSON.stringify(user));
+          set({ user, isAuthenticated: true, isLoading: false });
+          return user;
+        }
+      }
+
+      // ── Demo Account Bypass Fallback ──────────────
       const DEMO_ACCOUNTS: Record<string, { password: string; user: User }> = {
         'owner@thewarriorgym.in': {
           password: '1234567',
           user: {
-            uid: 'demo_owner_001',
+            uid: 'kr5wJHZdf7TnfbzB5CuKLRY2tFq2',
             name: 'Gym Owner',
             email: 'owner@thewarriorgym.in',
             role: 'gym_owner',
@@ -75,38 +111,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
         set({ user: demoMatch.user, isAuthenticated: true, isLoading: false });
         return demoMatch.user;
       }
-      // ─────────────────────────────────────────────────────────────────
-
-      // Step 1: Authenticate with Firebase for real accounts
-      const userCredential = await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
-      const idToken = await userCredential.user.getIdToken();
-
-      // Step 2: Send Firebase ID token to backend to get user profile
-      try {
-        const res = await API.post('/auth/login', { idToken, email: credentials.email });
-        const user = res.data;
-        localStorage.setItem('warrior_gym_user', JSON.stringify(user));
-        set({ user, isAuthenticated: true, isLoading: false });
-        return user;
-      } catch (backendErr) {
-        // Backend unavailable — build user from Firebase token claims
-        const fbUser = userCredential.user;
-        const user: User = {
-          uid: fbUser.uid,
-          name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Admin',
-          email: fbUser.email || credentials.email,
-          role: 'gym_owner' as const,
-          branch: 'Main Branch',
-          gymId: 'gym_001',
-          token: idToken,
-        };
-        localStorage.setItem('warrior_gym_user', JSON.stringify(user));
-        set({ user, isAuthenticated: true, isLoading: false });
-        return user;
-      }
+      
+      throw new Error('Invalid Email or Password');
     } catch (firebaseErr: any) {
       set({ isLoading: false });
-      throw new Error('Invalid Email or Password');
+      throw new Error(firebaseErr.message || 'Invalid Email or Password');
     }
   },
   logout: async () => {
