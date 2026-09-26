@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, X, Calendar, AlertCircle, AlertTriangle, Check, DollarSign, CreditCard, Receipt, User, ShieldCheck } from 'lucide-react';
+import { 
+  Plus, X, Calendar, AlertCircle, AlertTriangle, Check, DollarSign, 
+  CreditCard, Receipt, User, ShieldCheck, Phone, Send, CheckCircle2, 
+  Printer, MessageSquare, ExternalLink, Sparkles
+} from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,6 +19,8 @@ import styles from '../members.module.css';
 
 // ── ZOD VALIDATION SCHEMA ──────────────────────────────────────────────────
 const createBillSchema = z.object({
+  phone: z.string().optional(),
+  billingDate: z.string().min(1, 'Billing date is required.'),
   plan: z.string().min(1, 'Package selection is required'),
   originalAmount: z.coerce.number().min(0, 'Package amount cannot be negative'),
   discount: z.coerce.number().min(0, 'Discount cannot be negative').default(0),
@@ -25,6 +31,7 @@ const createBillSchema = z.object({
   startDate: z.string().min(1, 'Start date is required.'),
   expiryDate: z.string().min(1, 'Expiry date is required.'),
   notes: z.string().optional(),
+  sendWhatsApp: z.boolean().default(true),
 }).superRefine((data, ctx) => {
   if (!data.startDate) {
     ctx.addIssue({
@@ -87,6 +94,21 @@ interface CreateNewBillModalProps {
   onSaved?: () => void;
 }
 
+interface SuccessBillData {
+  invoiceNumber: string;
+  memberName: string;
+  phone: string;
+  plan: string;
+  billingDate: string;
+  startDate: string;
+  expiryDate: string;
+  netPayable: number;
+  amountPaid: number;
+  pendingBalance: number;
+  method: string;
+  whatsappUrl: string;
+}
+
 export default function CreateNewBillModal({
   isOpen,
   member,
@@ -97,6 +119,7 @@ export default function CreateNewBillModal({
   const [showShorterConfirmation, setShowShorterConfirmation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingFormData, setPendingFormData] = useState<CreateBillFormOutput | null>(null);
+  const [successData, setSuccessData] = useState<SuccessBillData | null>(null);
 
   // Default Package Options & Pricing
   const packages = useMemo(() => [
@@ -111,12 +134,16 @@ export default function CreateNewBillModal({
     return (member?.status || '').toLowerCase() === 'hold';
   }, [member]);
 
+  const todayIST = useMemo(() => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date()), []);
+
   const initialStartDate = useMemo(() => {
     if (isHoldMember || !member?.expiryDate) {
-      return new Date().toISOString().split('T')[0];
+      return todayIST;
     }
     return membershipEngine.calculateAutoStartDate(member);
-  }, [member, isHoldMember]);
+  }, [member, isHoldMember, todayIST]);
 
   const initialExpiryDate = useMemo(() => {
     return membershipEngine.calculateMembershipExpiry(initialStartDate, '3 Months (Quarterly)');
@@ -132,6 +159,8 @@ export default function CreateNewBillModal({
     resolver: zodResolver(createBillSchema),
     mode: 'onChange',
     defaultValues: {
+      phone: member?.phone || '',
+      billingDate: todayIST,
       plan: '3 Months (Quarterly)',
       originalAmount: 6500,
       discount: 0,
@@ -142,12 +171,16 @@ export default function CreateNewBillModal({
       startDate: initialStartDate,
       expiryDate: initialExpiryDate,
       notes: '',
+      sendWhatsApp: true,
     },
   });
 
   const selectedPlan = watch('plan');
   const startDate = watch('startDate');
   const expiryDate = watch('expiryDate');
+  const billingDate = watch('billingDate');
+  const phone = watch('phone');
+  const sendWhatsApp = watch('sendWhatsApp');
   const originalAmount = Number(watch('originalAmount') || 0);
   const discount = Number(watch('discount') || 0);
   const tax = Number(watch('tax') || 0);
@@ -166,10 +199,12 @@ export default function CreateNewBillModal({
   useEffect(() => {
     if (isOpen && member) {
       const autoStart = (member.status || '').toLowerCase() === 'hold' || !member.expiryDate
-        ? new Date().toISOString().split('T')[0]
+        ? todayIST
         : membershipEngine.calculateAutoStartDate(member);
       const autoExpiry = membershipEngine.calculateMembershipExpiry(autoStart, '3 Months (Quarterly)');
 
+      setValue('phone', member.phone || '', { shouldValidate: true });
+      setValue('billingDate', todayIST, { shouldValidate: true });
       setValue('plan', '3 Months (Quarterly)', { shouldValidate: true });
       setValue('originalAmount', 6500, { shouldValidate: true });
       setValue('discount', 0, { shouldValidate: true });
@@ -180,9 +215,11 @@ export default function CreateNewBillModal({
       setValue('startDate', autoStart, { shouldValidate: true });
       setValue('expiryDate', autoExpiry, { shouldValidate: true });
       setValue('notes', (member.status || '').toLowerCase() === 'hold' ? 'Activation bill for Hold member' : '');
+      setValue('sendWhatsApp', true, { shouldValidate: true });
       setShowShorterConfirmation(false);
+      setSuccessData(null);
     }
-  }, [isOpen, member, setValue]);
+  }, [isOpen, member, setValue, todayIST]);
 
   // When package changes: Auto update price & Expiry Date
   const handlePlanChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -206,7 +243,6 @@ export default function CreateNewBillModal({
     }
   };
 
-  // When discount or originalAmount changes: update amountPaid default if it equaled old net
   const handleAmountChange = (newOrig: number) => {
     setValue('originalAmount', newOrig, { shouldValidate: true });
     const curDisc = Number(watch('discount') || 0);
@@ -223,7 +259,6 @@ export default function CreateNewBillModal({
     setValue('amountPaid', newNet, { shouldValidate: true });
   };
 
-  // When Start Date changes: Auto recalculate Expiry Date
   const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStart = e.target.value;
     setValue('startDate', newStart, { shouldValidate: true });
@@ -259,11 +294,41 @@ export default function CreateNewBillModal({
     return eDay.getTime() >= tDay.getTime();
   }, [member, isHoldMember]);
 
-  const todayIST = useMemo(() => new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date()), []);
   const queuedRenewal = isMemberActive && !!startDate && startDate > todayIST;
   const totalDaysAfterBill = expiryDate ? membershipEngine.calculateDaysLeft(expiryDate) : 0;
+
+  // Build WhatsApp invoice message
+  const buildWhatsAppMessage = (
+    invNum: string,
+    memName: string,
+    memPhone: string,
+    planName: string,
+    billDateStr: string,
+    startStr: string,
+    expiryStr: string,
+    netPayVal: number,
+    paidVal: number,
+    pendingVal: number,
+    methodVal: string
+  ) => {
+    return (
+      `🏋️ *THE WARRIOR GYM — OFFICIAL INVOICE RECEIPT*\n\n` +
+      `👤 *Member*: ${memName}\n` +
+      `📱 *Phone*: ${memPhone || 'N/A'}\n` +
+      `📄 *Invoice No*: ${invNum}\n` +
+      `📦 *Package*: ${planName}\n` +
+      `📅 *Billing Date*: ${billDateStr}\n` +
+      `🚀 *Start Date*: ${startStr}\n` +
+      `🏁 *Expiry Date*: ${expiryStr}\n` +
+      `💰 *Total Net Amount*: ₹${netPayVal.toLocaleString('en-IN')}\n` +
+      `✅ *Amount Paid*: ₹${paidVal.toLocaleString('en-IN')}\n` +
+      (pendingVal > 0 ? `⏳ *Pending Balance*: ₹${pendingVal.toLocaleString('en-IN')}\n` : `🎉 *Balance*: NIL (Fully Paid)\n`) +
+      `💳 *Payment Mode*: ${methodVal}\n` +
+      `⚡ *Membership Status*: ACTIVE\n\n` +
+      `Thank you for choosing *The Warrior Gym*! 💪\n` +
+      `Stay Fit, Stay Strong!`
+    );
+  };
 
   // Save Bill & Activate Membership
   const executeSaveBill = async (data: CreateBillFormOutput) => {
@@ -272,9 +337,8 @@ export default function CreateNewBillModal({
     try {
       const invNum = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
       const now = new Date();
-      const today = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(now);
+      const bDate = data.billingDate || todayIST;
+      const cleanPhoneInput = String(data.phone || member.phone || '').trim();
       const origAmt = Number(data.originalAmount);
       const discAmt = Number(data.discount || 0);
       const taxAmt = Number(data.tax || 0);
@@ -287,7 +351,8 @@ export default function CreateNewBillModal({
       const billPayload: any = {
         memberId: member.id,
         memberName: member.name,
-        memberPhone: member.phone || '',
+        memberPhone: cleanPhoneInput,
+        phone: cleanPhoneInput,
         invoiceNumber: invNum,
         invoice: invNum,
         plan: data.plan,
@@ -307,8 +372,9 @@ export default function CreateNewBillModal({
         method: data.method,
         status: computedPayStatus,
         paymentStatus: computedPayStatus,
-        date: today,
-        paymentDate: today,
+        date: bDate,
+        billingDate: bDate,
+        paymentDate: bDate,
         startDate: data.startDate,
         expiryDate: data.expiryDate,
         newExpiryDate: data.expiryDate,
@@ -320,8 +386,8 @@ export default function CreateNewBillModal({
         isRealTimeToday: true,
       };
 
-      // 1. Create canonical bill via repository (atomic backend execution + idempotency protection)
-      const idempotencyKey = `pay_${member.id}_${data.plan}_${today}_${Date.now()}`;
+      // 1. Create canonical bill via repository
+      const idempotencyKey = `pay_${member.id}_${data.plan}_${bDate}_${Date.now()}`;
       billPayload.idempotencyKey = idempotencyKey;
 
       let createdInvoice: any = null;
@@ -333,11 +399,12 @@ export default function CreateNewBillModal({
 
       const txId = createdInvoice?.id || `tx_${Date.now()}`;
 
-      // 2. Update Member Document: set status to 'active' (HOLD -> ACTIVE) & Link Canonical History
+      // 2. Update Member Document
       const existingHistory = Array.isArray(member.membershipHistory) ? member.membershipHistory : [];
       const newHistoryEntry = {
         transactionId: txId,
         plan: data.plan,
+        billingDate: bDate,
         startDate: data.startDate,
         expiryDate: data.expiryDate,
         amount: netPay,
@@ -356,8 +423,8 @@ export default function CreateNewBillModal({
         invoiceNumber: invNum,
         packageId: data.plan,
         packageName: data.plan,
-        billingDate: today,
-        paymentDate: today,
+        billingDate: bDate,
+        paymentDate: bDate,
         startDate: data.startDate,
         expiryDate: data.expiryDate,
         originalAmount: origAmt,
@@ -378,12 +445,10 @@ export default function CreateNewBillModal({
       const existingBilling = Array.isArray(member.billingHistory) ? member.billingHistory : [];
       const updatedBillingHistory = [canonicalTx, ...existingBilling.filter((b: any) => b.invoiceNumber !== invNum && b.transactionId !== txId)];
 
-      // Canonical recalculation: derive totalPaid and totalBilled from unique billing history
       const newTotalPaid = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.amountPaid || b.paid || 0)), 0);
       const newTotalBilled = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.netPayable || b.amount || 0)), 0);
       const newOutstandingBalance = Math.max(0, newTotalBilled - newTotalPaid);
 
-      // Explicit Biometric Safety: Ensure billing NEVER wipes or resets biometric fields
       const biometricSafetyUpdates: any = {};
       if (member.biometricId) biometricSafetyUpdates.biometricId = member.biometricId;
       if (member.deviceUserId) biometricSafetyUpdates.deviceUserId = member.deviceUserId;
@@ -392,9 +457,10 @@ export default function CreateNewBillModal({
       if (member.fingerprintEnrollmentStatus) biometricSafetyUpdates.fingerprintEnrollmentStatus = member.fingerprintEnrollmentStatus;
       if (member.biometric) biometricSafetyUpdates.biometric = member.biometric;
 
-      // 2. Client-side Firestore sync fallback (Backend Admin SDK already committed this atomically)
+      // Firestore Update
       try {
         await updateDoc(doc(db, 'members', member.id), {
+          phone: cleanPhoneInput || member.phone || '',
           plan: data.plan,
           packageName: data.plan,
           membershipPlan: data.plan,
@@ -402,7 +468,7 @@ export default function CreateNewBillModal({
           membershipStartDate: member.startDate || data.startDate,
           expiryDate: data.expiryDate,
           membershipExpiryDate: data.expiryDate,
-          status: 'active', // Explicit HOLD -> ACTIVE transition
+          status: 'active',
           membershipStatus: 'ACTIVE',
           activationStatus: 'ACTIVE',
           daysLeft: computedDaysLeft,
@@ -427,7 +493,52 @@ export default function CreateNewBillModal({
         console.warn('Direct client updateDoc skipped (already committed by backend Admin SDK):', clientDocErr);
       }
 
-      toast.success(`Bill ${invNum} generated! ${member.name} is now ACTIVE!`);
+      // WhatsApp URL generation
+      const digitsOnly = cleanPhoneInput.replace(/\D/g, '');
+      const fullWaNumber = digitsOnly.length === 10 ? `91${digitsOnly}` : digitsOnly;
+      const waMessage = buildWhatsAppMessage(
+        invNum,
+        member.name,
+        cleanPhoneInput,
+        data.plan,
+        bDate,
+        data.startDate,
+        data.expiryDate,
+        netPay,
+        paidAmt,
+        outstanding,
+        data.method
+      );
+      const generatedWaUrl = fullWaNumber ? `https://wa.me/${fullWaNumber}?text=${encodeURIComponent(waMessage)}` : '';
+
+      // Auto-open WhatsApp if enabled & phone exists
+      if (data.sendWhatsApp && generatedWaUrl && typeof window !== 'undefined') {
+        try {
+          window.open(generatedWaUrl, '_blank');
+        } catch (e) {
+          console.warn('Popup blocked, available in modal:', e);
+        }
+      }
+
+      toast.success(`🎉 Bill ${invNum} generated! ${member.name} is now ACTIVE!`);
+
+      // Set Success State to show success modal
+      setSuccessData({
+        invoiceNumber: invNum,
+        memberName: member.name,
+        phone: cleanPhoneInput,
+        plan: data.plan,
+        billingDate: bDate,
+        startDate: data.startDate,
+        expiryDate: data.expiryDate,
+        netPayable: netPay,
+        amountPaid: paidAmt,
+        pendingBalance: outstanding,
+        method: data.method,
+        whatsappUrl: generatedWaUrl,
+      });
+
+      // Invalidate store cache
       try {
         const { fetchMembers, fetchPayments } = useGymStore.getState();
         await fetchMembers(true);
@@ -435,8 +546,8 @@ export default function CreateNewBillModal({
       } catch (e) {
         console.warn('Store refresh notice:', e);
       }
+
       if (onSaved) onSaved();
-      onClose();
     } catch (err: any) {
       toast.error('Failed to generate bill: ' + (err?.message || err));
     } finally {
@@ -470,7 +581,7 @@ export default function CreateNewBillModal({
               {isHoldMember ? 'Activate Membership & Bill' : 'Create New Bill'}
             </h3>
             <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-              Generate invoice, record payment & set membership duration
+              Generate invoice, record payment, update phone & send WhatsApp bill
             </p>
           </div>
           <button
@@ -491,7 +602,7 @@ export default function CreateNewBillModal({
               <div>
                 <span className="text-xs font-black text-slate-900 block">{member.name}</span>
                 <span className="text-[10px] text-slate-500 font-mono">
-                  {member.phone ? member.phone : 'No phone number'}
+                  {phone || member.phone || 'No phone number added'}
                 </span>
               </div>
             </div>
@@ -534,6 +645,42 @@ export default function CreateNewBillModal({
         {/* Form Body */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 text-xs">
           
+          {/* Member Phone Number & Billing Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <Phone size={12} className="text-emerald-600" />
+                Phone Number (WhatsApp)
+              </label>
+              <input
+                type="tel"
+                {...register('phone')}
+                placeholder="e.g. 9876543210"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all font-mono"
+              />
+              <p className="mt-1 text-[10px] text-slate-400 font-semibold">
+                Bill & receipts will be sent to this number
+              </p>
+            </div>
+
+            <div>
+              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px] flex items-center gap-1">
+                <Calendar size={12} className="text-[#EA580C]" />
+                Billing Date *
+              </label>
+              <input
+                type="date"
+                {...register('billingDate')}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
+              />
+              {errors.billingDate && (
+                <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
+                  <AlertCircle size={12} /> {errors.billingDate.message}
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Select Package & Package Amount */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -724,6 +871,26 @@ export default function CreateNewBillModal({
             />
           </div>
 
+          {/* WhatsApp Checkbox Option */}
+          <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 flex items-center justify-between cursor-pointer" onClick={() => setValue('sendWhatsApp', !sendWhatsApp)}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <MessageSquare size={16} />
+              </div>
+              <div>
+                <span className="text-xs font-black text-slate-900 block">Send Bill on WhatsApp</span>
+                <span className="text-[10px] text-emerald-700 font-semibold">
+                  Instantly open WhatsApp with official formatted invoice receipt
+                </span>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              {...register('sendWhatsApp')}
+              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+            />
+          </div>
+
           {/* Action Buttons */}
           <div className="flex gap-2 pt-2">
             <button
@@ -731,11 +898,14 @@ export default function CreateNewBillModal({
               disabled={!isValid || isSubmitting}
               className="flex-1 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer shadow-md flex items-center justify-center gap-1.5"
             >
-              {isSubmitting 
-                ? 'Saving Bill & Activating...' 
-                : isHoldMember 
-                  ? 'Generate Bill & Activate Member' 
-                  : 'Save Bill & Update Coverage'}
+              {isSubmitting ? (
+                'Saving Bill & Activating...' 
+              ) : (
+                <>
+                  <Receipt size={15} />
+                  {isHoldMember ? 'Generate Bill & Activate Member' : 'Save Bill & Activate Coverage'}
+                </>
+              )}
             </button>
             <button
               type="button"
@@ -777,6 +947,80 @@ export default function CreateNewBillModal({
             </div>
           </div>
         )}
+
+        {/* Success Modal with WhatsApp Send Button & Summary */}
+        {successData && (
+          <div className="absolute inset-0 z-[100] bg-slate-900/90 backdrop-blur-md rounded-3xl p-6 flex flex-col justify-center items-center text-center animate-fade-in">
+            <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center mb-3 shadow-lg shadow-emerald-500/30 animate-bounce">
+              <CheckCircle2 size={32} />
+            </div>
+
+            <h4 className="text-base font-black text-white mb-0.5">
+              🎉 Bill Generated Successfully!
+            </h4>
+            <p className="text-xs text-emerald-400 font-bold mb-4">
+              {successData.memberName} is now ACTIVE! (Invoice #{successData.invoiceNumber})
+            </p>
+
+            {/* Bill Summary Card */}
+            <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-3.5 w-full text-left space-y-1.5 text-xs text-slate-200 mb-4 font-mono">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Package:</span>
+                <span className="font-bold text-white">{successData.plan}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Billing Date:</span>
+                <span className="font-bold text-white">{successData.billingDate}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Validity:</span>
+                <span className="font-bold text-white">{successData.startDate} → {successData.expiryDate}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-700 pt-1.5">
+                <span className="text-slate-400">Amount Paid:</span>
+                <span className="font-bold text-emerald-400">₹{successData.amountPaid.toLocaleString('en-IN')} ({successData.method})</span>
+              </div>
+              {successData.pendingBalance > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Pending Balance:</span>
+                  <span className="font-bold text-rose-400">₹{successData.pendingBalance.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 w-full">
+              {successData.whatsappUrl ? (
+                <a
+                  href={successData.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-black rounded-xl text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 no-underline"
+                >
+                  <MessageSquare size={16} />
+                  Send Invoice on WhatsApp ({successData.phone || 'Member'})
+                  <ExternalLink size={14} />
+                </a>
+              ) : (
+                <div className="text-[11px] text-amber-400 font-semibold bg-amber-950/50 border border-amber-800/50 rounded-xl p-2 mb-2">
+                  ⚠️ No phone number was provided to send via WhatsApp.
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSuccessData(null);
+                  onClose();
+                }}
+                className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-all border-none cursor-pointer"
+              >
+                Done / Close
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
