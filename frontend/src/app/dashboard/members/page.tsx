@@ -271,7 +271,10 @@ export default function MembersPage() {
           });
           useGymStore.setState({ members: unique });
         }
-      }).catch(e => console.warn('Members immediate read error:', e));
+      }).catch(e => {
+        console.warn('Members immediate read error, falling back to server API:', e);
+        fetchMembers(true);
+      });
 
       // 2. Real-time updates listener
       const unsubMembers = onSnapshot(collection(fDb, 'members'), (snapshot) => {

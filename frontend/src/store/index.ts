@@ -329,7 +329,33 @@ export const useGymStore = create<GymStore>((set, get) => ({
     const now = Date.now();
     if (!force && get().members.length > 0 && (now - _membersCacheTs) < STALE_MS) return;
 
-    // 1. Instant Firestore fetch (works seamlessly on Vercel & local)
+    // 1. Fetch via Next.js Server API (bypasses Firestore client security rules & QUIC errors via Admin SDK)
+    try {
+      const res = await API.get('/members');
+      const rawData = (res.data && Array.isArray(res.data)) ? res.data : [];
+      if (rawData.length > 0) {
+        const seen = new Set<string>();
+        const unique = (rawData as any[]).filter(m => {
+          const key = m.id
+            ? `id_${String(m.id).trim()}`
+            : (m.clientId
+              ? `cid_${String(m.clientId).trim()}`
+              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+                ? `mid_${String(m.memberId).trim()}`
+                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        set({ members: unique });
+        _membersCacheTs = Date.now();
+        return;
+      }
+    } catch (apiErr) {
+      console.warn('API fetchMembers fallback to direct Firestore:', apiErr);
+    }
+
+    // 2. Direct Firestore Client SDK fallback
     try {
       const { db } = await import('@/lib/firebase');
       const { collection, getDocs } = await import('firebase/firestore');
@@ -346,42 +372,20 @@ export const useGymStore = create<GymStore>((set, get) => ({
         const unique = list.filter(m => {
           const key = m.id
             ? `id_${String(m.id).trim()}`
-            : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-              ? `mid_${String(m.memberId).trim()}`
-              : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
+            : (m.clientId
+              ? `cid_${String(m.clientId).trim()}`
+              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
+                ? `mid_${String(m.memberId).trim()}`
+                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
         });
         set({ members: unique });
         _membersCacheTs = Date.now();
-        return;
       }
     } catch (firestoreErr) {
-      console.warn('Direct Firestore fetch members fallback to API:', firestoreErr);
-    }
-
-    // 2. Fallback to REST API
-    try {
-      const res = await API.get('/members');
-      const rawData = (res.data && Array.isArray(res.data)) ? res.data : [];
-      if (rawData.length > 0) {
-        const seen = new Set<string>();
-        const unique = (rawData as any[]).filter(m => {
-          const key = m.id
-            ? `id_${String(m.id).trim()}`
-            : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-              ? `mid_${String(m.memberId).trim()}`
-              : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && m.phone.replace(/\D/g, '') ? `phone_${m.phone.replace(/\D/g, '')}` : `rnd_${Math.random()}`));
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        set({ members: unique });
-        _membersCacheTs = Date.now();
-      }
-    } catch (err) {
-      console.warn('Backend API fetchMembers failed:', err);
+      console.warn('Direct Firestore fetch members error:', firestoreErr);
     }
   },
   addMember: async (member) => {

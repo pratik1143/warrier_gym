@@ -2,13 +2,23 @@ import axios from 'axios';
 import { auth } from '../lib/firebase';
 
 // Ensure baseURL always properly points to the /api endpoint
-// Handles both 'https://domain.com' and 'https://domain.com/api' (with or without trailing slash)
-const rawBaseURL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').trim().replace(/\/+$/, '');
-const baseURL = rawBaseURL.endsWith('/api') ? rawBaseURL : `${rawBaseURL}/api`;
+// In browser (client-side), default to same-origin relative path '/api' when NEXT_PUBLIC_API_URL is unset
+const getBaseURL = () => {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    const raw = process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, '');
+    return raw.endsWith('/api') ? raw : `${raw}/api`;
+  }
+  if (typeof window !== 'undefined') {
+    return '/api';
+  }
+  return 'http://localhost:5000/api';
+};
+
+const baseURL = getBaseURL();
 
 const API = axios.create({
   baseURL,
-  timeout: 3000,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json'
   }
