@@ -1900,7 +1900,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       </div>
                       <button
                         type="button"
-                        onClick={checkHikvisionStatus}
+                        onClick={() => void checkHikvisionStatus()}
                         disabled={isTestingConn}
                         className="ml-2 p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors"
                         title="Check Terminal Connection"
