@@ -93,40 +93,41 @@ const TEMPLATES: Record<string, { subject: string; html: string }> = {
 </html>`,
   },
   receipt: {
-    subject: 'Payment Received — Invoice #{{invoice}} ✅',
+    subject: 'Membership Receipt — Invoice #{{invoice}}',
     html: `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8" /><style>
-  body { font-family: 'Segoe UI', sans-serif; background: #f8fafc; margin: 0; padding: 0; }
-  .wrapper { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 32px rgba(0,0,0,0.08); }
-  .hero { background: #10b981; padding: 32px; text-align: center; }
-  .hero h1 { color: #fff; font-size: 22px; font-weight: 900; margin: 0; }
-  .hero p { color: rgba(255,255,255,0.8); font-size: 13px; margin: 6px 0 0; }
-  .body { padding: 32px; }
-  .invoice-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
-  .invoice-table th { background: #f8fafc; padding: 10px 12px; text-align: left; font-size: 10px; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; }
-  .invoice-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-weight: 600; }
-  .total-row td { font-size: 16px; font-weight: 900; background: #f8fafc; border-radius: 8px; }
-  .footer { background: #f8fafc; padding: 20px 32px; text-align: center; color: #94a3b8; font-size: 11px; }
+  body { font-family: Arial, sans-serif; background:#070707; color:#f7f1e4; margin:0; padding:24px; }
+  .wrapper { max-width:620px; margin:0 auto; background:#0b0a08; border:2px solid #c99a3b; border-radius:18px; overflow:hidden; }
+  .hero { padding:26px 30px 20px; text-align:center; border-bottom:1px solid #725722; background:linear-gradient(135deg,#171208,#080808); }
+  .hero h1 { color:#efc65e; font-size:23px; letter-spacing:1px; margin:0; }
+  .hero p { color:#d7c79e; font-size:12px; margin:9px 0 0; }
+  .body { padding:24px 30px; }
+  .body p { color:#e7dfce; font-size:14px; line-height:1.6; }
+  .invoice-table { width:100%; border-collapse:collapse; margin:18px 0; font-size:13px; border:1px solid #8f6828; }
+  .invoice-table th { background:#2a200d; color:#efc65e; padding:11px 12px; text-align:left; text-transform:uppercase; letter-spacing:1px; font-size:10px; }
+  .invoice-table td { padding:12px; border-top:1px solid #5c471f; color:#f7f1e4; }
+  .invoice-table td:last-child,.invoice-table th:last-child { text-align:right; }
+  .total-row td { color:#efc65e; font-weight:bold; background:#15120b; }
+  .footer { padding:16px; text-align:center; color:#d7ad50; font-size:10px; letter-spacing:1px; border-top:1px solid #725722; }
 </style></head>
 <body>
   <div class="wrapper">
     <div class="hero">
-      <h1>✅ Payment Received</h1>
-      <p>Invoice #{{invoice}}</p>
+      <h1>THE WARRIOR GYM</h1>
+      <p>MEMBERSHIP RECEIPT · INVOICE #{{invoice}}</p>
     </div>
     <div class="body">
-      <p style="color:#0f172a;font-weight:700">Dear {{memberName}},</p>
-      <p style="color:#64748b;font-size:14px">Thank you for your payment. Your membership is now active.</p>
+      <p>Dear <strong>{{memberName}}</strong>, thank you for choosing The Warrior Gym. Your membership receipt is attached as a PDF.</p>
       <table class="invoice-table">
         <tr><th>Description</th><th>Amount</th></tr>
         <tr><td>{{plan}} Membership</td><td>₹{{amount}}</td></tr>
-        <tr><td>GST (18%)</td><td>₹{{gst}}</td></tr>
-        <tr class="total-row"><td><strong>Total Paid</strong></td><td><strong>₹{{total}}</strong></td></tr>
+        <tr><td>GST / Tax</td><td>₹{{gst}}</td></tr>
+        <tr class="total-row"><td>Paid · {{method}} · {{date}}</td><td>₹{{total}}</td></tr>
       </table>
-      <p style="color:#64748b;font-size:12px">Payment Method: {{method}} · Date: {{date}}</p>
+      <p>We look forward to seeing you train. Stay strong!</p>
     </div>
-    <div class="footer">The Warrior Gym · Mohali, Punjab · GSTIN: 27AAAAA0000A1Z5</div>
+    <div class="footer">SCO 30, 31, SECTOR 89, MOHALI · +91 98170 23336 · THEWARRIORGYM.IN</div>
   </div>
 </body>
 </html>`,
@@ -712,7 +713,7 @@ export default function AutomationPage() {
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
                 <p className="text-[10px] font-black text-emerald-700 mb-1">📄 Automated PDF Invoice Attachment</p>
                 <p className="text-[9px] text-emerald-600 leading-relaxed">
-                  When sending this email, the system automatically compiles a premium next-level PDF invoice using the client's membership details and your gym's logo (<code className="font-mono bg-white px-1.5 py-0.5 rounded text-emerald-800">gym_logo.png</code>). The PDF contains complete billing entries, GST (18%) taxation layout, and a "PAID" stamp, attached directly as a document file.
+                  Payment emails include a landscape black-and-gold Warrior Gym membership receipt PDF with the package, dates, discount, tax, amount paid, and remaining balance.
                 </p>
               </div>
             )}
@@ -735,7 +736,7 @@ export default function AutomationPage() {
                   <FileText size={16} /> Automated Invoice PDF Template
                 </h3>
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                  High-fidelity PDFKit Generator · Dynamic Billing Entries · Print-Ready Layout
+                  Black-and-Gold Membership Receipt · Dynamic Billing Entries · Landscape A4
                 </p>
               </div>
               <div className="flex gap-2">
@@ -776,7 +777,7 @@ export default function AutomationPage() {
                   {loadingPdf ? (
                     <div className="flex flex-col items-center gap-2">
                       <RefreshCw size={24} className="animate-spin text-slate-400" />
-                      <p className="text-[11px] font-bold text-slate-400">Compiling Premium Layout...</p>
+                      <p className="text-[11px] font-bold text-slate-400">Building Membership Receipt...</p>
                     </div>
                   ) : pdfUrl ? (
                     <iframe
@@ -795,16 +796,15 @@ export default function AutomationPage() {
                 {/* Highlights Card */}
                 <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm space-y-4">
                   <h4 className="text-[10px] font-black text-black uppercase tracking-wider border-b border-slate-100 pb-2">
-                    ✨ Premium Layout Specs
+                    ✨ Warrior Gym Receipt Design
                   </h4>
                   <div className="space-y-3">
                     {[
-                      { title: 'Corporate Shield Logo', desc: 'Auto-embeds the high-res gym brand asset.' },
-                      { title: 'Structured Info Cards', desc: 'Displays Billed To and Billed By details inside distinct clean card layout panels.' },
-                      { title: 'Tax-Itemized Table', desc: 'Neat grid rows for memberships with exact validity periods and subtotal rows.' },
-                      { title: 'GST Calculation', desc: 'Automatically splits 18% tax into CGST (9%) and SGST (9%) rows.' },
-                      { title: 'Tilted Digital Stamp', desc: 'Tilted PAID stamp in emerald green (-10 degrees) for authentic receipt validation.' },
-                      { title: 'Gym Tagline Footer', desc: 'Elegant dark bar at the bottom with tracking-spaced branding motto.' },
+                      { title: 'Gym Brand Header', desc: 'Warrior Gym logo, gold lettering, and the building-strength tagline.' },
+                      { title: 'Member Information', desc: 'Member ID, contact, billing date, package, and membership period.' },
+                      { title: 'Black-and-Gold Receipt', desc: 'Membership package, discount, tax, paid amount, refund, freeze, and balance.' },
+                      { title: 'Landscape A4 PDF', desc: 'One-page layout styled to match the in-app receipt and print preview.' },
+                      { title: 'Gym Contact Footer', desc: 'Mohali address, authorized signature, and Stronger Today · Better Tomorrow.' },
                     ].map((item, idx) => (
                       <div key={idx} className="flex gap-2">
                         <span className="text-emerald-500 font-bold text-xs">✓</span>
@@ -823,7 +823,7 @@ export default function AutomationPage() {
                     ⚡ Automation Rules
                   </p>
                   <p className="text-[9px] text-emerald-600 leading-relaxed font-bold font-sans">
-                    This PDF invoice compiles dynamically and attaches instantly to receipt emails whenever a payment is registered or plan is purchased. It guarantees that athletes receive zero-lag receipts right in their email inbox.
+                    This branded PDF is generated from each member's current billing details and attached to receipt emails whenever a payment is registered.
                   </p>
                 </div>
               </div>

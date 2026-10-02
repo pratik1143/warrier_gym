@@ -400,13 +400,15 @@ select option {
     box-shadow: none !important;
     border: none !important;
     margin: 0 !important;
-    padding: 20px !important;
-    background: white !important;
-    color: black !important;
+    padding: 12px !important;
+    background: #070707 !important;
+    color: #f7f1e4 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   @page {
-    size: A4 portrait;
-    margin: 10mm;
+    size: A4 landscape;
+    margin: 6mm;
   }
 }
 

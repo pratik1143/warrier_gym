@@ -17,6 +17,7 @@ import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 import styles from '../members.module.css';
 import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
+import { downloadOfficialInvoicePdf } from '@/lib/invoicePdf';
 
 // ── ZOD VALIDATION SCHEMA ──────────────────────────────────────────────────
 const createBillSchema = z.object({
@@ -128,29 +129,11 @@ export default function CreateNewBillModal({
     try {
       const invoiceElement = document.getElementById('printable-official-invoice');
       if (!invoiceElement) throw new Error('Invoice template is not ready.');
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
-      const canvas = await html2canvas(invoiceElement, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const margin = 12;
-      const contentWidth = pageWidth - margin * 2;
-      const contentHeight = canvas.height * contentWidth / canvas.width;
-      const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
-      const image = canvas.toDataURL('image/jpeg', 0.96);
-      let offset = 0;
-      let page = 0;
-      while (offset < contentHeight) {
-        if (page > 0) pdf.addPage();
-        pdf.addImage(image, 'JPEG', margin, margin - offset, contentWidth, contentHeight);
-        offset += pageHeight;
-        page += 1;
-      }
-      pdf.save(`${bill.invoiceNumber}.pdf`);
       const digits = bill.phone.replace(/\D/g, '');
       const fullNumber = digits.length === 10 ? `91${digits}` : digits;
       const message = encodeURIComponent(`Hello ${bill.memberName}, your membership invoice ${bill.invoiceNumber} is attached as a PDF. Thank you for choosing The Warrior Gym!`);
       window.open(`https://wa.me/${fullNumber}?text=${message}`, '_blank', 'noopener,noreferrer');
+      await downloadOfficialInvoicePdf(invoiceElement, bill.invoiceNumber);
       toast.success('Invoice PDF downloaded. Attach it in the WhatsApp chat to send.');
     } catch (error) {
       console.error('Could not create invoice PDF:', error);

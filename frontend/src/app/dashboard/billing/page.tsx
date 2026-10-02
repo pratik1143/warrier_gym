@@ -14,6 +14,7 @@ import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 import InvoiceBuilderModal from './components/InvoiceBuilderModal';
 import OfficialInvoiceReceipt from '../components/OfficialInvoiceReceipt';
+import { downloadOfficialInvoicePdf } from '@/lib/invoicePdf';
 import { useTodaysPayments, PaymentRecord } from '@/hooks/useTodaysPayments';
 
 // ── Payment Methods Map ──────────────────────────────────────
@@ -137,11 +138,22 @@ export default function BillingPage() {
       toast.error('No valid phone number found for this member.');
       return;
     }
-    const total = Number(p.amount) || 0;
-    const msg = encodeURIComponent(
-      `🏋️ The Warrior Gym — Official Payment Receipt\n\nInvoice No: ${p.invoice || p.invoiceNumber || 'N/A'}\nClient Name: ${p.memberName}\nPlan: ${p.plan || 'Membership'}\nAmount Billed: ₹${total.toLocaleString('en-IN')}\nPayment Method: ${p.method || p.paymentMethod || 'UPI'}\nStatus: ${(p.status || 'paid').toUpperCase()} ✅\nDate: ${p.date || todayStr}\n\nThank you for training with The Warrior Gym! 💪`
-    );
-    window.open(`https://wa.me/91${phone}?text=${msg}`, '_blank');
+    const invoiceNumber = p.invoice || p.invoiceNumber || 'INV-00000';
+    const msg = encodeURIComponent(`Hello ${p.memberName || member?.name || ''}, your Warrior Gym membership receipt ${invoiceNumber} is attached as a PDF. Thank you!`);
+    window.open(`https://wa.me/91${phone}?text=${msg}`, '_blank', 'noopener,noreferrer');
+    setSelectedReceipt(p);
+    void (async () => {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const receiptElement = document.getElementById('printable-official-invoice');
+        if (!receiptElement) throw new Error('Invoice preview is not ready.');
+        await downloadOfficialInvoicePdf(receiptElement, invoiceNumber);
+        toast.success('Membership receipt PDF downloaded. Attach it in the WhatsApp chat to send.');
+      } catch (error) {
+        console.error('Could not create WhatsApp invoice PDF:', error);
+        toast.error('Could not create the receipt PDF. Please try again.');
+      }
+    })();
   };
 
   // CSV Export Handler
@@ -785,7 +797,7 @@ export default function BillingPage() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-extrabold text-slate-900 text-sm sm:text-base flex items-center gap-2">
-                  <Receipt size={18} className="text-[#EA580C]" /> Tax Invoice &amp; Official Receipt
+                  <Receipt size={18} className="text-[#EA580C]" /> Warrior Gym Membership Receipt
                 </h3>
                 <button 
                   onClick={() => setSelectedReceipt(null)} 
@@ -818,7 +830,7 @@ export default function BillingPage() {
                   onClick={() => handleShareWhatsApp(selectedReceipt)} 
                   className="py-2.5 px-5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-200"
                 >
-                  <Share2 size={15} /> Share WhatsApp
+                  <Share2 size={15} /> Download PDF &amp; WhatsApp
                 </button>
               </div>
             </motion.div>

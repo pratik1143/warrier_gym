@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import toast from '@/lib/toast';
 import { useGymStore } from '@/store';
 import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
+import { downloadOfficialInvoicePdf } from '@/lib/invoicePdf';
 import API from '@/services/api';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { db } from '@/lib/firebase';
@@ -2489,13 +2490,25 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       type="button"
                       onClick={() => {
                         const cleanPhone = mobile.replace(/\D/g, '').slice(-10);
-                        const msg = `Hello ${fullName}! Welcome to The Warrior Gym. Your membership for ${selectedPlan?.name} has been activated. Invoice #${createdInvoice?.invoiceNumber || 'INV-001'} is generated.`;
-                        window.open(`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                        const invoiceNumber = createdInvoice?.invoiceNumber || createdInvoice?.invoice || 'INV-001';
+                        const msg = `Hello ${fullName}! Your Warrior Gym membership receipt ${invoiceNumber} is attached as a PDF. Welcome aboard!`;
+                        window.open(`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+                        void (async () => {
+                          try {
+                            const receiptElement = document.getElementById('printable-official-invoice');
+                            if (!receiptElement) throw new Error('Invoice preview is not ready.');
+                            await downloadOfficialInvoicePdf(receiptElement, invoiceNumber);
+                            toast.success('Membership receipt PDF downloaded. Attach it in the WhatsApp chat to send.');
+                          } catch (error) {
+                            console.error('Could not create WhatsApp invoice PDF:', error);
+                            toast.error('Could not create the receipt PDF. Please try again.');
+                          }
+                        })();
                       }}
                       className="py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-xs"
                     >
                       <MessageCircle className="w-3.5 h-3.5" />
-                      <span>Share on WhatsApp</span>
+                      <span>Download PDF &amp; WhatsApp</span>
                     </button>
 
                     <button

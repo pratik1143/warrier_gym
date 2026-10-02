@@ -11,13 +11,14 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { paymentEngine } from '@/lib/engines/paymentEngine';
-import { cleanPlanName, formatDate } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 import API from '@/services/api';
 import { billingRepository, CanonicalTransaction } from '@/services/billingRepository';
 import RenewalWizardModal from '../../components/RenewalWizardModal';
 import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
+import { downloadOfficialInvoicePdf } from '@/lib/invoicePdf';
 import EditBillingModal from './EditBillingModal';
 import CreateNewBillModal from '../../components/CreateNewBillModal';
 
@@ -279,27 +280,22 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
   const handleWhatsApp = (inv: any) => {
     const rawPhone = (member.phone || '').replace(/\D/g, '');
     const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
-    const total = Number(inv.netPayable || inv.amount || 0);
     const invNum = inv.invoiceNumber || inv.invoice || 'INV-001';
-    const planTitle = cleanPlanName(inv.plan || member.plan);
-    const billDate = inv.date ? formatDate(inv.date) : formatDate(new Date().toISOString());
-    const startDate = inv.startDate ? formatDate(inv.startDate) : formatDate(member.joinDate);
-    const expiryDate = inv.expiryDate ? formatDate(inv.expiryDate) : formatDate(member.expiryDate);
-
-    const msg = encodeURIComponent(
-      `🏋️ *THE WARRIOR GYM — OFFICIAL INVOICE RECEIPT*\n\n` +
-      `👤 *Member Name*: ${member.name}\n` +
-      `📄 *Invoice No*: ${invNum}\n` +
-      `📦 *Package*: ${planTitle}\n` +
-      `📅 *Billing Date*: ${billDate}\n` +
-      `🚀 *Start Date*: ${startDate}\n` +
-      `🏁 *Expiry Date*: ${expiryDate}\n` +
-      `💰 *Total Amount*: ₹${total.toLocaleString('en-IN')}\n` +
-      `✅ *Payment Status*: ${(inv.status || 'paid').toUpperCase()}\n` +
-      `💳 *Payment Mode*: ${inv.method || 'UPI'}\n\n` +
-      `Thank you for training with The Warrior Gym! 💪`
-    );
-    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
+    const msg = encodeURIComponent(`Hello ${member.name}, your Warrior Gym membership receipt ${invNum} is attached as a PDF. Thank you!`);
+    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank', 'noopener,noreferrer');
+    setViewInvoice(inv);
+    void (async () => {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        const receiptElement = document.getElementById('printable-official-invoice');
+        if (!receiptElement) throw new Error('Invoice preview is not ready.');
+        await downloadOfficialInvoicePdf(receiptElement, invNum);
+        toast.success('Membership receipt PDF downloaded. Attach it in the WhatsApp chat to send.');
+      } catch (error) {
+        console.error('Could not create WhatsApp invoice PDF:', error);
+        toast.error('Could not create the receipt PDF. Please try again.');
+      }
+    })();
   };
 
   // Export Excel CSV
@@ -640,7 +636,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <FileText size={20} className="text-[#EA580C]" />
-                <h3 className="text-lg font-black text-slate-900">Official Tax Invoice &amp; Receipt</h3>
+                <h3 className="text-lg font-black text-slate-900">Warrior Gym Membership Receipt</h3>
               </div>
               <button onClick={() => setViewInvoice(null)} className="p-2 rounded-full text-slate-400 hover:bg-slate-100 border-none bg-transparent cursor-pointer">
                 <X size={18} />
@@ -773,7 +769,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
             className="w-full px-4 py-2.5 hover:bg-emerald-50 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-emerald-700 font-extrabold transition-colors"
           >
             <MessageSquare size={15} className="text-emerald-600" />
-            <span>WhatsApp Bill</span>
+            <span>Download PDF &amp; WhatsApp</span>
           </button>
 
           <div className="border-t border-slate-100 my-1"></div>

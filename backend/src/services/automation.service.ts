@@ -111,40 +111,38 @@ const DEFAULT_TEMPLATES: Record<string, EmailTemplate> = {
 </html>`
   },
   receipt: {
-    subject: 'Payment Received — Invoice #{{invoice}} ✅',
+    subject: 'Membership Receipt — Invoice #{{invoice}}',
     html: `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8" /><style>
-  body { font-family: 'Segoe UI', sans-serif; background: #f8fafc; margin: 0; padding: 0; }
-  .wrapper { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 32px rgba(0,0,0,0.08); }
-  .hero { background: #10b981; padding: 32px; text-align: center; }
-  .hero h1 { color: #fff; font-size: 22px; font-weight: 900; margin: 0; }
-  .hero p { color: rgba(255,255,255,0.8); font-size: 13px; margin: 6px 0 0; }
-  .body { padding: 32px; }
-  .invoice-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
-  .invoice-table th { background: #f8fafc; padding: 10px 12px; text-align: left; font-size: 10px; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; }
-  .invoice-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-weight: 600; }
-  .total-row td { font-size: 16px; font-weight: 900; background: #f8fafc; border-radius: 8px; }
-  .footer { background: #f8fafc; padding: 20px 32px; text-align: center; color: #94a3b8; font-size: 11px; }
+  body { font-family: Arial, sans-serif; background:#070707; color:#f7f1e4; margin:0; padding:24px; }
+  .wrapper { max-width:620px; margin:0 auto; background:#0b0a08; border:2px solid #c99a3b; border-radius:18px; overflow:hidden; }
+  .hero { padding:26px 30px 20px; text-align:center; border-bottom:1px solid #725722; background:linear-gradient(135deg,#171208,#080808); }
+  .hero h1 { color:#efc65e; font-size:23px; letter-spacing:1px; margin:0; }
+  .hero p { color:#d7c79e; font-size:12px; margin:9px 0 0; }
+  .body { padding:24px 30px; }
+  .body p { color:#e7dfce; font-size:14px; line-height:1.6; }
+  .invoice-table { width:100%; border-collapse:collapse; margin:18px 0; font-size:13px; border:1px solid #8f6828; }
+  .invoice-table th { background:#2a200d; color:#efc65e; padding:11px 12px; text-align:left; text-transform:uppercase; letter-spacing:1px; font-size:10px; }
+  .invoice-table td { padding:12px; border-top:1px solid #5c471f; color:#f7f1e4; }
+  .invoice-table td:last-child,.invoice-table th:last-child { text-align:right; }
+  .total-row td { color:#efc65e; font-weight:bold; background:#15120b; }
+  .footer { padding:16px; text-align:center; color:#d7ad50; font-size:10px; letter-spacing:1px; border-top:1px solid #725722; }
 </style></head>
 <body>
   <div class="wrapper">
-    <div class="hero">
-      <h1>✅ Payment Received</h1>
-      <p>Invoice #{{invoice}}</p>
-    </div>
+    <div class="hero"><h1>THE WARRIOR GYM</h1><p>MEMBERSHIP RECEIPT · INVOICE #{{invoice}}</p></div>
     <div class="body">
-      <p style="color:#0f172a;font-weight:700">Dear {{memberName}},</p>
-      <p style="color:#64748b;font-size:14px">Thank you for your payment. Your membership is now active. Please find your detailed PDF invoice attached to this email.</p>
+      <p>Dear <strong>{{memberName}}</strong>, thank you for choosing The Warrior Gym. Your membership receipt is attached as a PDF.</p>
       <table class="invoice-table">
         <tr><th>Description</th><th>Amount</th></tr>
         <tr><td>{{plan}} Membership</td><td>₹{{amount}}</td></tr>
-        <tr><td>GST (18%)</td><td>₹{{gst}}</td></tr>
-        <tr class="total-row"><td><strong>Total Paid</strong></td><td><strong>₹{{total}}</strong></td></tr>
+        <tr><td>GST / Tax</td><td>₹{{gst}}</td></tr>
+        <tr class="total-row"><td>Paid · {{method}} · {{date}}</td><td>₹{{total}}</td></tr>
       </table>
-      <p style="color:#64748b;font-size:12px">Payment Method: {{method}} · Date: {{date}}</p>
+      <p>We look forward to seeing you train. Stay strong!</p>
     </div>
-    <div class="footer">The Warrior Gym · Mohali, Punjab · GSTIN: 27AAAAA0000A1Z5</div>
+    <div class="footer">SCO 30, 31, SECTOR 89, MOHALI · +91 98170 23336 · THEWARRIORGYM.IN</div>
   </div>
 </body>
 </html>`
@@ -194,19 +192,29 @@ const DEFAULT_TEMPLATES: Record<string, EmailTemplate> = {
 // Local storage for templates
 let localTemplates: Record<string, EmailTemplate> = { ...DEFAULT_TEMPLATES };
 
+const withCurrentReceiptDesign = (templates: Record<string, any>): Record<string, EmailTemplate> => ({
+  ...DEFAULT_TEMPLATES,
+  ...templates,
+  receipt: {
+    ...DEFAULT_TEMPLATES.receipt,
+    ...(templates?.receipt || {}),
+    html: DEFAULT_TEMPLATES.receipt.html,
+  },
+});
+
 export const getSavedTemplates = async (): Promise<Record<string, EmailTemplate>> => {
   const firestore = isFirebaseInitialized && admin ? admin.firestore() : null;
   if (firestore) {
     const doc = await firestore.collection('system_config').doc('templates').get();
     if (doc.exists) {
-      return { ...DEFAULT_TEMPLATES, ...doc.data() };
+      return withCurrentReceiptDesign(doc.data() || {});
     }
   }
   const templatesPath = './email_templates.json';
   if (fs.existsSync(templatesPath)) {
     try {
       const data = JSON.parse(fs.readFileSync(templatesPath, 'utf8'));
-      localTemplates = { ...DEFAULT_TEMPLATES, ...data };
+      localTemplates = withCurrentReceiptDesign(data);
       return localTemplates;
     } catch (e) {}
   }
@@ -214,16 +222,17 @@ export const getSavedTemplates = async (): Promise<Record<string, EmailTemplate>
 };
 
 export const saveTemplates = async (templatesData: any): Promise<any> => {
+  const normalizedTemplates = withCurrentReceiptDesign({ ...localTemplates, ...templatesData });
   const firestore = isFirebaseInitialized && admin ? admin.firestore() : null;
   if (firestore) {
-    await firestore.collection('system_config').doc('templates').set(templatesData, { merge: true });
+    await firestore.collection('system_config').doc('templates').set(normalizedTemplates, { merge: true });
   }
-  localTemplates = { ...localTemplates, ...templatesData };
+  localTemplates = normalizedTemplates;
   const templatesPath = './email_templates.json';
   try {
-    fs.writeFileSync(templatesPath, JSON.stringify(templatesData, null, 2), 'utf8');
+    fs.writeFileSync(templatesPath, JSON.stringify(normalizedTemplates, null, 2), 'utf8');
   } catch (e) {}
-  return templatesData;
+  return normalizedTemplates;
 };
 
 // Send SMTP Email helper
@@ -280,180 +289,143 @@ const parseTemplate = (html: string, variables: Record<string, string>): string 
 };
 
 export const generateInvoicePdf = async (payment: any, member: any): Promise<Buffer> => {
-  const getMembershipName = (planName: string): string => {
-    const plan = (planName || '').toLowerCase();
-    if (plan.includes('trial')) return 'Trial';
-    if (plan.includes('1 month') || plan.includes('monthly') || plan.includes('30 day')) return '1 Month';
-    if (plan.includes('3 month') || plan.includes('quarterly') || plan.includes('90 day') || plan.includes('2+1')) return '3 Months (Quarterly)';
-    if (plan.includes('6 month') || plan.includes('semi') || plan.includes('180 day')) return '6 Months (Semi-Annual)';
-    if (plan.includes('12 month') || plan.includes('annual') || plan.includes('365 day') || plan.includes('year')) return '12 Months (Annual)';
-    if (plan.includes('lifetime')) return 'Lifetime Membership';
-    if (plan.includes('pt') || plan.includes('personal training')) return 'Personal Training';
-    if (plan.includes('premium')) return 'Premium Membership';
-    return 'Custom Plan';
+  const invoiceNumber = payment.invoiceNumber || payment.invoice || 'INV-00000';
+  const memberName = member.name || payment.memberName || 'Member';
+  const memberPhone = member.phone || payment.memberPhone || '—';
+  const planName = payment.plan || payment.packageName || member.plan || 'Membership';
+  const billDate = payment.billingDate || payment.date || payment.paymentDate || new Date().toISOString().split('T')[0];
+  const startDate = payment.startDate || member.startDate || member.joinDate || '—';
+  const expiryDate = payment.expiryDate || payment.newExpiryDate || member.expiryDate || '—';
+  const discount = Number(payment.discountAmount ?? payment.discount ?? 0);
+  const tax = Number(payment.taxAmount ?? payment.tax ?? payment.gst ?? 0);
+  const otherCharges = Number(payment.otherCharges || 0);
+  const originalAmount = Number(payment.originalAmount ?? payment.packagePrice ?? (Number(payment.amount || 0) + discount - tax - otherCharges));
+  const netPayable = Number(payment.netPayable ?? Math.max(0, originalAmount - discount + tax + otherCharges));
+  const paid = Number(payment.amountPaid ?? payment.paid ?? payment.amount ?? netPayable);
+  const pending = Number(payment.outstandingAmount ?? payment.pendingAmount ?? Math.max(0, netPayable - paid));
+  const refund = Number(payment.refundedAmount ?? payment.refundAmount ?? payment.refunded ?? 0);
+  const freezeDays = Number(payment.freezeDays ?? payment.noFreeze ?? payment.frozenDays ?? 0);
+  const method = payment.paymentMethod || payment.method || 'UPI';
+  const dateLabel = (value: any) => {
+    if (!value || value === '—') return '—';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   };
+  const money = (value: number) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const startTime = new Date(startDate).getTime();
+  const endTime = new Date(expiryDate).getTime();
+  const days = Number.isFinite(startTime) && Number.isFinite(endTime) ? Math.max(0, Math.round((endTime - startTime) / 86400000) + 1) : Number(payment.durationDays || 0);
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0, compress: true });
     const chunks: Buffer[] = [];
-
     doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', (err) => reject(err));
+    doc.on('error', reject);
 
-    // Theme Colors
-    const primaryColor = '#0f172a'; // Deep Slate
-    const accentBlue = '#0052FF'; // Stripe Blue
-    const accentLime = '#d4ff00'; // Lime Accent
-    const textColor = '#334155'; // Slate 700
-    const lightBg = '#f8fafc'; // Slate 50
-    const borderColor = '#e2e8f0'; // Slate 200
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const gold = '#D7AD50';
+    const brightGold = '#F0C85D';
+    const mutedGold = '#B89A5A';
+    const white = '#F7F1E4';
+    const dark = '#070707';
+    const panel = '#11100D';
+    const line = '#725722';
+    const fmtText = (value: any) => String(value ?? '—');
 
-    // Header Logo & Gym Info
-    const logoPath = path.join(process.cwd(), 'gym_logo.png');
+    doc.rect(0, 0, pageWidth, pageHeight).fill(dark);
+    doc.roundedRect(16, 16, pageWidth - 32, pageHeight - 32, 12).lineWidth(2).stroke(gold);
+    doc.roundedRect(24, 24, pageWidth - 48, pageHeight - 48, 8).lineWidth(0.7).stroke('#765B27');
 
-    if (fs.existsSync(logoPath)) {
-      try {
-        doc.image(logoPath, 40, 35, { height: 38 });
-        doc.fillColor(accentBlue).fontSize(20).font('Helvetica-Bold').text('THE WARRIOR GYM', 92, 40);
-        doc.fillColor(primaryColor).fontSize(8.5).font('Helvetica-Bold').text('BEYOND LIMITS', 92, 62);
-      } catch (imgErr) {
-        doc.fillColor(accentBlue).fontSize(20).font('Helvetica-Bold').text('THE WARRIOR GYM', 40, 40);
-        doc.fillColor(primaryColor).fontSize(8.5).font('Helvetica-Bold').text('BEYOND LIMITS', 40, 62);
-      }
-    } else {
-      doc.fillColor(accentBlue).fontSize(20).font('Helvetica-Bold').text('THE WARRIOR GYM', 40, 40);
-      doc.fillColor(primaryColor).fontSize(8.5).font('Helvetica-Bold').text('BEYOND LIMITS', 40, 62);
+    const logoCandidates = [
+      path.resolve(process.cwd(), '../frontend/public/gymlogo.png'),
+      path.resolve(process.cwd(), 'frontend/public/gymlogo.png'),
+      path.resolve(__dirname, '../../../frontend/public/gymlogo.png'),
+      path.resolve(process.cwd(), 'public/gymlogo.png'),
+      path.resolve(process.cwd(), 'gym_logo.png'),
+    ];
+    const logoPath = logoCandidates.find((candidate) => fs.existsSync(candidate));
+    if (logoPath) {
+      try { doc.image(logoPath, 40, 34, { fit: [112, 88], align: 'center', valign: 'center' }); } catch {}
     }
-    
-    doc.fillColor(textColor).fontSize(8).font('Helvetica');
-    doc.text('SCO 30, 31, Sector 89', 40, 82);
-    doc.text('Mohali, Punjab, India - 140308', 40, 92);
-    doc.text('GSTIN: 27AAAAA0000A1Z5', 40, 102);
-    doc.text('Phone: +91 98170 23336 | Ramansingh6158@gmail.com', 40, 112);
 
-    // Invoice Info Panel (Right side)
-    doc.fillColor(primaryColor).fontSize(14).font('Helvetica-Bold').text('TAX INVOICE', 380, 40, { align: 'right', width: 175 });
-    
-    doc.fillColor(textColor).fontSize(8).font('Helvetica-Bold').text('INVOICE NO:', 380, 62);
-    doc.font('Helvetica').text(payment.invoice || 'INV-00000', 450, 62, { align: 'right', width: 105 });
-    
-    doc.font('Helvetica-Bold').text('DATE:', 380, 74);
-    doc.font('Helvetica').text(payment.date || new Date().toISOString().split('T')[0], 450, 74, { align: 'right', width: 105 });
-    
-    doc.font('Helvetica-Bold').text('METHOD:', 380, 86);
-    doc.font('Helvetica').text(payment.method || 'UPI', 450, 86, { align: 'right', width: 105 });
+    doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(31).text('THE WARRIOR GYM', 160, 52, { width: 430, lineBreak: false });
+    doc.fillColor(white).font('Helvetica').fontSize(8.5).text('BUILDING STRENGTH, BUILDING WARRIORS', 162, 91, { characterSpacing: 2.1 });
+    doc.strokeColor(line).lineWidth(1).moveTo(160, 108).lineTo(580, 108).stroke();
+    doc.fillColor(white).font('Helvetica-Bold').fontSize(8).text('SCO 30, 31, Sector 89, Mohali 140308', 600, 40, { width: pageWidth - 644, align: 'right' });
+    doc.font('Helvetica').fillColor('#D7C79E').fontSize(8).text('+91 98170 23336', 600, 55, { width: pageWidth - 644, align: 'right' });
+    doc.text('thewarriorgym.in', 600, 69, { width: pageWidth - 644, align: 'right' });
+    doc.text('Ramansingh6158@gmail.com', 600, 83, { width: pageWidth - 644, align: 'right' });
+    doc.font('Helvetica-Bold').fillColor(brightGold).fontSize(8).text(`INVOICE  ${invoiceNumber}`, 600, 101, { width: pageWidth - 644, align: 'right' });
 
-    doc.font('Helvetica-Bold').text('STATUS:', 380, 98);
-    doc.fillColor('#10b981').text('PAID', 450, 98, { align: 'right', width: 105 });
+    const titleY = 125;
+    doc.roundedRect(250, titleY, pageWidth - 500, 34, 8).fill('#211909');
+    doc.roundedRect(250, titleY, pageWidth - 500, 34, 8).lineWidth(1).stroke(gold);
+    doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(15).text('MEMBERSHIP RECEIPT', 250, titleY + 9, { width: pageWidth - 500, align: 'center', characterSpacing: 1.6 });
 
-    // Minimal Blue Accent Line
-    doc.strokeColor(accentBlue).lineWidth(1.5).moveTo(40, 130).lineTo(555, 130).stroke();
+    const infoY = 178;
+    const colW = (pageWidth - 104) / 2;
+    const drawInfo = (x: number, title: string, entries: Array<[string, string]>) => {
+      doc.roundedRect(x, infoY, colW, 77, 6).lineWidth(0.8).stroke(line);
+      doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(8).text(title.toUpperCase(), x + 12, infoY + 10, { characterSpacing: 1.1 });
+      entries.forEach(([label, value], index) => {
+        const y = infoY + 28 + index * 15;
+        doc.fillColor(mutedGold).font('Helvetica-Bold').fontSize(7.5).text(label.toUpperCase(), x + 12, y, { width: 112 });
+        doc.fillColor(white).font('Helvetica').fontSize(8.5).text(fmtText(value), x + 126, y, { width: colW - 138, ellipsis: true, lineBreak: false });
+      });
+    };
+    drawInfo(40, 'Member Details', [['Member Name', memberName], ['Phone', memberPhone], ['Member ID', member.biometricId || member.memberId || member.id || payment.memberId || '—']]);
+    drawInfo(52 + colW, 'Membership Details', [['Billing Date', dateLabel(billDate)], ['Package', planName], ['Membership Period', `${dateLabel(startDate)} to ${dateLabel(expiryDate)}`]]);
 
-    // Client & Billing Info Columns
-    // Left: Billed To
-    doc.fillColor(accentBlue).fontSize(9).font('Helvetica-Bold').text('BILLED TO', 40, 150);
-    doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold').text(member.name || payment.memberName || 'Member', 40, 164);
-    doc.fillColor(textColor).fontSize(8.5).font('Helvetica');
-    doc.text(`Member ID: ${member.memberId || member.id || 'N/A'}`, 40, 180);
-    doc.text(`Phone: +91 ${member.phone || 'N/A'}`, 40, 192);
-    doc.text(`Email: ${member.email || 'N/A'}`, 40, 204);
+    const tableX = 40;
+    const tableY = 274;
+    const tableW = pageWidth - 80;
+    const headerH = 25;
+    const rowH = 21;
+    const columns = [tableX, tableX + tableW * 0.33, tableX + tableW * 0.66, tableX + tableW];
+    doc.roundedRect(tableX, tableY, tableW, headerH, 5).fill('#2A200D');
+    doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(8.5);
+    doc.text('DESCRIPTION', columns[0] + 12, tableY + 8, { width: tableW * 0.33 - 18 });
+    doc.text('DETAILS', columns[1], tableY + 8, { width: tableW * 0.33, align: 'center' });
+    doc.text('AMOUNT', columns[2], tableY + 8, { width: tableW * 0.34 - 12, align: 'right' });
 
-    // Right: Branch & Coach Info
-    doc.fillColor(accentBlue).fontSize(9).font('Helvetica-Bold').text('GYM WORKSPACE', 310, 150);
-    doc.fillColor(primaryColor).fontSize(10).font('Helvetica-Bold').text(`Branch: ${member.branch || 'Mohali, Punjab'}`, 310, 164);
-    doc.fillColor(textColor).fontSize(8.5).font('Helvetica');
-    doc.text(`Assigned Trainer: ${member.trainer || 'Unassigned'}`, 310, 180);
-    doc.text(`Status: Active Member`, 310, 192);
+    const rows: Array<[string, string, string, boolean]> = [
+      ['PACKAGE', planName, money(originalAmount), false],
+      ['NO. OF DAYS', days ? `${days} Days` : `${dateLabel(startDate)} — ${dateLabel(expiryDate)}`, '—', false],
+      ['DISCOUNT', 'Membership offer', `− ${money(discount)}`, false],
+      ['TAX / GST', 'Applicable tax', money(tax), false],
+      ['TOTAL PAID', method, money(paid), true],
+      ['NO. REFUNDED', 'Refunded amount', money(refund), false],
+      ['NO. FREEZE', `${freezeDays} Days`, '—', false],
+      ['BALANCE', pending > 0 ? 'Pending' : 'Fully paid', money(pending), true],
+    ];
+    rows.forEach(([label, detail, amount, strong], index) => {
+      const y = tableY + headerH + index * rowH;
+      doc.rect(tableX, y, tableW, rowH).fill(index % 2 === 0 ? '#0C0B09' : panel);
+      doc.strokeColor(line).lineWidth(0.35).moveTo(tableX, y + rowH).lineTo(tableX + tableW, y + rowH).stroke();
+      doc.fillColor(strong ? brightGold : white).font(strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
+      doc.text(label, columns[0] + 12, y + 6, { width: tableW * 0.33 - 18, lineBreak: false, ellipsis: true });
+      doc.fillColor('#E2D8C3').font('Helvetica').text(fmtText(detail), columns[1] + 5, y + 6, { width: tableW * 0.33 - 10, align: 'center', lineBreak: false, ellipsis: true });
+      doc.fillColor(strong ? brightGold : white).font(strong ? 'Helvetica-Bold' : 'Helvetica').text(fmtText(amount), columns[2], y + 6, { width: tableW * 0.34 - 12, align: 'right', lineBreak: false, ellipsis: true });
+    });
 
-    // Stripe-like Membership Card / Timeline
-    doc.roundedRect(40, 230, 515, 52, 10).fill(lightBg);
-    doc.roundedRect(40, 230, 515, 52, 10).lineWidth(1).strokeColor(borderColor).stroke();
-
-    doc.fillColor(textColor).fontSize(8).font('Helvetica-Bold').text('MEMBERSHIP PERIOD', 55, 242);
-    doc.fillColor(primaryColor).fontSize(10).font('Helvetica-Bold').text(`${getMembershipName(payment.plan || member.plan)}`, 55, 256);
-    
-    // Timeline steps
-    doc.fillColor(textColor).fontSize(7.5).font('Helvetica-Bold').text('PURCHASED', 240, 242);
-    doc.font('Helvetica').text(payment.date || new Date().toISOString().split('T')[0], 240, 256);
-
-    doc.font('Helvetica-Bold').text('ACTIVATED', 340, 242);
-    doc.font('Helvetica').text(payment.date || new Date().toISOString().split('T')[0], 340, 256);
-
-    doc.fillColor(accentBlue).font('Helvetica-Bold').text('EXPIRES ON', 450, 242);
-    doc.font('Helvetica-Bold').text(member.expiryDate || 'N/A', 450, 256);
-
-    // Billing Table Headers
-    doc.fillColor(textColor).fontSize(8).font('Helvetica-Bold');
-    doc.text('DESCRIPTION', 40, 310);
-    doc.text('DURATION', 280, 310, { width: 80, align: 'center' });
-    doc.text('QTY', 370, 310, { width: 30, align: 'center' });
-    doc.text('PRICE (INR)', 410, 310, { width: 60, align: 'right' });
-    doc.text('TOTAL (INR)', 485, 310, { width: 70, align: 'right' });
-
-    doc.strokeColor(borderColor).lineWidth(1).moveTo(40, 322).lineTo(555, 322).stroke();
-
-    // Billing Row
-    const subtotal = payment.amount - (payment.gst || 0);
-    doc.fillColor(primaryColor).fontSize(9.5).font('Helvetica-Bold').text(`${getMembershipName(payment.plan || member.plan)} Gym Access`, 40, 335);
-    doc.fillColor(textColor).fontSize(8.5).font('Helvetica').text('Full access to gym workspace & biometric gate sync.', 40, 348);
-    
-    doc.fillColor(primaryColor).fontSize(9).font('Helvetica').text(`${payment.plan?.includes('Custom') ? 'Custom' : getMembershipName(payment.plan || member.plan)}`, 280, 335, { width: 80, align: 'center' });
-    doc.text('1', 370, 335, { width: 30, align: 'center' });
-    doc.text(`₹${subtotal.toLocaleString('en-IN')}`, 410, 335, { width: 60, align: 'right' });
-    doc.font('Helvetica-Bold').text(`₹${subtotal.toLocaleString('en-IN')}`, 485, 335, { width: 70, align: 'right' });
-
-    doc.strokeColor(borderColor).lineWidth(1).moveTo(40, 370).lineTo(555, 370).stroke();
-
-    // Summary calculations block (Right bottom side)
-    doc.roundedRect(320, 390, 235, 110, 10).fill(lightBg);
-    doc.roundedRect(320, 390, 235, 110, 10).lineWidth(1).strokeColor(borderColor).stroke();
-
-    doc.fillColor(textColor).fontSize(8.5).font('Helvetica').text('Subtotal:', 335, 404);
-    doc.fillColor(primaryColor).font('Helvetica-Bold').text(`₹${subtotal.toLocaleString('en-IN')}`, 440, 404, { width: 100, align: 'right' });
-
-    const cgst = Math.floor((payment.gst || 0) / 2);
-    const sgst = Math.floor((payment.gst || 0) / 2);
-    doc.font('Helvetica').fillColor(textColor).text('CGST (9%):', 335, 420);
-    doc.fillColor(primaryColor).text(`₹${cgst.toLocaleString('en-IN')}`, 440, 420, { width: 100, align: 'right' });
-
-    doc.font('Helvetica').fillColor(textColor).text('SGST (9%):', 335, 436);
-    doc.fillColor(primaryColor).text(`₹${sgst.toLocaleString('en-IN')}`, 440, 436, { width: 100, align: 'right' });
-
-    doc.strokeColor(borderColor).lineWidth(0.5).moveTo(335, 454).lineTo(540, 454).stroke();
-
-    doc.fillColor(accentBlue).fontSize(10).font('Helvetica-Bold').text('Total Paid:', 335, 468);
-    doc.fontSize(11).text(`₹${payment.amount.toLocaleString('en-IN')}`, 440, 468, { width: 100, align: 'right' });
-
-    // Paid Digital Stamp (Minimal Apple style)
-    doc.save();
-    doc.translate(80, 400);
-    doc.roundedRect(0, 0, 120, 38, 6).lineWidth(1.5).strokeColor('#10b981').stroke();
-    doc.fillColor('#10b981').font('Helvetica-Bold').fontSize(11).text('PAYMENT RECEIVED', 0, 14, { width: 120, align: 'center' });
-    doc.restore();
-
-    // Terms & Conditions block
-    doc.roundedRect(40, 520, 515, 80, 10).fill(lightBg);
-    doc.roundedRect(40, 520, 515, 80, 10).lineWidth(1).strokeColor(borderColor).stroke();
-    
-    doc.fillColor(primaryColor).fontSize(8.5).font('Helvetica-Bold').text('TERMS & CONDITIONS', 55, 532);
-    doc.fillColor(textColor).fontSize(7.5).font('Helvetica');
-    doc.text('1. Membership fees are strictly non-refundable and non-transferable.', 55, 547);
-    doc.text('2. Biometric registration is mandatory for facility entry at the access control gates.', 55, 559);
-    doc.text('3. Members must strictly follow gym rules, protocols, and safety measures at all times.', 55, 571);
-    doc.text('4. Loss or damage to gym property due to negligence will be charged to the member.', 55, 583);
-
-    // Lime accent line above footer
-    doc.strokeColor(accentLime).lineWidth(2.5).moveTo(40, 735).lineTo(555, 735).stroke();
-
-    // Footer Block
-    doc.fillColor(textColor).fontSize(8).font('Helvetica-Bold').text('Thank you for choosing The Warrior Gym.', 40, 750);
-    doc.font('Helvetica').text('Stay consistent. Stay healthy.', 40, 762);
-    doc.fillColor(textColor).fontSize(8).font('Helvetica-Bold').text('Powered by The Warrior Gym CRM.', 380, 750, { align: 'right', width: 175 });
-
+    const footerY = tableY + headerH + rows.length * rowH + 15;
+    doc.strokeColor(line).lineWidth(0.8).moveTo(40, footerY).lineTo(pageWidth - 40, footerY).stroke();
+    doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(8).text('ADDRESS', 48, footerY + 10);
+    doc.fillColor('#D7C79E').font('Helvetica').fontSize(7.5).text('SCO 30, 31, Sector 89, Mohali, Punjab 140308', 48, footerY + 24, { width: 215 });
+    doc.strokeColor(gold).lineWidth(0.6).moveTo(pageWidth / 2 - 90, footerY + 8).lineTo(pageWidth / 2 - 90, footerY + 43).stroke();
+    doc.strokeColor(gold).lineWidth(0.6).moveTo(pageWidth / 2 + 90, footerY + 8).lineTo(pageWidth / 2 + 90, footerY + 43).stroke();
+    doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(7).text('THANK YOU FOR CHOOSING', pageWidth / 2 - 80, footerY + 12, { width: 160, align: 'center', characterSpacing: 0.5 });
+    doc.fontSize(11).text('THE WARRIOR GYM', pageWidth / 2 - 80, footerY + 26, { width: 160, align: 'center', characterSpacing: 0.6 });
+    doc.fillColor(brightGold).font('Helvetica-Oblique').fontSize(15).text('Ramandeep Singh', pageWidth - 250, footerY + 5, { width: 202, align: 'right' });
+    doc.strokeColor(line).lineWidth(0.7).moveTo(pageWidth - 250, footerY + 29).lineTo(pageWidth - 48, footerY + 29).stroke();
+    doc.fillColor('#D7C79E').font('Helvetica-Bold').fontSize(7).text('AUTHORIZED SIGNATURE', pageWidth - 250, footerY + 33, { width: 202, align: 'right', characterSpacing: 1 });
+    doc.fillColor(brightGold).font('Helvetica-Bold').fontSize(8).text('STRONGER TODAY  ◆  BETTER TOMORROW', 40, pageHeight - 38, { width: pageWidth - 80, align: 'center', characterSpacing: 1.2 });
     doc.end();
   });
 };
+
 export const triggerWelcomeEmail = async (member: any) => {
   try {
     const config = await db.getSmtpConfig();
