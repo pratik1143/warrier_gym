@@ -684,6 +684,15 @@ class HikvisionProvider(BiometricProvider):
             pass
         return parsed
 
+    def _ensure_authenticated(self) -> bool:
+        """Re-creates the requests session and re-authenticates if the Digest nonce has expired."""
+        logger.info("[Auth] Re-authenticating with Hikvision terminal (Digest nonce refresh)...")
+        # Recreate session to clear stale nonce
+        self.session = __import__('requests').Session()
+        self.session.auth = HTTPDigestAuth(self.username, self.password)
+        self.session.verify = False
+        return self.connect()
+
     def create_user(self, employee_no: str, name: str) -> Dict[str, Any]:
         """Creates a new person on Hikvision terminal using POST /ISAPI/AccessControl/UserInfo/Record?format=json."""
         url = f"{self.base_url}/ISAPI/AccessControl/UserInfo/Record?format=json"
@@ -702,40 +711,49 @@ class HikvisionProvider(BiometricProvider):
             }
         }
         logger.info(f"[Hikvision User Creation] POST /UserInfo/Record -> employeeNo={employee_no}, name={name}")
-        try:
-            resp = self.session.post(url, json=payload, timeout=8)
-            status_code = resp.status_code
-            parsed = self._parse_hikvision_response(resp)
-            is_ok = status_code in (200, 201) and (parsed["statusCode"] == 1 or parsed["subStatusCode"] == "ok")
+        for attempt in range(2):  # retry once after 401 re-auth
+            try:
+                resp = self.session.post(url, json=payload, timeout=8)
+                status_code = resp.status_code
 
-            # If user already exists or POST record unsupported, fall back to update (PUT UserInfo/SetUp)
-            if not is_ok and (status_code == 400 or parsed["subStatusCode"] in ("employeeNoExist", "userAlreadyExist")):
-                logger.info(f"[Hikvision User Creation] User {employee_no} already exists or POST record returned 400. Falling back to PUT UserInfo/SetUp...")
-                return self.update_user(employee_no, name)
+                # Stale Digest nonce — reconnect and retry once
+                if status_code == 401 and attempt == 0:
+                    logger.warning(f"[Hikvision User Creation] 401 on attempt 1 — refreshing Digest session and retrying...")
+                    self._ensure_authenticated()
+                    continue
 
-            logger.info(f"[Hikvision User Creation Response] HTTP {status_code} => statusCode={parsed['statusCode']}, statusString={parsed['statusString']}")
-            return {
-                "success": is_ok,
-                "endpoint": "/ISAPI/AccessControl/UserInfo/Record?format=json",
-                "httpMethod": "POST",
-                "httpStatus": status_code,
-                "payloadSent": payload,
-                "parsedResponse": parsed,
-                "hikvisionResponse": parsed["raw"],
-                "errorMessage": None if is_ok else (parsed["errorMsg"] or f"HTTP {status_code}: {parsed['statusString']}")
-            }
-        except Exception as e:
-            logger.error(f"[Hikvision User Creation Error] {e}")
-            return {
-                "success": False,
-                "endpoint": "/ISAPI/AccessControl/UserInfo/Record?format=json",
-                "httpMethod": "POST",
-                "httpStatus": 0,
-                "payloadSent": payload,
-                "parsedResponse": {"error": str(e)},
-                "hikvisionResponse": str(e),
-                "errorMessage": str(e)
-            }
+                parsed = self._parse_hikvision_response(resp)
+                is_ok = status_code in (200, 201) and (parsed["statusCode"] == 1 or parsed["subStatusCode"] == "ok")
+
+                # If user already exists or POST record unsupported, fall back to update (PUT UserInfo/SetUp)
+                if not is_ok and (status_code == 400 or parsed["subStatusCode"] in ("employeeNoExist", "userAlreadyExist")):
+                    logger.info(f"[Hikvision User Creation] User {employee_no} already exists or POST record returned 400. Falling back to PUT UserInfo/SetUp...")
+                    return self.update_user(employee_no, name)
+
+                logger.info(f"[Hikvision User Creation Response] HTTP {status_code} => statusCode={parsed['statusCode']}, statusString={parsed['statusString']}")
+                return {
+                    "success": is_ok,
+                    "endpoint": "/ISAPI/AccessControl/UserInfo/Record?format=json",
+                    "httpMethod": "POST",
+                    "httpStatus": status_code,
+                    "payloadSent": payload,
+                    "parsedResponse": parsed,
+                    "hikvisionResponse": parsed["raw"],
+                    "errorMessage": None if is_ok else (parsed["errorMsg"] or f"HTTP {status_code}: {parsed['statusString']}")
+                }
+            except Exception as e:
+                logger.error(f"[Hikvision User Creation Error] {e}")
+                return {
+                    "success": False,
+                    "endpoint": "/ISAPI/AccessControl/UserInfo/Record?format=json",
+                    "httpMethod": "POST",
+                    "httpStatus": 0,
+                    "payloadSent": payload,
+                    "parsedResponse": {"error": str(e)},
+                    "hikvisionResponse": str(e),
+                    "errorMessage": str(e)
+                }
+        return {"success": False, "errorMessage": "Authentication failed after re-connect attempt", "httpStatus": 401}
 
     def update_user(self, employee_no: str, name: str) -> Dict[str, Any]:
         """Sets/updates an existing person slot on Hikvision terminal using PUT /ISAPI/AccessControl/UserInfo/SetUp?format=json."""
@@ -755,29 +773,37 @@ class HikvisionProvider(BiometricProvider):
             }
         }
         logger.info(f"[Hikvision User Update] PUT /UserInfo/SetUp -> employeeNo={employee_no}, name={name}")
-        try:
-            resp = self.session.put(url, json=payload, timeout=8)
-            status_code = resp.status_code
-            parsed = self._parse_hikvision_response(resp)
-            is_ok = status_code == 200 and (parsed["statusCode"] == 1 or parsed["subStatusCode"] == "ok")
+        for attempt in range(2):  # retry once after 401 re-auth
+            try:
+                resp = self.session.put(url, json=payload, timeout=8)
+                status_code = resp.status_code
 
-            logger.info(f"[Hikvision User Update Response] HTTP {status_code} => statusCode={parsed['statusCode']}")
-            return {
-                "success": is_ok,
-                "endpoint": "/ISAPI/AccessControl/UserInfo/SetUp?format=json",
-                "httpMethod": "PUT",
-                "httpStatus": status_code,
-                "payloadSent": payload,
-                "parsedResponse": parsed,
-                "hikvisionResponse": parsed["raw"],
-                "errorMessage": None if is_ok else (parsed["errorMsg"] or f"HTTP {status_code}: {parsed['statusString']}")
-            }
-        except Exception as e:
-            logger.error(f"[Hikvision User Update Error] {e}")
-            return {
-                "success": False,
-                "endpoint": "/ISAPI/AccessControl/UserInfo/SetUp?format=json",
-                "httpMethod": "PUT",
+                # Stale Digest nonce — reconnect and retry once
+                if status_code == 401 and attempt == 0:
+                    logger.warning(f"[Hikvision User Update] 401 on attempt 1 — refreshing Digest session and retrying...")
+                    self._ensure_authenticated()
+                    continue
+
+                parsed = self._parse_hikvision_response(resp)
+                is_ok = status_code == 200 and (parsed["statusCode"] == 1 or parsed["subStatusCode"] == "ok")
+
+                logger.info(f"[Hikvision User Update Response] HTTP {status_code} => statusCode={parsed['statusCode']}")
+                return {
+                    "success": is_ok,
+                    "endpoint": "/ISAPI/AccessControl/UserInfo/SetUp?format=json",
+                    "httpMethod": "PUT",
+                    "httpStatus": status_code,
+                    "payloadSent": payload,
+                    "parsedResponse": parsed,
+                    "hikvisionResponse": parsed["raw"],
+                    "errorMessage": None if is_ok else (parsed["errorMsg"] or f"HTTP {status_code}: {parsed['statusString']}")
+                }
+            except Exception as e:
+                logger.error(f"[Hikvision User Update Error] {e}")
+                return {
+                    "success": False,
+                    "endpoint": "/ISAPI/AccessControl/UserInfo/SetUp?format=json",
+                    "httpMethod": "PUT",
                 "httpStatus": 0,
                 "payloadSent": payload,
                 "parsedResponse": {"error": str(e)},
