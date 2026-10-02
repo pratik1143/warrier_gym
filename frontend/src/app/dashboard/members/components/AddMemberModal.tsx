@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, User, Phone, Mail, Calendar, Heart, Shield, Smartphone, 
@@ -494,28 +494,33 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   };
 
   // Hikvision Health Check
-  const checkHikvisionStatus = async () => {
-    setIsTestingConn(true);
+  const checkHikvisionStatus = useCallback(async (notify = true) => {
+    if (notify) setIsTestingConn(true);
     try {
       const resp = await API.post('/devices/hikvision/test-connection');
       if (resp.data && resp.data.online) {
         setHikvisionOnline(true);
-        toast.success('Hikvision Terminal Connected ✓ (192.168.1.45)');
+        if (notify) toast.success('Hikvision Terminal Connected ✓ (192.168.1.45)');
       } else {
         setHikvisionOnline(false);
-        toast.error('Hikvision terminal unreachable on 192.168.1.45');
+        if (notify) toast.error('Hikvision terminal unreachable on 192.168.1.45');
       }
     } catch (e) {
       setHikvisionOnline(false);
-      toast.error('Error connecting to Hikvision biometric terminal');
+      if (notify) toast.error('Error connecting to Hikvision biometric terminal');
     } finally {
-      setIsTestingConn(false);
+      if (notify) setIsTestingConn(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (isOpen && step === 4) void checkHikvisionStatus();
-  }, [isOpen, step]);
+    if (!isOpen || step !== 4) return;
+    // Keep the indicator fresh while onboarding is open. The enrollment API
+    // independently checks agent health at dispatch time before queueing work.
+    void checkHikvisionStatus(false);
+    const timer = window.setInterval(() => void checkHikvisionStatus(false), 5000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, step, checkHikvisionStatus]);
 
   // Hikvision Hardware Live Status Poller
   const queryDeviceStatus = async (bioId: string) => {

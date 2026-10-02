@@ -6,6 +6,27 @@ import { exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 
+// The gym PC and the cloud host can have slightly different system clocks.
+// Prefer Firestore's server timestamp; retain a generous ISO timestamp fallback
+// for agents that have not yet been updated.
+const BIOMETRIC_AGENT_MAX_HEARTBEAT_AGE_MS = 60_000;
+const BIOMETRIC_AGENT_MAX_CLOCK_SKEW_MS = 5 * 60_000;
+
+const getHeartbeatDate = (heartbeat: any): Date => {
+  if (heartbeat?.toDate) return heartbeat.toDate();
+  if (heartbeat?.seconds) return new Date(heartbeat.seconds * 1000);
+  return new Date(heartbeat || 0);
+};
+
+const isBiometricAgentOnline = (device: any): boolean => {
+  if (device?.status !== 'connected') return false;
+  const heartbeatDate = getHeartbeatDate(device?.lastHeartbeatServer || device?.lastHeartbeat);
+  const ageMs = Date.now() - heartbeatDate.getTime();
+  return Number.isFinite(ageMs)
+    && ageMs < BIOMETRIC_AGENT_MAX_HEARTBEAT_AGE_MS
+    && ageMs > -BIOMETRIC_AGENT_MAX_CLOCK_SKEW_MS;
+};
+
 /**
  * Get all devices, including calculated summary stats for the dashboard.
  */
@@ -769,9 +790,7 @@ export const triggerHikvisionDoorUnlock = async (req: Request, res: Response) =>
 
     const deviceSnap = await firestore.collection('devices').doc('hikvision-main-gate').get();
     const device = deviceSnap.exists ? deviceSnap.data() : null;
-    const heartbeat = device?.lastHeartbeat;
-    const heartbeatDate = heartbeat?.toDate ? heartbeat.toDate() : new Date(heartbeat || 0);
-    const agentOnline = Number.isFinite(heartbeatDate.getTime()) && Date.now() - heartbeatDate.getTime() < 15000 && device?.status === 'connected';
+    const agentOnline = isBiometricAgentOnline(device);
     if (!agentOnline) {
       return res.status(503).json({ success: false, error: 'The on-site biometric agent or Hikvision terminal is offline. No gate command was sent. Start the agent and verify Online status before unlocking.' });
     }
@@ -905,10 +924,7 @@ export const testHikvisionConnection = async (req: Request, res: Response) => {
     if (!firestore) return res.status(503).json({ success: false, online: false, message: 'Device status service is unavailable.' });
     const snap = await firestore.collection('devices').doc('hikvision-main-gate').get();
     const device = snap.exists ? snap.data() : null;
-    const hb = device?.lastHeartbeat;
-    const hbDate = hb?.toDate ? hb.toDate() : new Date(hb || 0);
-    const agentFresh = Number.isFinite(hbDate.getTime()) && Date.now() - hbDate.getTime() < 15000;
-    const online = Boolean(agentFresh && device?.status === 'connected');
+    const online = isBiometricAgentOnline(device);
     return res.json({
       success: online,
       status: online ? 'ONLINE' : 'OFFLINE',
@@ -1092,9 +1108,7 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
     // the on-site agent has recently heartbeated and can deliver them to the terminal.
     const deviceSnap = await firestore.collection('devices').doc('hikvision-main-gate').get();
     const device = deviceSnap.exists ? deviceSnap.data() : null;
-    const heartbeat = device?.lastHeartbeat;
-    const heartbeatDate = heartbeat?.toDate ? heartbeat.toDate() : new Date(heartbeat || 0);
-    const agentOnline = Number.isFinite(heartbeatDate.getTime()) && Date.now() - heartbeatDate.getTime() < 15000 && device?.status === 'connected';
+    const agentOnline = isBiometricAgentOnline(device);
     if (!agentOnline) {
       return res.status(503).json({ success: false, error: 'The on-site biometric agent is offline or the terminal is disconnected. Start the Warrior Gym Biometric Agent on the gym PC and verify the Hikvision connection before enrolling.' });
     }

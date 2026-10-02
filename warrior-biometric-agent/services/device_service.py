@@ -7,6 +7,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
+from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 # Add root of warrior-biometric-agent to sys.path
 AGENT_ROOT = Path(__file__).resolve().parent.parent
@@ -199,6 +200,7 @@ class BiometricAgentManager:
 
                     update_payload = {
                         "lastHeartbeat": now_iso,
+                        "lastHeartbeatServer": SERVER_TIMESTAMP,
                         "updatedAt": now_iso,
                         "pythonConnected": True,
                         "attendanceListenerRunning": True,
@@ -230,6 +232,7 @@ class BiometricAgentManager:
                             "connectionHealth": 100 if is_hik_online else 0,
                             "lastSync": now_iso,
                             "lastHeartbeat": now_iso,
+                            "lastHeartbeatServer": SERVER_TIMESTAMP,
                             "firmwareVersion": dev_info.get("firmwareVersion", "V3.5.20"),
                             "serialNumber": dev_info.get("serialNumber", "N/A"),
                             "provider": "hikvision",

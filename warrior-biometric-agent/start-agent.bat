@@ -55,6 +55,19 @@ if errorlevel 1 (
 :run_agent
 echo Starting the biometric agent. Logs: logs\warrior_biometric_agent.log
 echo Press Ctrl+C to stop the agent.
+
+:restart_loop
 "%VENV_PY%" services\device_service.py
-if errorlevel 1 echo The agent stopped with an error. Check logs\warrior_biometric_agent.log.
+set EXIT_CODE=%errorlevel%
+if %EXIT_CODE%==0 (
+    echo Agent stopped cleanly.
+    goto end
+)
+echo.
+echo [AUTO-RESTART] Agent exited with code %EXIT_CODE%. Restarting in 5 seconds...
+echo Check logs\warrior_biometric_agent.log for details.
+timeout /t 5 /nobreak >nul
+goto restart_loop
+
+:end
 pause
