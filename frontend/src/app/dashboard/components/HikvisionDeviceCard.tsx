@@ -6,6 +6,7 @@ import {
   CheckCircle2, Users, ArrowRight, ExternalLink, KeyRound 
 } from 'lucide-react';
 import API from '@/services/api';
+import { unlockHikvisionDoor } from '@/lib/deviceCommands';
 import toast from '@/lib/toast';
 import { useGymStore } from '@/store';
 
@@ -128,16 +129,12 @@ export default function HikvisionDeviceCard() {
 
   const handleTestDoorConfirmed = async () => {
     setTriggeringDoor(true);
-    toast.loading('Sending unlock pulse to Hikvision relay...', { id: 'hik-door' });
+    toast.loading('Sending unlock command and waiting for terminal confirmation...', { id: 'hik-door' });
     try {
-      const res = await API.post('/devices/hikvision/door/open', { doorId: 1, requestedBy: 'Admin' });
-      if (res.data?.success) {
-        toast.success('Gate unlock command dispatched to terminal relay!', { id: 'hik-door' });
-      } else {
-        toast.error('Failed to trigger door: ' + (res.data?.error || 'Unknown error'), { id: 'hik-door' });
-      }
+      await unlockHikvisionDoor(1, 'Admin');
+      toast.success('Hikvision confirmed the gate unlock!', { id: 'hik-door' });
     } catch (err: any) {
-      toast.error('Error opening door: ' + (err.message || 'Error'), { id: 'hik-door' });
+      toast.error('Gate unlock failed: ' + (err.response?.data?.error || err.message || 'Error'), { id: 'hik-door' });
     } finally {
       setTriggeringDoor(false);
       setShowDoorConfirm(false);

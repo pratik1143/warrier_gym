@@ -8,6 +8,7 @@ import {
   Server, ArrowRight, Users, CheckCircle2, Terminal, Cpu
 } from 'lucide-react';
 import API from '@/services/api';
+import { unlockHikvisionDoor } from '@/lib/deviceCommands';
 import toast from '@/lib/toast';
 import HikvisionDeviceCard from '../components/HikvisionDeviceCard';
 
@@ -149,19 +150,16 @@ export default function AccessControlPage() {
 
   const handleOpenGate = async () => {
     setOpeningGate(true);
-    toast.loading('Transmitting gate open pulse to terminal relay...', { id: 'ac-gate' });
+      toast.loading('Sending gate unlock command and waiting for terminal confirmation...', { id: 'ac-gate' });
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] [HIKVISION] Remote door operation requested on Door 1`, ...prev]);
     try {
-      const res = await API.post('/devices/hikvision/door/open', { doorId: 1, requestedBy: 'Admin' });
-      if (res.data?.success) {
-        toast.success('Gate unlock command executed on physical relay!', { id: 'ac-gate' });
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] [HIKVISION] Remote door operation successful on Door 1.`, ...prev]);
-      } else {
-        toast.error('Door open failed: ' + (res.data?.error || 'Error'), { id: 'ac-gate' });
-        setLogs(prev => [`[${new Date().toLocaleTimeString()}] [HIKVISION] Remote door operation FAILED: ${res.data?.error}`, ...prev]);
-      }
+      await unlockHikvisionDoor(1, 'Admin');
+      toast.success('Hikvision confirmed the gate unlock on Door 1.', { id: 'ac-gate' });
+      setLogs(prev => [`[${new Date().toLocaleTimeString()}] [HIKVISION] Gate unlock confirmed on Door 1.`, ...prev]);
     } catch (err: any) {
-      toast.error('Door open error: ' + (err.message || 'Error'), { id: 'ac-gate' });
+      const message = err.response?.data?.error || err.message || 'Error';
+      toast.error('Door open failed: ' + message, { id: 'ac-gate' });
+      setLogs(prev => [`[${new Date().toLocaleTimeString()}] [HIKVISION] Gate unlock failed: ${message}`, ...prev]);
     } finally {
       setOpeningGate(false);
     }

@@ -12,6 +12,7 @@ import toast from '@/lib/toast';
 import { collection, addDoc, onSnapshot } from 'firebase/firestore';
 import { db as fDb, isFirebaseReady } from '@/lib/firebase';
 import API from '@/services/api';
+import { unlockHikvisionDoor } from '@/lib/deviceCommands';
 import { useFollowups } from '@/hooks/useFollowups';
 import AttendanceCalendarSection from './components/AttendanceCalendarSection';
 import { useTodaysPayments } from '@/hooks/useTodaysPayments';
@@ -132,17 +133,13 @@ export default function DashboardPage() {
   }, [gymPresence, memberAttendance, attendance]);
 
   const handleManualUnlock = async () => {
-    setGateUnlocked(true);
-    toast.loading('Transmitting remote unlock pulse to Hikvision terminal...', { id: 'unlock-dash' });
+    toast.loading('Sending gate unlock command and waiting for terminal confirmation...', { id: 'unlock-dash' });
     try {
-      const res = await API.post('/devices/hikvision/door/open', { doorId: 1, requestedBy: 'Admin' });
-      if (res.data?.success) {
-        toast.success('✓ TURNSTILE UNLOCKED - Hikvision DS-K1T320EFWX (Door 1)', { id: 'unlock-dash' });
-      } else {
-        toast.error('✕ UNLOCK FAILED: ' + (res.data?.error || 'Terminal response error'), { id: 'unlock-dash' });
-      }
+      await unlockHikvisionDoor(1, 'Admin');
+      setGateUnlocked(true);
+      toast.success('✓ Hikvision confirmed the gate unlock (Door 1)', { id: 'unlock-dash' });
     } catch (err: any) {
-      toast.error('✕ UNLOCK FAILED: ' + (err.message || 'Error communicating with terminal'), { id: 'unlock-dash' });
+      toast.error('✕ UNLOCK FAILED: ' + (err.response?.data?.error || err.message || 'Error communicating with terminal'), { id: 'unlock-dash' });
     } finally {
       setTimeout(() => {
         setGateUnlocked(false);

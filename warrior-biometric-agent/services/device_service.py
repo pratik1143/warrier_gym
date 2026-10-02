@@ -6,6 +6,7 @@ import logging
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Dict, Any
 
 # Add root of warrior-biometric-agent to sys.path
 AGENT_ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +37,30 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("BiometricAgent")
+
+
+def acquire_instance_lock():
+    """Prevent the scheduled task and a manual launch from processing a command twice."""
+    lock_path = AGENT_ROOT / "agent.lock"
+    lock_handle = open(lock_path, "a+b")
+    lock_handle.seek(0, os.SEEK_END)
+    if lock_handle.tell() == 0:
+        lock_handle.write(b"0")
+        lock_handle.flush()
+    lock_handle.seek(0)
+
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_handle
+    except (OSError, ImportError):
+        lock_handle.close()
+        logger.warning("Another Warrior Gym biometric agent instance is already running; exiting this duplicate.")
+        return None
 
 class BiometricAgentManager:
     """
@@ -164,6 +189,14 @@ class BiometricAgentManager:
                     control_snap = control_ref.get()
                     control_data = control_snap.to_dict() if (control_snap and control_snap.exists) else {}
 
+                    # Fetch device info BEFORE building the update_payload (was incorrectly placed after)
+                    dev_info = {}
+                    if self.hikvision_provider:
+                        try:
+                            dev_info = self.hikvision_provider.get_device_info() or {}
+                        except Exception:
+                            dev_info = {}
+
                     update_payload = {
                         "lastHeartbeat": now_iso,
                         "updatedAt": now_iso,
@@ -177,7 +210,7 @@ class BiometricAgentManager:
                         "esslConnected": is_essl_online,
                         "gateControlEnabled": is_hik_online or is_essl_online,
                         "version": "3.3.0-hikvision-enrollment-bridge",
-                        "deviceModel": "DS-K1T320EFWX",
+                        "deviceModel": dev_info.get("model") or "DS-K1T320EFWX",
                         "deviceIp": Config.HIKVISION_HOST,
                         "reconnectCount": getattr(self, "reconnect_count", 0)
                     }
@@ -185,11 +218,10 @@ class BiometricAgentManager:
 
                     # Also update devices collection
                     if self.hikvision_provider:
-                        dev_info = self.hikvision_provider.get_device_info()
                         db.collection("devices").document(Config.HIKVISION_DEVICE_ID).set({
                             "deviceId": Config.HIKVISION_DEVICE_ID,
                             "deviceName": Config.HIKVISION_DEVICE_NAME,
-                            "deviceType": "Hikvision DS-K1T320EFWX",
+                            "deviceType": f"Hikvision {dev_info.get('model') or 'DS-K1T320EFWX'}",
                             "ip": Config.HIKVISION_HOST,
                             "port": Config.HIKVISION_PORT,
                             "branch": Config.HIKVISION_BRANCH,
@@ -341,7 +373,8 @@ class BiometricAgentManager:
 
                 db.collection("device_testing").document("control").update({
                     "lastDoorTestResult": result,
-                    "lastDoorTestTime": datetime.now(timezone.utc).isoformat()
+                    "lastDoorTestTime": datetime.now(timezone.utc).isoformat(),
+                    "lastDoorTestRequestId": control_data.get("testDoorRequestId")
                 })
             except Exception as e:
                 logger.error(f"Error processing testDoorPending: {e}")
@@ -420,6 +453,9 @@ class BiometricAgentManager:
                 logger.error(f"Error processing testPunchPending: {e}")
 
 if __name__ == "__main__":
+    instance_lock = acquire_instance_lock()
+    if instance_lock is None:
+        sys.exit(0)
     agent = BiometricAgentManager()
     agent.initialize()
     agent.start()

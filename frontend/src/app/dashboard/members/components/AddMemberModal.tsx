@@ -729,7 +729,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         flow: selectedEnrollType,
         enrollmentType: 'FACE'
       });
-      if (response.data?.success !== true || response.data?.status !== 'ENROLLING') {
+      if (response.data?.success !== true || !['ENROLLING', 'QUEUED'].includes(response.data?.status)) {
         throw new Error(response.data?.error || response.data?.message || 'The local biometric agent did not accept the face command.');
       }
     } catch (e: any) {
@@ -807,8 +807,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       setMachineStep('FAILED');
       setFpStatus('FAILED');
       setEnrollStatus('failed');
-      setEnrollMsg(`Failed to reach backend for fingerprint enrollment: ${postErr.message}`);
-      toast.error(`Fingerprint command failed to reach backend: ${postErr.message}`);
+      const message = postErr.response?.data?.error || postErr.message || 'Unknown enrollment error';
+      setEnrollMsg(message);
+      setEnrollDetailLog(prev => prev + `\n[FINGERPRINT COMMAND REJECTED] ${message}`);
+      toast.error(`Fingerprint enrollment could not start: ${message}`);
       return false;
     }
 
@@ -1885,7 +1887,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       <div className={`w-2.5 h-2.5 rounded-full ${hikvisionOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                       <div className="text-left">
                         <span className="text-[11px] font-bold text-stone-800 block leading-tight">
-                          Hikvision DS-K1T342MFWX
+                          Hikvision DS-K1T320EFWX
                         </span>
                         <span className="text-[10px] text-stone-500">
                           IP: 192.168.1.45 • {hikvisionOnline ? 'Online' : 'Offline'}
@@ -1902,6 +1904,12 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       </button>
                     </div>
                   </div>
+
+                  {!hikvisionOnline && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                      <strong>Enrollment is paused because the gym agent is offline.</strong> On the gym PC, run <code className="font-bold">warrior-biometric-agent/install-agent-autostart.bat</code> once, then refresh the connection here. No face or fingerprint command has been sent.
+                    </div>
+                  )}
 
                   {/* Three Premium Enrollment Action Cards */}
                   <div>
@@ -1925,7 +1933,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       {/* 1. Register Face */}
                       <button
                         type="button"
-                        disabled={machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
+                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
                         onClick={() => handleExecuteEnrollment('FACE')}
                         className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
                           (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING')
@@ -1965,7 +1973,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       {/* 2. Register Fingerprint */}
                       <button
                         type="button"
-                        disabled={machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
+                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
                         onClick={() => handleExecuteEnrollment('FINGERPRINT')}
                         className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
                           (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING')
@@ -2004,7 +2012,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       {/* 3. Face + Fingerprint */}
                       <button
                         type="button"
-                        disabled={machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
+                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
                         onClick={() => handleExecuteEnrollment('BOTH')}
                         className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
                           (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING')

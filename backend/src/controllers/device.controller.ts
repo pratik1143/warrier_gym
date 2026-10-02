@@ -767,6 +767,22 @@ export const triggerHikvisionDoorUnlock = async (req: Request, res: Response) =>
       return res.status(503).json({ success: false, error: 'Database service unavailable' });
     }
 
+    const deviceSnap = await firestore.collection('devices').doc('hikvision-main-gate').get();
+    const device = deviceSnap.exists ? deviceSnap.data() : null;
+    const heartbeat = device?.lastHeartbeat;
+    const heartbeatDate = heartbeat?.toDate ? heartbeat.toDate() : new Date(heartbeat || 0);
+    const agentOnline = Number.isFinite(heartbeatDate.getTime()) && Date.now() - heartbeatDate.getTime() < 15000 && device?.status === 'connected';
+    if (!agentOnline) {
+      return res.status(503).json({ success: false, error: 'The on-site biometric agent or Hikvision terminal is offline. No gate command was sent. Start the agent and verify Online status before unlocking.' });
+    }
+
+    const controlRef = firestore.collection('device_testing').doc('control');
+    const controlSnap = await controlRef.get();
+    if (controlSnap.data()?.testDoorPending) {
+      return res.status(409).json({ success: false, error: 'A gate command is already waiting for the on-site agent. Check the previous command status before retrying.' });
+    }
+    const requestId = `door_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
     // 1. Audit log
     await firestore.collection('deviceLogs').add({
       deviceId: 'hikvision-main-gate',
@@ -777,16 +793,19 @@ export const triggerHikvisionDoorUnlock = async (req: Request, res: Response) =>
     });
 
     // 2. Dispatch pending command to the local Biometric Agent
-    await firestore.collection('device_testing').doc('control').set({
+    await controlRef.set({
       testDoorPending: true,
       testDoorId: Number(doorId) || 1,
       testDoorUser: requestedBy,
-      testDoorRequestedAt: new Date().toISOString()
+      testDoorRequestedAt: new Date().toISOString(),
+      testDoorRequestId: requestId
     }, { merge: true });
 
     res.json({
       success: true,
-      message: `Unlock signal transmitted to Biometric Agent for Door ${doorId}`,
+      requestId,
+      status: 'QUEUED',
+      message: `Unlock command queued for on-site agent on Door ${doorId}`,
       doorId,
       timestamp: new Date().toISOString()
     });
@@ -895,15 +914,34 @@ export const testHikvisionConnection = async (req: Request, res: Response) => {
       status: online ? 'ONLINE' : 'OFFLINE',
       online,
       deviceId: 'hikvision-main-gate',
-      deviceName: 'Hikvision DS-K1T342MFWX',
+      deviceName: 'Hikvision DS-K1T320EFWX',
       ip: device?.ip || '192.168.1.45',
       agentLastHeartbeat: device?.lastHeartbeat || null,
       matrix: { network: online, http: online, auth: online, userApi: online, faceApi: online, fingerprintApi: online },
-      details: { model: device?.deviceType || 'Hikvision DS-K1T342MFWX', firmwareVersion: device?.firmwareVersion || null },
+      details: { model: device?.deviceType || 'Hikvision DS-K1T320EFWX', firmwareVersion: device?.firmwareVersion || null },
       message: online ? 'Local biometric agent and Hikvision terminal are connected.' : 'Local biometric agent is offline or the terminal is unreachable. Start the agent on the gym network.'
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const getHikvisionDoorUnlockStatus = async (req: Request, res: Response) => {
+  try {
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Database service unavailable' });
+    const controlSnap = await firestore.collection('device_testing').doc('control').get();
+    const control = controlSnap.data() || {};
+    const { requestId } = req.params;
+    if (control.lastDoorTestRequestId === requestId) {
+      return res.json({ success: true, status: 'COMPLETED', result: control.lastDoorTestResult || null });
+    }
+    if (control.testDoorRequestId === requestId) {
+      return res.json({ success: true, status: 'PENDING' });
+    }
+    return res.status(404).json({ success: false, error: 'Gate command status was not found.' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -1058,9 +1096,8 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
     const heartbeatDate = heartbeat?.toDate ? heartbeat.toDate() : new Date(heartbeat || 0);
     const agentOnline = Number.isFinite(heartbeatDate.getTime()) && Date.now() - heartbeatDate.getTime() < 15000 && device?.status === 'connected';
     if (!agentOnline) {
-      return res.status(503).json({ success: false, error: 'The gym biometric agent is offline or cannot reach the Hikvision terminal. Check the on-site agent and device connection.' });
+      return res.status(503).json({ success: false, error: 'The on-site biometric agent is offline or the terminal is disconnected. Start the Warrior Gym Biometric Agent on the gym PC and verify the Hikvision connection before enrolling.' });
     }
-
     const now = new Date().toISOString();
     const commandId = `enroll_${bioId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await firestore.collection('biometric_enrollment').doc(commandId).set({
@@ -1083,7 +1120,10 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
       enrollmentDocId: commandId,
       biometricUserId: bioId,
       enrollmentType: type,
-      message: `${type} enrollment command queued for the on-site Hikvision agent.`,
+      message: agentOnline
+        ? `${type} enrollment command queued for the on-site Hikvision agent.`
+        : `${type} enrollment saved in the queue. It will start when the on-site biometric agent reconnects.`,
+      agentOnline,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -1207,7 +1247,7 @@ export const getHikvisionDiagnostics = async (req: Request, res: Response) => {
         lastError: terminalResult?.error || null,
         model: 'DS-K1T320EFWX',
         firmwareVersion: 'V3.5.20 Build 20241227',
-        serialNumber: 'DS-K1T320EFWX20241227V030520ENGH1443526',
+        serialNumber: 'N/A',
         lastApiResponse: 'HTTP 200 OK',
         timestamp: new Date().toISOString()
       });

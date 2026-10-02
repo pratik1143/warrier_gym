@@ -393,7 +393,7 @@ export default function MapBioPage() {
                 <div className="flex items-center gap-2.5 bg-stone-50 px-3.5 py-2 rounded-xl border border-stone-200">
                   <div className={`w-2.5 h-2.5 rounded-full ${hikvisionOnline ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                   <div>
-                    <span className="text-[11px] font-bold text-stone-800 block leading-tight">Hikvision DS-K1T342MFWX</span>
+                    <span className="text-[11px] font-bold text-stone-800 block leading-tight">Hikvision DS-K1T320EFWX</span>
                     <span className="text-[10px] text-stone-500">192.168.1.45 · {hikvisionOnline ? 'Online' : 'Offline'}</span>
                   </div>
                   <button type="button" onClick={checkHikvision} disabled={isTestingConn} className="ml-1 p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition-colors">

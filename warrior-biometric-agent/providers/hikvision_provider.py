@@ -917,7 +917,7 @@ class HikvisionProvider(BiometricProvider):
             }
 
     def enroll_fingerprint(self, employee_no: str, finger_no: int = 1, name: Optional[str] = None) -> Dict[str, Any]:
-        """Triggers fingerprint enrollment workflow on Hikvision DS-K1T342EFWX / DS-K1T320EFWX."""
+        """Triggers fingerprint enrollment on the Hikvision DS-K1T320EFWX terminal."""
         prov = self.provision_user(employee_no, name or f"User {employee_no}")
         if not prov.get("success"):
             return prov
@@ -1089,4 +1089,3 @@ class HikvisionProvider(BiometricProvider):
             "lastError": self._last_error,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-

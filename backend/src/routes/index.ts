@@ -18,7 +18,7 @@ import {
   getHikvisionDiagnostics, enrollHikvisionBiometrics, testHikvisionUserCreation,
   getHikvisionCapabilitiesController, getHikvisionTerminalUsers, bulkMapHikvisionUsers,
   getHikvisionPhotoManifest, syncHikvisionMemberPhotos, syncHikvisionUsersAndPhotos, getHikvisionMemberPhoto,
-  getHikvisionEnrollmentStatus, createHikvisionUserEndpoint
+  getHikvisionEnrollmentStatus, createHikvisionUserEndpoint, getHikvisionDoorUnlockStatus
 } from '../controllers/device.controller';
 import { getInvoices, createInvoice, updateInvoice, deleteInvoice, markPaymentPaid } from '../controllers/billing.controller';
 import { 
@@ -123,6 +123,7 @@ router.post('/devices/hikvision/sync-users', syncHikvisionUsers);
 router.post('/devices/hikvision/sync-events', syncHikvisionEvents);
 router.get('/devices/hikvision/events', getHikvisionEvents);
 router.post('/devices/hikvision/door/open', triggerHikvisionDoorUnlock);
+router.get('/devices/hikvision/door/status/:requestId', getHikvisionDoorUnlockStatus);
 router.get('/devices/hikvision/unmapped-users', getUnmappedDeviceUsers);
 router.post('/devices/hikvision/map-user', mapDeviceUserToMember);
 router.get('/devices/hikvision/terminal-users', getHikvisionTerminalUsers);
