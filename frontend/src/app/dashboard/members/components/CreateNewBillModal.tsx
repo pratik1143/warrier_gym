@@ -16,6 +16,7 @@ import { billingRepository } from '@/services/billingRepository';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 import styles from '../members.module.css';
+import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
 
 // ── ZOD VALIDATION SCHEMA ──────────────────────────────────────────────────
 const createBillSchema = z.object({
@@ -106,7 +107,7 @@ interface SuccessBillData {
   amountPaid: number;
   pendingBalance: number;
   method: string;
-  whatsappUrl: string;
+  invoice: any;
 }
 
 export default function CreateNewBillModal({
@@ -120,6 +121,44 @@ export default function CreateNewBillModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingFormData, setPendingFormData] = useState<CreateBillFormOutput | null>(null);
   const [successData, setSuccessData] = useState<SuccessBillData | null>(null);
+  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
+
+  const sendInvoicePdfOnWhatsApp = async (bill: SuccessBillData) => {
+    setIsPreparingPdf(true);
+    try {
+      const invoiceElement = document.getElementById('printable-official-invoice');
+      if (!invoiceElement) throw new Error('Invoice template is not ready.');
+      const html2canvas = (await import('html2canvas')).default;
+      const { jsPDF } = await import('jspdf');
+      const canvas = await html2canvas(invoiceElement, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const margin = 12;
+      const contentWidth = pageWidth - margin * 2;
+      const contentHeight = canvas.height * contentWidth / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+      const image = canvas.toDataURL('image/jpeg', 0.96);
+      let offset = 0;
+      let page = 0;
+      while (offset < contentHeight) {
+        if (page > 0) pdf.addPage();
+        pdf.addImage(image, 'JPEG', margin, margin - offset, contentWidth, contentHeight);
+        offset += pageHeight;
+        page += 1;
+      }
+      pdf.save(`${bill.invoiceNumber}.pdf`);
+      const digits = bill.phone.replace(/\D/g, '');
+      const fullNumber = digits.length === 10 ? `91${digits}` : digits;
+      const message = encodeURIComponent(`Hello ${bill.memberName}, your membership invoice ${bill.invoiceNumber} is attached as a PDF. Thank you for choosing The Warrior Gym!`);
+      window.open(`https://wa.me/${fullNumber}?text=${message}`, '_blank', 'noopener,noreferrer');
+      toast.success('Invoice PDF downloaded. Attach it in the WhatsApp chat to send.');
+    } catch (error) {
+      console.error('Could not create invoice PDF:', error);
+      toast.error('Could not create the invoice PDF. Please try again.');
+    } finally {
+      setIsPreparingPdf(false);
+    }
+  };
 
   // Default Package Options & Pricing
   const packages = useMemo(() => [
@@ -297,39 +336,6 @@ export default function CreateNewBillModal({
   const queuedRenewal = isMemberActive && !!startDate && startDate > todayIST;
   const totalDaysAfterBill = expiryDate ? membershipEngine.calculateDaysLeft(expiryDate) : 0;
 
-  // Build WhatsApp invoice message
-  const buildWhatsAppMessage = (
-    invNum: string,
-    memName: string,
-    memPhone: string,
-    planName: string,
-    billDateStr: string,
-    startStr: string,
-    expiryStr: string,
-    netPayVal: number,
-    paidVal: number,
-    pendingVal: number,
-    methodVal: string
-  ) => {
-    return (
-      `🏋️ *THE WARRIOR GYM — OFFICIAL INVOICE RECEIPT*\n\n` +
-      `👤 *Member*: ${memName}\n` +
-      `📱 *Phone*: ${memPhone || 'N/A'}\n` +
-      `📄 *Invoice No*: ${invNum}\n` +
-      `📦 *Package*: ${planName}\n` +
-      `📅 *Billing Date*: ${billDateStr}\n` +
-      `🚀 *Start Date*: ${startStr}\n` +
-      `🏁 *Expiry Date*: ${expiryStr}\n` +
-      `💰 *Total Net Amount*: ₹${netPayVal.toLocaleString('en-IN')}\n` +
-      `✅ *Amount Paid*: ₹${paidVal.toLocaleString('en-IN')}\n` +
-      (pendingVal > 0 ? `⏳ *Pending Balance*: ₹${pendingVal.toLocaleString('en-IN')}\n` : `🎉 *Balance*: NIL (Fully Paid)\n`) +
-      `💳 *Payment Mode*: ${methodVal}\n` +
-      `⚡ *Membership Status*: ACTIVE\n\n` +
-      `Thank you for choosing *The Warrior Gym*! 💪\n` +
-      `Stay Fit, Stay Strong!`
-    );
-  };
-
   // Save Bill & Activate Membership
   const executeSaveBill = async (data: CreateBillFormOutput) => {
     if (!member) return;
@@ -495,31 +501,6 @@ export default function CreateNewBillModal({
 
       // WhatsApp URL generation
       const digitsOnly = cleanPhoneInput.replace(/\D/g, '');
-      const fullWaNumber = digitsOnly.length === 10 ? `91${digitsOnly}` : digitsOnly;
-      const waMessage = buildWhatsAppMessage(
-        invNum,
-        member.name,
-        cleanPhoneInput,
-        data.plan,
-        bDate,
-        data.startDate,
-        data.expiryDate,
-        netPay,
-        paidAmt,
-        outstanding,
-        data.method
-      );
-      const generatedWaUrl = fullWaNumber ? `https://wa.me/${fullWaNumber}?text=${encodeURIComponent(waMessage)}` : '';
-
-      // Auto-open WhatsApp if enabled & phone exists
-      if (data.sendWhatsApp && generatedWaUrl && typeof window !== 'undefined') {
-        try {
-          window.open(generatedWaUrl, '_blank');
-        } catch (e) {
-          console.warn('Popup blocked, available in modal:', e);
-        }
-      }
-
       toast.success(`🎉 Bill ${invNum} generated! ${member.name} is now ACTIVE!`);
 
       // Set Success State to show success modal
@@ -535,7 +516,13 @@ export default function CreateNewBillModal({
         amountPaid: paidAmt,
         pendingBalance: outstanding,
         method: data.method,
-        whatsappUrl: generatedWaUrl,
+        invoice: {
+          ...billPayload,
+          invoiceNumber: invNum,
+          invoice: invNum,
+          date: bDate,
+          paymentMethod: data.method,
+        },
       });
 
       // Invalidate store cache
@@ -569,7 +556,7 @@ export default function CreateNewBillModal({
 
   const bioIdDisplay = member.biometricId || member.biometricUserId || member.deviceUserId || null;
 
-  return (
+  return (<>
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
       <div className={`${styles.modalCard} bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4 relative border border-slate-100 max-h-[95vh] overflow-y-auto`}>
         
@@ -581,7 +568,7 @@ export default function CreateNewBillModal({
               {isHoldMember ? 'Activate Membership & Bill' : 'Create New Bill'}
             </h3>
             <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-              Generate invoice, record payment, update phone & send WhatsApp bill
+              Generate invoice, record payment, update phone & prepare a PDF for WhatsApp
             </p>
           </div>
           <button
@@ -990,17 +977,17 @@ export default function CreateNewBillModal({
 
             {/* Action Buttons */}
             <div className="space-y-2 w-full">
-              {successData.whatsappUrl ? (
-                <a
-                  href={successData.whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-black rounded-xl text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 no-underline"
+              {successData.phone ? (
+                <button
+                  type="button"
+                  disabled={isPreparingPdf}
+                  onClick={() => sendInvoicePdfOnWhatsApp(successData)}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 disabled:opacity-60 disabled:cursor-wait text-white font-black rounded-xl text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 no-underline"
                 >
                   <MessageSquare size={16} />
-                  Send Invoice on WhatsApp ({successData.phone || 'Member'})
+                  {isPreparingPdf ? 'Preparing Invoice PDF...' : `Download PDF & Open WhatsApp (${successData.phone})`}
                   <ExternalLink size={14} />
-                </a>
+                </button>
               ) : (
                 <div className="text-[11px] text-amber-400 font-semibold bg-amber-950/50 border border-amber-800/50 rounded-xl p-2 mb-2">
                   ⚠️ No phone number was provided to send via WhatsApp.
@@ -1023,5 +1010,10 @@ export default function CreateNewBillModal({
 
       </div>
     </div>
-  );
+    {successData && (
+      <div className="fixed left-[-10000px] top-0 w-[760px]" aria-hidden="true">
+        <OfficialInvoiceReceipt invoice={successData.invoice} member={{ ...member, phone: successData.phone }} />
+      </div>
+    )}
+  </>);
 }

@@ -140,7 +140,7 @@ class BiometricAgentManager:
         """Periodically reports health to Firestore and checks for remote commands (e.g. test door unlock)."""
         while not self._stop_event.is_set():
             try:
-                time.sleep(3)
+                time.sleep(1)
                 now_iso = datetime.now(timezone.utc).isoformat()
 
                 # Check connectivity for each provider and attempt reconnection if needed
@@ -176,7 +176,7 @@ class BiometricAgentManager:
                         "hikvisionOnline": is_hik_online,
                         "esslConnected": is_essl_online,
                         "gateControlEnabled": is_hik_online or is_essl_online,
-                        "version": "3.2.0-hikvision",
+                        "version": "3.3.0-hikvision-enrollment-bridge",
                         "deviceModel": "DS-K1T320EFWX",
                         "deviceIp": Config.HIKVISION_HOST,
                         "reconnectCount": getattr(self, "reconnect_count", 0)
@@ -206,12 +206,113 @@ class BiometricAgentManager:
 
                     # Check for pending commands from CRM UI
                     self._check_pending_commands(control_data, db)
+                    self._process_pending_biometric_enrollments(db)
 
                     # Flush offline queue if online
                     self.processor.flush_offline_queue()
 
             except Exception as ex:
                 logger.warning(f"Error in heartbeat loop: {ex}")
+
+    def _process_pending_biometric_enrollments(self, db):
+        """Run cloud-queued Hikvision enrollment commands from the gym's LAN agent."""
+        if not self.hikvision_provider or not self.hikvision_provider.is_connected():
+            return
+
+        try:
+            pending = db.collection("biometric_enrollment").where("status", "==", "pending").stream()
+            for command_doc in pending:
+                data = command_doc.to_dict() or {}
+                command = data.get("command")
+                if command not in ("hikvision_enroll_face", "hikvision_enroll_fingerprint"):
+                    continue
+
+                # Claim before touching the terminal so the same command cannot be replayed.
+                command_doc.reference.update({
+                    "status": "processing",
+                    "startedAt": datetime.now(timezone.utc).isoformat(),
+                    "updatedAt": datetime.now(timezone.utc).isoformat(),
+                    "processedBy": Config.HIKVISION_DEVICE_ID,
+                })
+                bio_id = str(data.get("biometricId", "")).strip()
+                member_name = str(data.get("memberName") or f"Member {bio_id}").strip()
+                enrollment_type = "FACE" if command == "hikvision_enroll_face" else "FINGERPRINT"
+                logger.info(f"[Remote Enrollment] {enrollment_type} requested for {member_name} (ID {bio_id})")
+
+                try:
+                    provision = self.hikvision_provider.create_user(bio_id, member_name)
+                    if not provision.get("success"):
+                        result = provision
+                    elif command == "hikvision_enroll_face":
+                        result = self.hikvision_provider.enroll_face(bio_id, member_name)
+                    else:
+                        result = self.hikvision_provider.enroll_fingerprint(bio_id, name=member_name)
+
+                    requires_terminal_action = result.get("requiresTerminalAction") is True
+                    accepted = result.get("success") is True or requires_terminal_action
+                    status = "enrolling" if accepted and not requires_terminal_action else (
+                        "terminal_action_required" if requires_terminal_action else "failed"
+                    )
+                    command_doc.reference.update({
+                        "status": status,
+                        "deviceAccepted": accepted,
+                        "deviceResult": result,
+                        "error": None if accepted else result.get("errorMessage", "Hikvision rejected the enrollment request"),
+                        "updatedAt": datetime.now(timezone.utc).isoformat(),
+                    })
+                    if accepted:
+                        threading.Thread(
+                            target=self._watch_biometric_enrollment,
+                            args=(command_doc.reference, bio_id, command),
+                            name=f"EnrollWatch-{bio_id}-{command}",
+                            daemon=True,
+                        ).start()
+                    logger.info(f"[Remote Enrollment] {enrollment_type} ID {bio_id}: {status}")
+                except Exception as exc:
+                    logger.exception(f"[Remote Enrollment] Failed for ID {bio_id}")
+                    command_doc.reference.update({
+                        "status": "failed",
+                        "deviceAccepted": False,
+                        "error": str(exc),
+                        "updatedAt": datetime.now(timezone.utc).isoformat(),
+                    })
+        except Exception as exc:
+            logger.warning(f"Could not process cloud enrollment queue: {exc}")
+
+    def _watch_biometric_enrollment(self, command_ref, bio_id, command):
+        """Verify saved templates against the actual terminal after it accepts a capture command."""
+        expected = "face" if command == "hikvision_enroll_face" else "fingerprint"
+        for _ in range(60):
+            time.sleep(2)
+            try:
+                result = self.hikvision_provider.get_user_biometric_status(bio_id)
+                has_face = bool(result.get("hasFace") or (result.get("numOfFace") or 0) > 0)
+                has_fingerprint = bool(result.get("hasFingerprint") or (result.get("numOfFP") or 0) > 0)
+                enrolled = has_face if expected == "face" else has_fingerprint
+                command_ref.update({
+                    "hasFace": has_face,
+                    "hasFingerprint": has_fingerprint,
+                    "numOfFace": result.get("numOfFace", 0),
+                    "numOfFP": result.get("numOfFP", 0),
+                    "lastDeviceCheckAt": datetime.now(timezone.utc).isoformat(),
+                    "deviceStatus": result,
+                    "status": "enrolled" if enrolled else "enrolling",
+                    "updatedAt": datetime.now(timezone.utc).isoformat(),
+                })
+                if enrolled:
+                    logger.info(f"[Remote Enrollment] Verified {expected} template for device user {bio_id}")
+                    return
+            except Exception as exc:
+                logger.warning(f"[Remote Enrollment] Status check failed for {bio_id}: {exc}")
+
+        try:
+            command_ref.update({
+                "status": "timed_out",
+                "error": f"No {expected} template was detected on the terminal before timeout.",
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception:
+            pass
 
     def _check_pending_commands(self, control_data: Dict[str, Any], db):
         """Processes remote commands dispatched from CRM Settings / Access Control."""

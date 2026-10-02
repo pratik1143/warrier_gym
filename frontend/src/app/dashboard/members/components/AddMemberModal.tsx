@@ -254,7 +254,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   const [fpStatus, setFpStatus] = useState<'NOT ENROLLED' | 'REQUESTING' | 'WAITING FOR TERMINAL' | 'ENROLLED' | 'FAILED'>('NOT ENROLLED');
   const [faceEnrolledAt, setFaceEnrolledAt] = useState<string | null>(null);
   const [fpEnrolledAt, setFpEnrolledAt] = useState<string | null>(null);
-  const [hikvisionOnline, setHikvisionOnline] = useState<boolean>(true);
+  const [hikvisionOnline, setHikvisionOnline] = useState<boolean>(false);
   const [isTestingConn, setIsTestingConn] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const cancelRequestedRef = useRef<boolean>(false);
@@ -512,6 +512,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     }
   };
 
+  useEffect(() => {
+    if (isOpen && step === 4) void checkHikvisionStatus();
+  }, [isOpen, step]);
+
   // Hikvision Hardware Live Status Poller
   const queryDeviceStatus = async (bioId: string) => {
     try {
@@ -594,22 +598,11 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     console.log(`[BIOMETRIC FLOW START] memberName="${memName}" biometricId=${bioId} flow=${type}`);
     setEnrollDetailLog(`[BIOMETRIC FLOW START]\nbiometricId=${bioId}\nflow=${type}\ntimestamp=${new Date().toLocaleTimeString()}`);
 
-    // STEP 1: CREATE / VERIFY USER ON HIKVISION TERMINAL
-    setMachineStep('CREATING_USER');
+    // The local agent provisions the person as part of the enrollment command.
+    // Never ask the cloud backend to run a local Python subprocess or reach the LAN device.
+    setMachineStep('USER_READY');
     setEnrollStatus('enrolling');
-    setEnrollMsg(`Provisioning user ID #${bioId} on Hikvision terminal...`);
-
-    try {
-      const userResp = await API.post('/devices/hikvision/create-user', {
-        biometricId: bioId,
-        memberName: memName
-      });
-      if (!userResp.data?.success && !userResp.data?.alreadyExists) {
-        console.warn('[USER CREATION FAILED]', userResp.data);
-      }
-    } catch (createErr: any) {
-      console.warn('[USER CREATION WARNING]', createErr.message);
-    }
+    setEnrollMsg(`Sending enrollment request to the gym's local agent for user ID #${bioId}...`);
 
     if (cancelRequestedRef.current) return;
     setMachineStep('USER_READY');
@@ -726,7 +719,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     setEnrollDetailLog(prev => prev + `\n\n[FACE ENROLLMENT START]\nTriggering terminal camera for #${bioId}...`);
 
     try {
-      await API.post('/devices/hikvision/enroll', {
+      const response = await API.post('/devices/hikvision/enroll', {
         memberId: 'new_' + Date.now(),
         memberName: memName,
         biometricId: bioId,
@@ -735,8 +728,18 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         flow: selectedEnrollType,
         enrollmentType: 'FACE'
       });
+      if (response.data?.success !== true || response.data?.status !== 'ENROLLING') {
+        throw new Error(response.data?.error || response.data?.message || 'The local biometric agent did not accept the face command.');
+      }
     } catch (e: any) {
-      console.warn("Face trigger response:", e.message);
+      console.error('[FACE API POST ERROR]', e);
+      setMachineStep('FAILED');
+      setFaceStatus('FAILED');
+      setEnrollStatus('failed');
+      setEnrollMsg(e.response?.data?.error || `Failed to send face enrollment command: ${e.message}`);
+      setEnrollDetailLog(prev => prev + `\n[FACE COMMAND REJECTED] ${e.response?.data?.error || e.message}`);
+      toast.error(e.response?.data?.error || 'Face enrollment command could not reach the on-site agent.');
+      return false;
     }
 
     setFaceStatus('WAITING FOR TERMINAL');
@@ -751,6 +754,14 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       if (cancelRequestedRef.current) return false;
 
       const devStatus = await queryDeviceStatus(bioId);
+      if (devStatus?.enrollmentStatus === 'terminal_action_required') {
+        setFaceStatus('TERMINAL_ENROLLMENT_REQUIRED');
+        setEnrollMsg('The local agent reached the terminal. Start face capture on the terminal screen and keep this window open.');
+      }
+      if (devStatus?.enrollmentStatus === 'failed' || devStatus?.enrollmentStatus === 'timed_out') {
+        setEnrollMsg(devStatus.error || 'The terminal did not complete face enrollment.');
+        break;
+      }
       if (devStatus && (devStatus.hasFace || (devStatus.numOfFace && devStatus.numOfFace > 0))) {
         console.log(`[FACE ENROLLMENT RESULT] employeeNo=${bioId} status=SUCCESS numOfFace=${devStatus.numOfFace}`);
         const nowIso = new Date().toISOString();
@@ -1940,10 +1951,11 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                           <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
                             faceStatus === 'ENROLLED' ? 'bg-emerald-100 text-emerald-800' :
                             faceStatus === 'FAILED' ? 'bg-red-100 text-red-800' :
+                            faceStatus === 'TERMINAL_ENROLLMENT_REQUIRED' ? 'bg-amber-100 text-amber-800' :
                             faceStatus === 'REQUESTING' || faceStatus === 'WAITING FOR TERMINAL' ? 'bg-orange-100 text-orange-800 animate-pulse' :
                             'bg-stone-100 text-stone-600'
                           }`}>
-                            {faceStatus === 'ENROLLED' ? '✓ ENROLLED' : faceStatus}
+                            {faceStatus === 'ENROLLED' ? '✓ ENROLLED' : faceStatus === 'TERMINAL_ENROLLMENT_REQUIRED' ? 'TERMINAL ACTION' : faceStatus}
                           </span>
                           <ChevronRight className="w-4 h-4 text-stone-400" />
                         </div>

@@ -882,58 +882,25 @@ export const mapDeviceUserToMember = async (req: Request, res: Response) => {
  */
 export const testHikvisionConnection = async (req: Request, res: Response) => {
   try {
-    const rootDir = process.cwd().endsWith('backend') ? path.dirname(process.cwd()) : process.cwd();
-    const agentRoot = path.resolve(rootDir, 'warrior-biometric-agent');
-    const scriptPath = path.resolve(agentRoot, 'enroll_cli.py');
-
-    exec(`py "${scriptPath}" test_connection`, { cwd: agentRoot }, async (err, stdout, stderr) => {
-      let matrix: any = null;
-      try {
-        if (stdout) matrix = JSON.parse(stdout.trim());
-      } catch (e) {}
-
-      const firestore = getFirestoreDb();
-      if (firestore) {
-        try {
-          await firestore.collection('device_testing').doc('control').set({
-            testConnectionPending: true,
-            testRequestedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch (fErr) {}
-      }
-
-      if (matrix) {
-        return res.json({
-          success: matrix.network && matrix.http,
-          status: matrix.network ? 'ONLINE' : 'OFFLINE',
-          online: matrix.network,
-          deviceId: 'hikvision-main-gate',
-          deviceName: 'Hikvision DS-K1T320EFWX',
-          ip: '192.168.1.45',
-          matrix: {
-            network: matrix.network,
-            http: matrix.http,
-            auth: matrix.auth,
-            userApi: matrix.userApi,
-            faceApi: matrix.faceApi,
-            fingerprintApi: matrix.fingerprintApi
-          },
-          details: matrix.details,
-          message: matrix.network ? 'Hikvision 7-point health check completed successfully.' : 'Device unreachable on network.'
-        });
-      }
-
-      res.json({
-        success: true,
-        status: 'ONLINE',
-        online: true,
-        deviceId: 'hikvision-main-gate',
-        deviceName: 'Hikvision DS-K1T320EFWX',
-        ip: '192.168.1.45',
-        matrix: { network: true, http: true, auth: true, userApi: true, faceApi: true, fingerprintApi: false },
-        details: { model: 'DS-K1T320EFWX', firmwareVersion: 'V3.5.20 Build 20241227' },
-        message: 'Hikvision connection verified.'
-      });
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, online: false, message: 'Device status service is unavailable.' });
+    const snap = await firestore.collection('devices').doc('hikvision-main-gate').get();
+    const device = snap.exists ? snap.data() : null;
+    const hb = device?.lastHeartbeat;
+    const hbDate = hb?.toDate ? hb.toDate() : new Date(hb || 0);
+    const agentFresh = Number.isFinite(hbDate.getTime()) && Date.now() - hbDate.getTime() < 15000;
+    const online = Boolean(agentFresh && device?.status === 'connected');
+    return res.json({
+      success: online,
+      status: online ? 'ONLINE' : 'OFFLINE',
+      online,
+      deviceId: 'hikvision-main-gate',
+      deviceName: 'Hikvision DS-K1T342MFWX',
+      ip: device?.ip || '192.168.1.45',
+      agentLastHeartbeat: device?.lastHeartbeat || null,
+      matrix: { network: online, http: online, auth: online, userApi: online, faceApi: online, fingerprintApi: online },
+      details: { model: device?.deviceType || 'Hikvision DS-K1T342MFWX', firmwareVersion: device?.firmwareVersion || null },
+      message: online ? 'Local biometric agent and Hikvision terminal are connected.' : 'Local biometric agent is offline or the terminal is unreachable. Start the agent on the gym network.'
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -1070,134 +1037,53 @@ export const getHikvisionEvents = async (req: Request, res: Response) => {
 export const enrollHikvisionBiometrics = async (req: Request, res: Response) => {
   try {
     const { memberId, memberName, biometricId, enrollmentType } = req.body;
-    const bioId = String(biometricId || '101').trim();
+    const bioId = String(biometricId || '').trim();
+    if (!bioId || !/^\d+$/.test(bioId)) {
+      return res.status(400).json({ success: false, error: 'A valid numeric biometric user ID is required.' });
+    }
     const nameStr = String(memberName || 'New Member').trim();
     const type = (enrollmentType || 'FACE').toUpperCase(); // FACE, FINGERPRINT, BOTH
-
-    const cliCmd = type === 'FINGERPRINT' ? 'enroll_fingerprint' : (type === 'BOTH' ? 'enroll_both' : 'enroll_face');
-    const rootDir = process.cwd().endsWith('backend') ? path.dirname(process.cwd()) : process.cwd();
-    const agentRoot = path.resolve(rootDir, 'warrior-biometric-agent');
-    const scriptPath = path.resolve(agentRoot, 'enroll_cli.py');
-
-    if (type === 'FINGERPRINT' || type === 'BOTH') {
-      console.log(`[FP REQUEST RECEIVED BY BACKEND] employeeNo=${bioId}`);
-      console.log(`[FP REQUEST SENT TO LOCAL AGENT] employeeNo=${bioId}`);
+    if (!['FACE', 'FINGERPRINT'].includes(type)) {
+      return res.status(400).json({ success: false, error: 'Enrollment type must be FACE or FINGERPRINT.' });
     }
 
-    exec(`py "${scriptPath}" ${cliCmd} ${bioId} "${nameStr}"`, { cwd: agentRoot }, async (err, stdout, stderr) => {
-      if (stderr) {
-        console.log(stderr.trim());
-      }
-      let resultData: any = null;
-      try {
-        if (stdout) resultData = JSON.parse(stdout.trim());
-      } catch (e) {}
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Enrollment queue is unavailable.' });
 
-      const nowIso = new Date().toISOString();
-      const isSuccess = resultData?.success === true;
-      const requiresTerminalAction = resultData?.requiresTerminalAction === true;
-      const firestore = getFirestoreDb();
+    // A cloud server cannot reach a private LAN address. Only accept commands when
+    // the on-site agent has recently heartbeated and can deliver them to the terminal.
+    const deviceSnap = await firestore.collection('devices').doc('hikvision-main-gate').get();
+    const device = deviceSnap.exists ? deviceSnap.data() : null;
+    const heartbeat = device?.lastHeartbeat;
+    const heartbeatDate = heartbeat?.toDate ? heartbeat.toDate() : new Date(heartbeat || 0);
+    const agentOnline = Number.isFinite(heartbeatDate.getTime()) && Date.now() - heartbeatDate.getTime() < 15000 && device?.status === 'connected';
+    if (!agentOnline) {
+      return res.status(503).json({ success: false, error: 'The gym biometric agent is offline or cannot reach the Hikvision terminal. Check the on-site agent and device connection.' });
+    }
 
-      // Audit Log Entry with full Hikvision error fields
-      if (firestore) {
-        try {
-          await firestore.collection('biometric_enrollment_logs').add({
-            memberId: memberId || 'TWG-NEW',
-            biometricId: bioId,
-            enrollmentType: type,
-            deviceIp: '192.168.1.45',
-            requestTimestamp: nowIso,
-            apiEndpoint: resultData?.endpoint || '/ISAPI/AccessControl/UserInfo/Record?format=json',
-            httpMethod: resultData?.httpMethod || 'POST',
-            httpStatus: resultData?.httpStatus || 400,
-            result: isSuccess ? 'SUCCESS' : (requiresTerminalAction ? 'WAITING_FOR_TERMINAL' : 'FAILED'),
-            parsedResponse: resultData?.parsedResponse || null,
-            errorResponse: isSuccess ? null : (resultData?.errorMessage || resultData?.hikvisionResponse || stderr || 'Device request failed')
-          });
-        } catch (lErr) {}
+    const now = new Date().toISOString();
+    const commandId = `enroll_${bioId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await firestore.collection('biometric_enrollment').doc(commandId).set({
+      docId: commandId,
+      command: type === 'FACE' ? 'hikvision_enroll_face' : 'hikvision_enroll_fingerprint',
+      status: 'pending',
+      memberId: String(memberId || `new_${commandId}`),
+      memberName: nameStr,
+      biometricId: bioId,
+      enrollmentType: type,
+      deviceId: 'hikvision-main-gate',
+      createdAt: now,
+      updatedAt: now,
+      source: 'crm_new_member_onboarding',
+    });
 
-        // Update Member Record in Firestore with full metadata
-        if (memberId) {
-          try {
-            const memberRef = firestore.collection('members').doc(String(memberId));
-            const updates: any = {
-              biometricUserId: bioId,
-              biometricDeviceId: 'hikvision-main-gate',
-              biometricDeviceType: 'Hikvision DS-K1T320EFWX',
-              hikvisionDeviceIp: '192.168.1.45',
-              hikvisionDeviceModel: 'DS-K1T320EFWX',
-              lastBiometricAttemptAt: nowIso,
-              lastBiometricApiEndpoint: resultData?.endpoint || '/ISAPI/AccessControl/UserInfo/Record?format=json',
-              lastBiometricApiMethod: resultData?.httpMethod || 'POST'
-            };
-
-            if (!isSuccess && !requiresTerminalAction) {
-              updates.lastBiometricError = resultData?.errorMessage || 'Enrollment failed';
-            }
-
-            if (type === 'FACE' || type === 'BOTH') {
-              if (isSuccess) {
-                updates.faceEnrollmentStatus = 'ENROLLED';
-                updates.faceEnrolledAt = nowIso;
-              } else if (requiresTerminalAction) {
-                updates.faceEnrollmentStatus = 'TERMINAL_ENROLLMENT_REQUIRED';
-              } else {
-                updates.faceEnrollmentStatus = 'FAILED';
-              }
-            }
-
-            if (type === 'FINGERPRINT' || type === 'BOTH') {
-              if (isSuccess) {
-                updates.fingerprintEnrollmentStatus = 'ENROLLED';
-                updates.fingerprintEnrolledAt = nowIso;
-              } else if (requiresTerminalAction) {
-                updates.fingerprintEnrollmentStatus = 'WAITING_FOR_TERMINAL';
-              } else {
-                updates.fingerprintEnrollmentStatus = 'FAILED';
-              }
-            }
-
-            await memberRef.update(updates);
-          } catch (mErr) {}
-        }
-      }
-
-      if (isSuccess) {
-        return res.json({
-          success: true,
-          status: resultData?.status || 'ENROLLING',
-          biometricUserId: bioId,
-          enrollmentType: type,
-          message: resultData?.message || `${type} enrollment command active on Hikvision terminal`,
-          deviceResult: resultData
-        });
-      } else if (requiresTerminalAction) {
-        return res.json({
-          success: false,
-          supported: resultData?.supported === true,
-          reason: resultData?.reason || 'REMOTE_FINGERPRINT_ENROLLMENT_NOT_SUPPORTED',
-          requiresTerminalAction: true,
-          status: resultData?.status || 'TERMINAL_ENROLLMENT_REQUIRED',
-          biometricUserId: bioId,
-          enrollmentType: type,
-          message: resultData?.message || `Person ${bioId} created on Hikvision terminal. Terminal action required.`,
-          instruction: resultData?.instruction || `Tap Terminal Screen → Menu → User #${bioId} → Fingerprint → Scan finger 3 times.`,
-          deviceResult: resultData
-        });
-      } else {
-        const errorDetail = resultData?.errorMessage || resultData?.hikvisionResponse || 'Hikvision operation failed.';
-        return res.status(400).json({
-          success: false,
-          biometricUserId: bioId,
-          enrollmentType: type,
-          error: errorDetail,
-          apiEndpoint: resultData?.endpoint || '/ISAPI/AccessControl/UserInfo/Record?format=json',
-          httpMethod: resultData?.httpMethod || 'POST',
-          httpStatus: resultData?.httpStatus || 400,
-          parsedResponse: resultData?.parsedResponse || null,
-          hikvisionResponse: resultData?.hikvisionResponse || errorDetail
-        });
-      }
+    return res.json({
+      success: true,
+      status: 'ENROLLING',
+      enrollmentDocId: commandId,
+      biometricUserId: bioId,
+      enrollmentType: type,
+      message: `${type} enrollment command queued for the on-site Hikvision agent.`,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -1211,26 +1097,26 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
 export const getHikvisionEnrollmentStatus = async (req: Request, res: Response) => {
   try {
     const { biometricId } = req.params;
-    const bioId = String(biometricId || '101').trim();
-    const rootDir = process.cwd().endsWith('backend') ? path.dirname(process.cwd()) : process.cwd();
-    const agentRoot = path.resolve(rootDir, 'warrior-biometric-agent');
-    const scriptPath = path.resolve(agentRoot, 'enroll_cli.py');
-
-    exec(`py "${scriptPath}" status ${bioId}`, { cwd: agentRoot }, async (err, stdout, stderr) => {
-      let resultData: any = null;
-      try {
-        if (stdout) resultData = JSON.parse(stdout.trim());
-      } catch (e) {}
-
-      if (resultData) {
-        return res.json(resultData);
-      } else {
-        return res.status(500).json({
-          success: false,
-          error: stderr || err?.message || 'Failed to query device user status',
-          employeeNo: bioId
-        });
-      }
+    const bioId = String(biometricId || '').trim();
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Device status service is unavailable.' });
+    const snap = await firestore.collection('biometric_enrollment').where('biometricId', '==', bioId).get();
+    const commands = snap.docs
+      .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+      .filter((doc: any) => ['hikvision_enroll_face', 'hikvision_enroll_fingerprint'].includes(doc.command))
+      .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    const latest: any = commands[0];
+    if (!latest) return res.json({ success: false, employeeNo: bioId, hasFace: false, hasFingerprint: false, numOfFace: 0, numOfFP: 0 });
+    return res.json({
+      success: true,
+      employeeNo: bioId,
+      hasFace: Boolean(latest.hasFace),
+      hasFingerprint: Boolean(latest.hasFingerprint),
+      numOfFace: Number(latest.numOfFace || 0),
+      numOfFP: Number(latest.numOfFP || 0),
+      enrollmentStatus: latest.status,
+      enrollmentType: latest.enrollmentType,
+      error: latest.error || null,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
