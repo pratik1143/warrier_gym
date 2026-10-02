@@ -902,18 +902,45 @@ class HikvisionProvider(BiometricProvider):
         try:
             resp = self.session.post(url, data=xml_body, headers={"Content-Type": "application/xml"}, timeout=12)
             status_code = resp.status_code
-            parsed = self._parse_hikvision_response(resp)
-            is_ok = status_code == 200
+            raw_text = resp.text[:400] if resp.text else ""
 
-            logger.info(f"[Hikvision Face Enroll] employeeNo={employee_no} => HTTP {status_code}: {parsed['raw'][:200]}")
-            if is_ok:
+            # Detect if device returned actual face data (multipart response with binary face image)
+            content_type = resp.headers.get("Content-Type", "")
+            content_length = int(resp.headers.get("Content-Length", 0))
+            has_face_data = (
+                status_code == 200 and (
+                    "multipart" in content_type or
+                    content_length > 1000 or  # Binary face data is always >1KB
+                    len(resp.content) > 1000
+                )
+            )
+
+            logger.info(f"[Hikvision Face Enroll] employeeNo={employee_no} => HTTP {status_code}, "
+                        f"ContentType={content_type[:60]}, ContentLength={content_length}, HasFaceData={has_face_data}")
+
+            if has_face_data:
+                # Device returned actual face photo — enrollment confirmed immediately!
+                logger.info(f"[Hikvision Face Enroll] ✅ Face data captured for User #{employee_no} ({content_length or len(resp.content)} bytes). Marking as enrolled.")
                 return {
                     "success": True,
+                    "faceSuccessful": True,
+                    "hasFace": True,
+                    "numOfFace": 1,
                     "endpoint": "/ISAPI/AccessControl/CaptureFaceData",
                     "httpMethod": "POST",
                     "httpStatus": status_code,
-                    "parsedResponse": parsed,
-                    "hikvisionResponse": parsed["raw"],
+                    "hikvisionResponse": raw_text,
+                    "errorMessage": None
+                }
+            elif status_code == 200:
+                # HTTP 200 but no face data body — terminal accepted command, waiting for face
+                return {
+                    "success": True,
+                    "faceSuccessful": False,
+                    "endpoint": "/ISAPI/AccessControl/CaptureFaceData",
+                    "httpMethod": "POST",
+                    "httpStatus": status_code,
+                    "hikvisionResponse": raw_text,
                     "errorMessage": None
                 }
             else:
@@ -924,8 +951,7 @@ class HikvisionProvider(BiometricProvider):
                     "endpoint": "/ISAPI/AccessControl/CaptureFaceData",
                     "httpMethod": "POST",
                     "httpStatus": status_code,
-                    "parsedResponse": parsed,
-                    "hikvisionResponse": parsed["raw"],
+                    "hikvisionResponse": raw_text,
                     "errorMessage": f"Remote live face capture is not supported by terminal firmware HTTP {status_code}. User #{employee_no} has been created on device. Please capture face directly on terminal."
                 }
         except Exception as e:
@@ -937,7 +963,6 @@ class HikvisionProvider(BiometricProvider):
                 "endpoint": "/ISAPI/AccessControl/CaptureFaceData",
                 "httpMethod": "POST",
                 "httpStatus": 0,
-                "parsedResponse": {"error": str(e)},
                 "hikvisionResponse": str(e),
                 "errorMessage": f"User #{employee_no} created. Terminal face enrollment required: {e}"
             }

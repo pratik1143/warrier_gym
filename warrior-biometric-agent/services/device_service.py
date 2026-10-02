@@ -284,18 +284,30 @@ class BiometricAgentManager:
                         result = self.hikvision_provider.enroll_fingerprint(bio_id, name=member_name)
 
                     requires_terminal_action = result.get("requiresTerminalAction") is True
+                    face_confirmed = result.get("faceSuccessful") is True or result.get("hasFace") is True
                     accepted = result.get("success") is True or requires_terminal_action
-                    status = "enrolling" if accepted and not requires_terminal_action else (
-                        "terminal_action_required" if requires_terminal_action else "failed"
-                    )
+
+                    if face_confirmed:
+                        # Device returned face data immediately — mark enrolled right away
+                        status = "enrolled"
+                    elif accepted and not requires_terminal_action:
+                        status = "enrolling"
+                    elif requires_terminal_action:
+                        status = "terminal_action_required"
+                    else:
+                        status = "failed"
+
                     command_doc.reference.update({
                         "status": status,
-                        "deviceAccepted": accepted,
+                        "deviceAccepted": accepted or face_confirmed,
+                        "hasFace": result.get("hasFace", False),
+                        "hasFingerprint": result.get("hasFingerprint", False),
+                        "numOfFace": result.get("numOfFace", 0),
                         "deviceResult": result,
-                        "error": None if accepted else result.get("errorMessage", "Hikvision rejected the enrollment request"),
+                        "error": None if (accepted or face_confirmed) else result.get("errorMessage", "Hikvision rejected the enrollment request"),
                         "updatedAt": datetime.now(timezone.utc).isoformat(),
                     })
-                    if accepted:
+                    if accepted and not face_confirmed:
                         threading.Thread(
                             target=self._watch_biometric_enrollment,
                             args=(command_doc.reference, bio_id, command),

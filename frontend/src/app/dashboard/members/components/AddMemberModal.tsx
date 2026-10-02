@@ -1938,10 +1938,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       {/* 1. Register Face */}
                       <button
                         type="button"
-                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
+                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FACE_STARTING'}
                         onClick={() => handleExecuteEnrollment('FACE')}
                         className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
-                          (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING')
+                          (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FACE_STARTING')
                             ? 'opacity-50 cursor-not-allowed'
                             : 'cursor-pointer hover:border-orange-300'
                         } ${
@@ -1978,10 +1978,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       {/* 2. Register Fingerprint */}
                       <button
                         type="button"
-                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
+                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING' || machineStep === 'FINGERPRINT_STARTING'}
                         onClick={() => handleExecuteEnrollment('FINGERPRINT')}
                         className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
-                          (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING')
+                          (machineStep === 'CREATING_USER' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING' || machineStep === 'FINGERPRINT_STARTING')
                             ? 'opacity-50 cursor-not-allowed'
                             : 'cursor-pointer hover:border-orange-300'
                         } ${
@@ -2017,10 +2017,10 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                       {/* 3. Face + Fingerprint */}
                       <button
                         type="button"
-                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING'}
+                        disabled={!hikvisionOnline || machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING' || machineStep === 'FACE_STARTING' || machineStep === 'FINGERPRINT_STARTING'}
                         onClick={() => handleExecuteEnrollment('BOTH')}
                         className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col justify-between ${
-                          (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING')
+                          (machineStep === 'CREATING_USER' || machineStep === 'FACE_ENROLLING' || machineStep === 'FACE_WAITING' || machineStep === 'FINGERPRINT_ENROLLING' || machineStep === 'FINGERPRINT_WAITING' || machineStep === 'FACE_STARTING' || machineStep === 'FINGERPRINT_STARTING')
                             ? 'opacity-50 cursor-not-allowed'
                             : 'cursor-pointer hover:border-orange-300'
                         } ${
@@ -2069,8 +2069,26 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
                         <span>Terminal camera active. Capturing 3D face structure...</span>
                       </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleExecuteEnrollment('FINGERPRINT')}
+                          className="text-xs font-bold text-orange-700 bg-white border border-orange-300 hover:bg-orange-50 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
+                        >
+                          <Fingerprint className="w-3.5 h-3.5" />
+                          Done with face — Do Fingerprint Now
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMachineStep('IDLE')}
+                          className="text-xs text-stone-500 hover:text-stone-700 px-2 py-1.5 rounded-lg transition-all"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   )}
+
 
                   {/* 2. Face Captured Banner (Continuous Transition) */}
                   {(machineStep === 'FACE_SAVED' || (faceStatus === 'ENROLLED' && machineStep !== 'BIOMETRIC_COMPLETE')) && (
