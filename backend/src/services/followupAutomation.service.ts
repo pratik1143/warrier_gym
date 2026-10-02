@@ -51,7 +51,7 @@ export interface AutomatedFollowupResult {
 /**
  * Main Automated Follow-Up Generation Engine.
  * Checks:
- * 1. UPCOMING GYM MEMBERSHIP RENEWAL (6–7 days before expiry)
+ * 1. GYM MEMBERSHIP RENEWAL (daily from 7 days before expiry through expiry and after)
  * 2. PT RENEWAL (4 days before PT expiry)
  * 3. PENDING BALANCE (2 days before payment due date when balance > 0)
  * 4. PENDING ENQUIRIES (creates idempotent follow-up for every pending enquiry with nextFollowUpDate)
@@ -118,22 +118,28 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
     const assignedStaff = member.trainer || member.assignedStaff || 'Receptionist';
 
     // -------------------------------------------------------------
-    // RULE 1: UPCOMING GYM MEMBERSHIP RENEWAL (6–7 Days Before Expiry)
+    // RULE 1: GYM MEMBERSHIP RENEWAL (daily from 7 days before expiry onward)
     // -------------------------------------------------------------
     const membershipExpiry = member.expiryDate ? member.expiryDate.split('T')[0] : null;
     const memberStatus = (member.status || '').toLowerCase();
 
-    // Check only if member is active (not already expired in the past)
-    if (membershipExpiry && memberStatus === 'active') {
+    // Active memberships get a daily 7-to-1 countdown. Expired memberships
+    // continue getting one daily task until renewed (or manually completed).
+    if (membershipExpiry && ['active', 'expired'].includes(memberStatus)) {
       const daysToExpiry = getCalendarDaysDiff(membershipExpiry, todayStr);
 
-      if (daysToExpiry >= 6 && daysToExpiry <= 7) {
-        const automationKey = `AUTO_RENEWAL_${memberId}_${membershipExpiry}`;
+      if (daysToExpiry <= 7) {
+        const reminderDay = daysToExpiry < 0 ? `EXPIRED_${todayStr}` : `D${daysToExpiry}_${todayStr}`;
+        const automationKey = `AUTO_RENEWAL_${memberId}_${membershipExpiry}_${reminderDay}`;
 
         if (existingKeyMap.has(automationKey)) {
           skippedCount++;
         } else {
-          const renewalMessage = `Membership ending in ${daysToExpiry} days`;
+          const renewalMessage = daysToExpiry < 0
+            ? `Membership expired ${Math.abs(daysToExpiry)} ${Math.abs(daysToExpiry) === 1 ? 'day' : 'days'} ago`
+            : daysToExpiry === 0
+              ? 'Membership expires today'
+              : `Membership ending in ${daysToExpiry} days`;
           const payload = {
             id: automationKey,
             automationKey,
@@ -146,7 +152,7 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
             title: 'GYM MEMBERSHIP RENEWAL',
             description: `${renewalMessage} (${membershipExpiry})`,
             notes: renewalMessage,
-            priority: 'Medium',
+            priority: daysToExpiry <= 2 ? 'High' : 'Medium',
             dueDate: todayStr,
             scheduledDate: todayStr,
             scheduledTime: '10:00',
@@ -156,6 +162,8 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
             source: 'auto',
             plan: member.plan || 'Monthly Standard',
             expiryDate: membershipExpiry,
+            daysToExpiry,
+            reminderStage: daysToExpiry < 0 ? 'EXPIRED' : `D${daysToExpiry}`,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
@@ -393,7 +401,8 @@ export async function resolveStaleRenewalFollowups(
       let resolveReason = '';
 
       if (renewalType === 'MEMBERSHIP' && (fol.type === 'GYM MEMBERSHIP RENEWAL' || fol.type === 'Renewal')) {
-        if (newExpiryOrDueDate && fol.automationKey !== `AUTO_RENEWAL_${entityId}_${newExpiryOrDueDate}`) {
+        const reminderExpiry = fol.expiryDate || fol.automationKey?.match(/^AUTO_RENEWAL_.+?_(\d{4}-\d{2}-\d{2})(?:_|$)/)?.[1];
+        if (newExpiryOrDueDate && reminderExpiry && reminderExpiry !== newExpiryOrDueDate) {
           shouldResolve = true;
           resolveReason = `Auto-resolved: Membership renewed to ${newExpiryOrDueDate}`;
         } else if (!newExpiryOrDueDate) {

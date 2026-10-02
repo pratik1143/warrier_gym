@@ -4,10 +4,14 @@ import time
 import signal
 import logging
 import threading
+import uuid
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
+from firebase_admin import storage
+from urllib.parse import quote
 
 # Add root of warrior-biometric-agent to sys.path
 AGENT_ROOT = Path(__file__).resolve().parent.parent
@@ -347,6 +351,18 @@ class BiometricAgentManager:
                     "updatedAt": datetime.now(timezone.utc).isoformat(),
                 })
                 if enrolled:
+                    if expected == "face":
+                        photo_result = self._sync_enrolled_face_photo(db, bio_id)
+                        if photo_result.get("success"):
+                            command_ref.update({
+                                "photoUrl": photo_result["photoUrl"],
+                                "photoStoragePath": photo_result["photoStoragePath"],
+                                "facePhotoAvailable": True,
+                                "facePhotoSource": "HIKVISION",
+                                "photoSyncedAt": photo_result["photoSyncedAt"],
+                            })
+                        else:
+                            command_ref.update({"facePhotoError": photo_result.get("error", "Face photo sync failed")})
                     logger.info(f"[Remote Enrollment] Verified {expected} template for device user {bio_id}")
                     return
             except Exception as exc:
@@ -360,6 +376,74 @@ class BiometricAgentManager:
             })
         except Exception:
             pass
+
+    def _sync_enrolled_face_photo(self, db, bio_id: str) -> Dict[str, Any]:
+        """Store the captured terminal portrait and attach it to any matching member."""
+        try:
+            photo = self.hikvision_provider.download_user_face_photo(bio_id)
+            if not photo.get("success"):
+                return photo
+
+            synced_at = datetime.now(timezone.utc).isoformat()
+            storage_path = f"members/hikvision/{bio_id}/profile.jpg"
+            try:
+                bucket = storage.bucket()
+                blob = bucket.blob(storage_path)
+                token = str(uuid.uuid4())
+                blob.upload_from_string(photo["imageBytes"], content_type="image/jpeg")
+                blob.metadata = {
+                    "firebaseStorageDownloadTokens": token,
+                    "biometricId": str(bio_id),
+                    "photoSource": "HIKVISION",
+                    "photoSyncedAt": synced_at,
+                }
+                blob.patch()
+                photo_url = (
+                    f"https://firebasestorage.googleapis.com/v0/b/{bucket.name}/o/"
+                    f"{quote(storage_path, safe='')}?alt=media&token={token}"
+                )
+            except Exception as storage_exc:
+                # The compressed 320px portrait stays small enough for a Firestore fallback.
+                logger.warning(f"Firebase Storage upload failed for face portrait {bio_id}; using compact Firestore fallback: {storage_exc}")
+                image_b64 = base64.b64encode(photo["imageBytes"]).decode("ascii")
+                photo_url = f"data:image/jpeg;base64,{image_b64}"
+                storage_path = ""
+            member_photo = {
+                "photo": photo_url,
+                "photoUrl": photo_url,
+                "avatar": photo_url,
+                "avatarUrl": photo_url,
+                "profilePhotoUrl": photo_url,
+                "photoStoragePath": storage_path,
+                "photoSource": "HIKVISION",
+                "photoSyncedAt": synced_at,
+                "facePhotoAvailable": True,
+                "facePhotoSource": "HIKVISION",
+            }
+
+            db.collection("biometric_photos").document(str(bio_id)).set({
+                "biometricId": str(bio_id),
+                "photoUrl": photo_url,
+                "photoStoragePath": storage_path,
+                "photoSource": "HIKVISION",
+                "facePhotoAvailable": True,
+                "updatedAt": synced_at,
+                "updatedAtServer": SERVER_TIMESTAMP,
+            }, merge=True)
+
+            for member in db.collection("members").where("biometricId", "==", str(bio_id)).stream():
+                member.reference.set(member_photo, merge=True)
+
+            logger.info(f"[Face Photo Sync] Saved terminal portrait for biometric ID {bio_id} to Firebase Storage.")
+            return {
+                "success": True,
+                "photoUrl": photo_url,
+                "photoStoragePath": storage_path,
+                "photoSyncedAt": synced_at,
+            }
+        except Exception as exc:
+            logger.warning(f"[Face Photo Sync] Could not save portrait for biometric ID {bio_id}: {exc}")
+            return {"success": False, "error": str(exc)}
 
     def _check_pending_commands(self, control_data: Dict[str, Any], db):
         """Processes remote commands dispatched from CRM Settings / Access Control."""

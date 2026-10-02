@@ -55,6 +55,7 @@ class Config:
 
     # Backend API URL
     BACKEND_API_URL = os.getenv("WARRIOR_BACKEND_URL", "http://localhost:5000/api")
+    FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET", "thewarriorgym.firebasestorage.app")
 
     # Paths
     LOG_FILE = BASE_DIR / "logs" / "warrior_biometric_agent.log"

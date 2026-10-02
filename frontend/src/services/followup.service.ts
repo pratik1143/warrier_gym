@@ -91,15 +91,20 @@ export const followupService = {
         const memberStatus = (member.status || '').toLowerCase();
         const assignedStaff = member.trainer || member.assignedStaff || 'Receptionist';
 
-        // RULE 1: GYM MEMBERSHIP RENEWAL (6–7 days before expiry)
+        // RULE 1: GYM MEMBERSHIP RENEWAL (daily from 7 days before expiry onward)
         const membershipExpiry = member.expiryDate ? member.expiryDate.split('T')[0] : null;
-        if (membershipExpiry && memberStatus === 'active') {
+        if (membershipExpiry && ['active', 'expired'].includes(memberStatus)) {
           const daysToExpiry = getCalendarDaysDiff(membershipExpiry, todayStr);
-          if (daysToExpiry >= 6 && daysToExpiry <= 7) {
-            const key = `AUTO_RENEWAL_${memberId}_${membershipExpiry}`;
+          if (daysToExpiry <= 7) {
+            const reminderDay = daysToExpiry < 0 ? `EXPIRED_${todayStr}` : `D${daysToExpiry}_${todayStr}`;
+            const key = `AUTO_RENEWAL_${memberId}_${membershipExpiry}_${reminderDay}`;
             if (!existingKeySet.has(key)) {
               existingKeySet.add(key);
-              const renewalMessage = `Membership ending in ${daysToExpiry} days`;
+              const renewalMessage = daysToExpiry < 0
+                ? `Membership expired ${Math.abs(daysToExpiry)} ${Math.abs(daysToExpiry) === 1 ? 'day' : 'days'} ago`
+                : daysToExpiry === 0
+                  ? 'Membership expires today'
+                  : `Membership ending in ${daysToExpiry} days`;
               const payload = {
                 id: key,
                 automationKey: key,
@@ -111,7 +116,7 @@ export const followupService = {
                 title: 'GYM MEMBERSHIP RENEWAL',
                 description: `${renewalMessage} (${membershipExpiry})`,
                 notes: renewalMessage,
-                priority: 'Medium',
+                priority: daysToExpiry <= 2 ? 'High' : 'Medium',
                 dueDate: todayStr,
                 scheduledDate: todayStr,
                 scheduledTime: '10:00',
@@ -121,6 +126,8 @@ export const followupService = {
                 source: 'auto',
                 plan: member.plan || 'Monthly Standard',
                 expiryDate: membershipExpiry,
+                daysToExpiry,
+                reminderStage: daysToExpiry < 0 ? 'EXPIRED' : `D${daysToExpiry}`,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
               };

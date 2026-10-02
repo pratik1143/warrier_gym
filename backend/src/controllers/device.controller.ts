@@ -1160,7 +1160,9 @@ export const getHikvisionEnrollmentStatus = async (req: Request, res: Response) 
       .filter((doc: any) => ['hikvision_enroll_face', 'hikvision_enroll_fingerprint'].includes(doc.command))
       .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     const latest: any = commands[0];
-    if (!latest) return res.json({ success: false, employeeNo: bioId, hasFace: false, hasFingerprint: false, numOfFace: 0, numOfFP: 0 });
+    const photoSnap = await firestore.collection('biometric_photos').doc(bioId).get();
+    const photoData = photoSnap.exists ? photoSnap.data() : null;
+    if (!latest) return res.json({ success: false, employeeNo: bioId, hasFace: false, hasFingerprint: false, numOfFace: 0, numOfFP: 0, photoUrl: photoData?.photoUrl || null });
     return res.json({
       success: true,
       employeeNo: bioId,
@@ -1170,6 +1172,7 @@ export const getHikvisionEnrollmentStatus = async (req: Request, res: Response) 
       numOfFP: Number(latest.numOfFP || 0),
       enrollmentStatus: latest.status,
       enrollmentType: latest.enrollmentType,
+      photoUrl: latest.photoUrl || photoData?.photoUrl || null,
       error: latest.error || null,
     });
   } catch (error: any) {

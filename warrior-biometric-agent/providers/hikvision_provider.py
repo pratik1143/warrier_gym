@@ -5,11 +5,14 @@ import json
 import logging
 import threading
 import xml.etree.ElementTree as ET
+from io import BytesIO
 from datetime import datetime, timezone
 from typing import Callable, Dict, Any, List, Optional
+from urllib.parse import urljoin
 
 import urllib3
 import requests
+from PIL import Image
 from requests.auth import HTTPDigestAuth
 
 from .biometric_provider import BiometricProvider
@@ -1119,6 +1122,31 @@ class HikvisionProvider(BiometricProvider):
                 "error": str(e),
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
+
+    def download_user_face_photo(self, employee_no: str) -> Dict[str, Any]:
+        """Download the enrolled face portrait and normalize it to a JPEG profile image."""
+        status = self.get_user_biometric_status(employee_no)
+        face_url = status.get("faceURL")
+        if not status.get("hasFace") or not face_url:
+            return {"success": False, "error": "The terminal has no downloadable face portrait yet."}
+
+        try:
+            image_url = urljoin(f"{self.base_url}/", str(face_url))
+            response = self.session.get(image_url, timeout=12)
+            if response.status_code != 200 or not response.content:
+                return {"success": False, "error": f"The terminal photo endpoint returned HTTP {response.status_code}."}
+
+            with Image.open(BytesIO(response.content)) as image:
+                image.load()
+                image = image.convert("RGB")
+                image.thumbnail((320, 320))
+                output = BytesIO()
+                image.save(output, format="JPEG", quality=80, optimize=True)
+
+            return {"success": True, "imageBytes": output.getvalue()}
+        except Exception as exc:
+            logger.warning(f"Could not download enrolled face portrait for user {employee_no}: {exc}")
+            return {"success": False, "error": str(exc)}
 
     def run_diagnostics(self) -> Dict[str, Any]:
         """Runs full connection and API capabilities diagnostic probe."""

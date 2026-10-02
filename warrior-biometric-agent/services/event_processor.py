@@ -60,7 +60,9 @@ class EventProcessor:
                 # Check if already initialized by this app
                 if not firebase_admin._apps:
                     cred = credentials.Certificate(str(cert_path))
-                    firebase_admin.initialize_app(cred)
+                    firebase_admin.initialize_app(cred, {
+                        "storageBucket": Config.FIREBASE_STORAGE_BUCKET,
+                    })
                 self.db = firestore.client()
                 logger.info(f"✅ Firebase initialized with certificate at {cert_path}")
             except Exception as e:

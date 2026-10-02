@@ -255,6 +255,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
   const [fpStatus, setFpStatus] = useState<'NOT ENROLLED' | 'REQUESTING' | 'WAITING FOR TERMINAL' | 'ENROLLED' | 'FAILED'>('NOT ENROLLED');
   const [faceEnrolledAt, setFaceEnrolledAt] = useState<string | null>(null);
   const [fpEnrolledAt, setFpEnrolledAt] = useState<string | null>(null);
+  const faceCapturePhotoUrlRef = useRef<string>('');
   const [hikvisionOnline, setHikvisionOnline] = useState<boolean>(false);
   const [isTestingConn, setIsTestingConn] = useState<boolean>(false);
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
@@ -557,6 +558,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       const nowIso = new Date().toISOString();
       const isComplete = faceStat === 'ENROLLED' && fpStat === 'ENROLLED';
       const isPartial = (faceStat === 'ENROLLED' || fpStat === 'ENROLLED') && !isComplete;
+      const facePhotoUrl = faceCapturePhotoUrlRef.current || '';
       const bioPayload: any = {
         biometricId: bioId,
         hikvisionUserId: bioId,
@@ -578,6 +580,18 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
           updatedAt: nowIso
         }
       };
+      if (facePhotoUrl) {
+        Object.assign(bioPayload, {
+          photo: facePhotoUrl,
+          photoUrl: facePhotoUrl,
+          avatar: facePhotoUrl,
+          avatarUrl: facePhotoUrl,
+          profilePhotoUrl: facePhotoUrl,
+          photoSource: 'HIKVISION',
+          facePhotoAvailable: true,
+          facePhotoSource: 'HIKVISION',
+        });
+      }
       if (!snap.empty) {
         for (const docSnap of snap.docs) {
           await updateDoc(doc(db, 'members', docSnap.id), bioPayload);
@@ -770,6 +784,21 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
       }
       if (devStatus && (devStatus.hasFace || (devStatus.numOfFace && devStatus.numOfFace > 0))) {
         console.log(`[FACE ENROLLMENT RESULT] employeeNo=${bioId} status=SUCCESS numOfFace=${devStatus.numOfFace}`);
+        let facePhotoUrl = devStatus.photoUrl || '';
+        for (let photoAttempt = 0; !facePhotoUrl && photoAttempt < 10; photoAttempt++) {
+          await sleep(1000);
+          const photoStatus = await queryDeviceStatus(bioId);
+          facePhotoUrl = photoStatus?.photoUrl || '';
+        }
+        if (facePhotoUrl) {
+          faceCapturePhotoUrlRef.current = facePhotoUrl;
+          setPhotoPreview(facePhotoUrl);
+          setEnrollDetailLog(prev => prev + '\n[PROFILE PHOTO SAVED] Captured face portrait is now the member profile photo.');
+          setEnrollMsg('Face captured and saved as the member profile photo.');
+        } else {
+          setEnrollDetailLog(prev => prev + '\n[PROFILE PHOTO PENDING] Face is enrolled; the terminal portrait will attach when its sync completes.');
+          setEnrollMsg('Face enrolled. The captured portrait is still syncing to the member profile.');
+        }
         const nowIso = new Date().toISOString();
         setFaceStatus('ENROLLED');
         setFaceEnrolledAt(nowIso);
@@ -976,7 +1005,16 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
         name: fullName.trim(),
         phone: normalizedPhone,
         email: normalizedEmail,
-        photo: photoPreview || '',
+        photo: faceCapturePhotoUrlRef.current || photoPreview || '',
+        photoUrl: faceCapturePhotoUrlRef.current || photoPreview || '',
+        avatar: faceCapturePhotoUrlRef.current || photoPreview || '',
+        avatarUrl: faceCapturePhotoUrlRef.current || photoPreview || '',
+        profilePhotoUrl: faceCapturePhotoUrlRef.current || photoPreview || '',
+        ...(faceCapturePhotoUrlRef.current ? {
+          photoSource: 'HIKVISION',
+          facePhotoAvailable: true,
+          facePhotoSource: 'HIKVISION',
+        } : {}),
         plan: planName,
         price: packagePrice,
         originalAmount: packagePrice,
@@ -1119,6 +1157,7 @@ export default function AddMemberModal({ isOpen, onClose }: AddMemberModalProps)
     setMobile('');
     setEmail('');
     setPhotoPreview(null);
+    faceCapturePhotoUrlRef.current = '';
     setGender('Male');
     setDob('');
     setOccupation('');

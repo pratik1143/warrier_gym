@@ -154,7 +154,7 @@ export const createMember = async (req: Request, res: Response) => {
     const { 
       name, phone, email, plan, branch, trainer, gender, age, weight, height, bmi, 
       joinDate, expiryDate, bloodGroup, emergencyContact, maritalStatus, anniversaryDate, 
-      birthdayDate, medicalConditions, fitnessGoal, occupation, address, password, avatarUrl,
+      birthdayDate, medicalConditions, fitnessGoal, occupation, address, password, avatarUrl, photo,
       biometricId,
       paymentStatus, paymentMethod,
       price, amount, totalBilled, totalPaid
@@ -163,6 +163,19 @@ export const createMember = async (req: Request, res: Response) => {
     if (!name || !phone) {
       return res.status(400).json({ error: 'Name and Phone are required' });
     }
+
+    // Face capture can finish just before or after this request. Prefer the
+    // agent's terminal portrait if it has already synced for this biometric ID.
+    let capturedFacePhotoUrl = '';
+    if (biometricId && isFirebaseInitialized && admin) {
+      try {
+        const photoSnap = await admin.firestore().collection('biometric_photos').doc(String(biometricId).trim()).get();
+        capturedFacePhotoUrl = String(photoSnap.data()?.photoUrl || '').trim();
+      } catch (photoErr: any) {
+        console.warn('[Member Photo] Could not read synced biometric portrait:', photoErr.message);
+      }
+    }
+    const memberPhotoUrl = capturedFacePhotoUrl || String(photo || avatarUrl || req.body.photoUrl || req.body.avatar || req.body.profilePhotoUrl || '');
 
     let uid = 'm' + Date.now();
     const loginEmail = email || `${phone}@thewarriorgym.in`;
@@ -265,7 +278,14 @@ export const createMember = async (req: Request, res: Response) => {
       fitnessGoal: fitnessGoal || 'General Fitness',
       occupation: occupation || '',
       address: address || '',
-      avatarUrl: avatarUrl || '',
+      photo: memberPhotoUrl,
+      photoUrl: memberPhotoUrl,
+      avatar: memberPhotoUrl,
+      avatarUrl: memberPhotoUrl,
+      profilePhotoUrl: memberPhotoUrl,
+      photoSource: capturedFacePhotoUrl ? 'HIKVISION' : (req.body.photoSource || ''),
+      facePhotoAvailable: Boolean(capturedFacePhotoUrl || req.body.facePhotoAvailable),
+      facePhotoSource: capturedFacePhotoUrl ? 'HIKVISION' : (req.body.facePhotoSource || ''),
       biometricId: biometricId || '',
       biometricUserId: req.body.biometricUserId || biometricId || '',
       faceEnrollmentStatus: req.body.faceEnrollmentStatus || 'PENDING',
