@@ -145,11 +145,24 @@ class BiometricAgentManager:
 
         logger.info("✅ Warrior Biometric Agent initialized and running.")
 
+        # Register signal handlers for graceful shutdown (SIGTERM from process managers)
+        def _signal_handler(signum, frame):
+            logger.info(f"[Agent] Received signal {signum} — shutting down gracefully...")
+            self.stop()
+        try:
+            signal.signal(signal.SIGTERM, _signal_handler)
+            signal.signal(signal.SIGINT, _signal_handler)
+        except Exception:
+            pass
+
         # Keep main thread alive
         try:
             while not self._stop_event.is_set():
                 time.sleep(1)
         except (KeyboardInterrupt, SystemExit):
+            self.stop()
+        except Exception as ex:
+            logger.error(f"[Agent] Unexpected error in main loop: {ex}")
             self.stop()
 
     def stop(self):
