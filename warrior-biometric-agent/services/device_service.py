@@ -168,17 +168,30 @@ class BiometricAgentManager:
 
     def _heartbeat_and_command_loop(self):
         """Periodically reports health to Firestore and checks for remote commands (e.g. test door unlock)."""
+        # Reconnect cooldown: track last attempt time per provider to avoid reconnect storms
+        _reconnect_last: Dict[str, float] = {}
+        _reconnect_lock = threading.Lock()
+        RECONNECT_COOLDOWN = 30  # seconds between reconnect attempts per provider
+
         while not self._stop_event.is_set():
             try:
                 time.sleep(1)
                 now_iso = datetime.now(timezone.utc).isoformat()
 
                 # Check connectivity for each provider and attempt reconnection if needed
+                # Use cooldown + lock to prevent simultaneous/storm reconnects
                 for p in self.providers:
                     if not p.is_connected():
-                        p.connect()
-                        if p.is_connected() and not p.is_running:
-                            p.start_listening(self.processor.process_event)
+                        last_attempt = _reconnect_last.get(p.device_id, 0)
+                        if time.time() - last_attempt >= RECONNECT_COOLDOWN:
+                            with _reconnect_lock:
+                                # Double-check after acquiring lock
+                                if not p.is_connected():
+                                    _reconnect_last[p.device_id] = time.time()
+                                    logger.info(f"[Reconnect] Attempting reconnect to {p.device_id}...")
+                                    connected = p.connect()
+                                    if connected and not p.is_running:
+                                        p.start_listening(self.processor.process_event)
 
                 # Report to Firestore
                 if self.processor and self.processor.db:
