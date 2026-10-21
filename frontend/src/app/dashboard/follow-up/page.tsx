@@ -573,6 +573,22 @@ export default function FollowUpManager() {
       });
     }
 
+    // De-duplicate: one task per member/phone + type + due date (keep the one with notes / edits)
+    {
+      const byKey = new Map<string, FollowUpItem>();
+      for (const f of result) {
+        const who = String((f as any).memberId || (f as any).enquiryId || (f as any).phone || (f as any).memberName || f.id);
+        const kind = String((f as any).type || (f as any).title || '').toLowerCase().trim();
+        const due = String((f as any).dueDate || (f as any).scheduledDate || (f as any).date || '').split('T')[0];
+        const key = `${who}|${kind}|${due}`;
+        const prev = byKey.get(key);
+        if (!prev) { byKey.set(key, f); continue; }
+        const score = (t: any) => (t.lastNote ? 2 : 0) + (t.updatedAt ? 1 : 0);
+        if (score(f) > score(prev)) byKey.set(key, f);
+      }
+      result = Array.from(byKey.values());
+    }
+
     return result;
   }, [
     activeTab, 
