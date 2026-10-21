@@ -45,6 +45,8 @@ flutter_sdk
 scratch
 .cora
 diff*.txt
+_backup/
+_fb/
 
 # Member Uploads / Synced Photos
 backend/public/uploads/*
