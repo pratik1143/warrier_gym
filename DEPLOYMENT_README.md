@@ -20,17 +20,13 @@
 The Firebase configurations have already been set. Vercel will communicate with Firebase using the environment variables.
 Ensure Firebase Firestore Rules allow authenticated read/writes and Storage rules allow image uploads.
 
-## 3. Windows Device Service (Biometrics)
-This service runs on the local Windows PC in the gym (24x7) to connect with the ESSL K90 Pro device and sync attendances/members to Firebase.
-1. Open Command Prompt as Administrator and navigate to the `device-service` folder.
-2. Install requirements if not already installed:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. To start the services seamlessly in the background on startup, create a shortcut to `start_services.vbs` (located in the `device-service` folder) and place it in the Windows Startup folder:
-   - Press `Win + R`, type `shell:startup`, and press Enter.
-   - Right-click and choose "Paste Shortcut" of the `start_services.vbs` file.
-   - To manually start it now, just double-click `start_services.vbs`. It will run the python service silently without keeping a command window open.
-4. Logs can be found at `warrior_gym_device_service.log`.
+## 3. Gym PC: Hikvision Biometric Agent (DS-K1T320EFWX)
+Ye agent gym ke Windows PC par 24x7 chalta hai. Ye Firestore ki `biometric_enrollment` queue se commands uthata hai (face/finger enroll, block/unblock, delete, sync member) aur terminal se punches/photos Firestore me bhejta hai.
+1. `warrior-biometric-agent/requirements.txt` install karo: `pip install -r warrior-biometric-agent/requirements.txt`
+2. `backend/.env` me terminal ki settings rakho (HIKVISION_HOST, HIKVISION_PORT, HIKVISION_USERNAME, HIKVISION_PASSWORD, FIREBASE_*). Passwords repo me commit mat karo.
+3. **Pehle ping test:** `health-check.bat` chalao. Ye `ping_hikvision.py` se terminal ka TCP + ISAPI check karta hai (PASS/FAIL).
+4. Agent start: `start-gym-listener.bat` | stop: `stop-gym-listener.bat` | restart: `restart-gym-listener.bat`. Auto-start ke liye `warrior-biometric-agent/install-agent-autostart.bat`.
+5. Sirf `warrior-biometric-agent` chalao. Purana `device-service/` (ESSL K90) saath me mat chalao, nahi to wo bhi commands utha lega.
+6. Create Member me face/finger skip ho jaye to server `hikvision_sync_member` queue karta hai. Agent chalu ho tab user + photo terminal par apne aap sync hota hai. Fingerprint terminal par hi enroll hoti hai.
 
 **All done! The CRM is now production-ready.**
