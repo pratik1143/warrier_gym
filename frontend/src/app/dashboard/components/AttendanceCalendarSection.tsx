@@ -280,14 +280,7 @@ export default function AttendanceCalendarSection({
 
   // Staff Attendance & Absence Tracking
   const staffListWithStatus = useMemo(() => {
-    const defaultStaff = [
-      { id: 'emp_10021', name: 'Sourav Arora', phone: '7973649709', role: 'Trainer', biometricId: 10021 },
-      { id: 'emp_10012', name: 'Deepak', phone: '8196852386', role: 'Trainer', biometricId: 10012 },
-      { id: 'emp_10009', name: 'Kuldeep', phone: '8629841471', role: 'Trainer', biometricId: 10009 },
-      { id: 'emp_10008', name: 'Arshdeep Singh', phone: '9915866576', role: 'Trainer', biometricId: 10008 },
-      { id: 'emp_10005', name: 'Achhar Pal', phone: '9592691190', role: 'Trainer', biometricId: 10005 },
-      { id: 'emp_10003', name: 'Abc', phone: '7884977777', role: 'Trainer', biometricId: 10003 }
-    ];
+    const defaultStaff: any[] = [];
 
     const sourceList = (employeesList && employeesList.length > 0) ? employeesList : defaultStaff;
 
