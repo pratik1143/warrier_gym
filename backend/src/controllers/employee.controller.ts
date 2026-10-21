@@ -97,18 +97,7 @@ export const getEmployees = async (req: Request, res: Response) => {
     }
     const firestore = admin.firestore();
     const snap = await firestore.collection('employees').get();
-    if (snap.empty) {
-      console.log('[Auto-Seed] Firestore employees empty. Seeding default employees...');
-      const batch = firestore.batch();
-      const seeded: any[] = [];
-      for (const emp of defaultEmployeesList) {
-        const docRef = firestore.collection('employees').doc();
-        batch.set(docRef, emp);
-        seeded.push({ id: docRef.id, ...emp });
-      }
-      await batch.commit().catch(e => console.error('[Auto-Seed] Failed to seed employees:', e));
-      return res.json(seeded);
-    }
+    if (snap.empty) return res.json([]); // no auto-seeding of default employees
     const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     res.json(list);
   } catch (error: any) {
