@@ -13,6 +13,7 @@ import API from '@/services/api';
 import toast from '@/lib/toast';
 import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { getDefaultPriceForPlan } from '@/services/billingService';
 
 interface EditBillingModalProps {
   isOpen: boolean;
@@ -61,7 +62,7 @@ export default function EditBillingModal({
   const initialOrigAmt = Number(
     invoice?.originalAmount !== undefined
       ? invoice.originalAmount
-      : (invoice?.amount || invoice?.price || member?.amount || 6500)
+      : (invoice?.amount || invoice?.price || member?.amount || getDefaultPriceForPlan(invoice?.plan || member?.plan))
   );
   const initialDiscAmt = Number(invoice?.discountAmount !== undefined ? invoice.discountAmount : (invoice?.discount || 0));
   const initialTaxAmt = Number(invoice?.taxAmount !== undefined ? invoice.taxAmount : (invoice?.tax || invoice?.gst || 0));
@@ -76,7 +77,11 @@ export default function EditBillingModal({
   const [tax, setTax] = useState<number>(initialTaxAmt);
   const [amountPaid, setAmountPaid] = useState<number>(initialPaidAmt);
   const [paymentMethod, setPaymentMethod] = useState(invoice?.method || invoice?.paymentMethod || 'UPI');
-  const [paymentDate, setPaymentDate] = useState(invoice?.date || invoice?.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0]);
+  const initialDate = invoice?.transactionDate || invoice?.paymentDate || invoice?.date || invoice?.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0];
+  const initialTime = invoice?.transactionTime || invoice?.paymentTime || invoice?.time || '05:30 PM';
+
+  const [paymentDate, setPaymentDate] = useState(initialDate);
+  const [paymentTime, setPaymentTime] = useState(initialTime);
   const [invoiceNumber, setInvoiceNumber] = useState(invoice?.invoiceNumber || invoice?.invoice || 'INV-0001');
   const [notes, setNotes] = useState(invoice?.notes || '');
 
@@ -202,17 +207,40 @@ export default function EditBillingModal({
         pendingAmount: pendingAmount,
         method: paymentMethod,
         status: calculatedStatus,
+        transactionDate: paymentDate,
+        transactionTime: paymentTime,
+        paymentDate: paymentDate,
+        paymentTime: paymentTime,
         date: paymentDate,
+        time: paymentTime,
+        updatedAt: new Date().toISOString(),
+        isRealTimeToday: false,
         notes: notes || 'Updated via Edit Billing Modal',
         changedBy: 'Gym Owner'
       };
 
-      // 1. Send update to Backend API
+      // 1. Execute Atomic Multi-document Date & Transaction Sync
+      const payId = invoice.id || targetInvoiceId;
+      if (payId) {
+        try {
+          await paymentEngine.updateTransactionDateAtomic({
+            paymentId: payId,
+            memberId: member.id || member.uid || invoice.memberId,
+            invoiceNumber,
+            transactionDate: paymentDate,
+            transactionTime: paymentTime,
+            editedBy: 'Gym Owner',
+          });
+        } catch (atomicErr) {
+          console.warn('Atomic date update warning:', atomicErr);
+        }
+      }
+
+      // 2. Send update to Backend API fallback
       try {
         await API.put(`/billing/${targetInvoiceId}`, payload);
       } catch (apiErr) {
         console.warn('API update failed, updating Firestore directly:', apiErr);
-        // Direct Firestore fallback
         if (invoice.id) {
           const payDocRef = doc(db, 'payments', invoice.id);
           await updateDoc(payDocRef, payload);
@@ -288,13 +316,13 @@ export default function EditBillingModal({
         {/* ── STICKY MODAL HEADER ────────────────────────────────────────── */}
         <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md px-6 py-4 border-b border-slate-100 flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
+            <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center font-black">
               <Edit3 size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-black text-slate-900 tracking-tight">Edit Billing &amp; Transaction</h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-black bg-orange-50 text-orange-700 border border-orange-200">
                   {invoiceNumber}
                 </span>
               </div>
@@ -316,7 +344,7 @@ export default function EditBillingModal({
           <div className="bg-slate-50/70 rounded-2xl p-5 border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
               <div className="flex items-center gap-2">
-                <User size={16} className="text-[#EA580C]" />
+                <User size={16} className="text-orange-600" />
                 <h3 className="font-extrabold text-sm uppercase tracking-wider text-slate-800">
                   Section A — Member Profile Information
                 </h3>
@@ -331,7 +359,7 @@ export default function EditBillingModal({
                   type="text"
                   value={memberName}
                   onChange={e => setMemberName(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -341,7 +369,7 @@ export default function EditBillingModal({
                   type="tel"
                   value={memberPhone}
                   onChange={e => setMemberPhone(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -352,7 +380,7 @@ export default function EditBillingModal({
                   value={memberEmail}
                   onChange={e => setMemberEmail(e.target.value)}
                   placeholder="member@thewarriorgym.in"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -361,7 +389,7 @@ export default function EditBillingModal({
                 <select
                   value={memberGender}
                   onChange={e => setMemberGender(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -375,7 +403,7 @@ export default function EditBillingModal({
                   type="date"
                   value={memberDob}
                   onChange={e => setMemberDob(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -386,7 +414,7 @@ export default function EditBillingModal({
                   value={memberAge}
                   onChange={e => setMemberAge(e.target.value)}
                   placeholder="Years"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -397,7 +425,7 @@ export default function EditBillingModal({
                   value={memberAddress}
                   onChange={e => setMemberAddress(e.target.value)}
                   placeholder="City, State"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -408,7 +436,7 @@ export default function EditBillingModal({
                   value={emergencyContact}
                   onChange={e => setEmergencyContact(e.target.value)}
                   placeholder="Phone number"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -418,7 +446,7 @@ export default function EditBillingModal({
                   type="text"
                   value={memberRefId}
                   onChange={e => setMemberRefId(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-[#C2410C] focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-orange-700 focus:border-orange-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -449,7 +477,7 @@ export default function EditBillingModal({
                       setPlan(e.target.value);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 >
                   <option value="1 Month Standard">1 Month Standard (30 Days)</option>
                   <option value="2 Months Special">2 Months Special (60 Days)</option>
@@ -463,26 +491,26 @@ export default function EditBillingModal({
 
               {isCustomPlan && (
                 <div>
-                  <label className="font-extrabold text-indigo-700 block mb-1">Custom Plan Name</label>
+                  <label className="font-extrabold text-orange-700 block mb-1">Custom Plan Name</label>
                   <input
                     type="text"
                     value={customPlanName}
                     onChange={e => setCustomPlanName(e.target.value)}
                     placeholder="e.g. Couples Special 3 Months"
-                    className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                    className="w-full px-3 py-2 bg-white border border-orange-300 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                   />
                 </div>
               )}
 
               <div>
                 <label className="font-extrabold text-slate-700 block mb-1">
-                  Start Date <span className="text-indigo-600 font-bold">(Editable)</span> *
+                  Start Date <span className="text-orange-600 font-bold">(Editable)</span> *
                 </label>
                 <input
                   type="date"
                   value={startDate}
                   onChange={e => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-xl font-bold text-slate-900 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-orange-300 rounded-xl font-bold text-slate-900 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -528,7 +556,7 @@ export default function EditBillingModal({
                   value={trainer}
                   onChange={e => setTrainer(e.target.value)}
                   placeholder="Optional trainer name"
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -538,7 +566,7 @@ export default function EditBillingModal({
                   type="text"
                   value={branch}
                   onChange={e => setBranch(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -547,7 +575,7 @@ export default function EditBillingModal({
                 <select
                   value={memberStatus}
                   onChange={e => setMemberStatus(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 >
                   <option value="active">Active (Normal Access)</option>
                   <option value="expired">Expired</option>
@@ -572,7 +600,7 @@ export default function EditBillingModal({
                 <button
                   type="button"
                   onClick={handleRegenerateInvoiceNumber}
-                  className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 cursor-pointer"
+                  className="text-[10px] font-bold text-orange-600 hover:text-orange-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 cursor-pointer"
                 >
                   Regenerate Inv #
                 </button>
@@ -581,24 +609,25 @@ export default function EditBillingModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 text-xs">
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1">
-                  Original Transaction Amount (₹) *
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-extrabold text-slate-700 block">
+                    Original Transaction Amount (₹) *
+                  </label>
+                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                    <Lock size={10} /> Locked
+                  </span>
+                </div>
                 <input
                   type="number"
                   value={originalAmount}
-                  onChange={e => setOriginalAmount(Number(e.target.value))}
-                  className={`w-full px-3 py-2 bg-white border rounded-xl font-mono font-black text-slate-900 focus:outline-none text-sm ${
-                    validationErrors.originalAmount ? 'border-red-500 bg-red-50/40' : 'border-slate-200 focus:border-pink-500'
-                  }`}
+                  readOnly
+                  tabIndex={-1}
+                  onKeyDown={e => e.preventDefault()}
+                  onPaste={e => e.preventDefault()}
+                  className="w-full px-3 py-2 bg-slate-100/90 border border-slate-200 rounded-xl font-mono font-black text-slate-700 cursor-not-allowed select-none focus:outline-none text-sm"
+                  title="Historical package amount is locked to preserve financial integrity."
                 />
-                {validationErrors.originalAmount ? (
-                  <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                    <AlertCircle size={12} className="shrink-0" /> {validationErrors.originalAmount}
-                  </p>
-                ) : (
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">Actual stored transaction amount</span>
-                )}
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Historical package amount preserved from bill creation</span>
               </div>
 
               <div>
@@ -636,9 +665,9 @@ export default function EditBillingModal({
               </div>
 
               {/* Readonly Net Payable Display */}
-              <div className="bg-white p-3 rounded-xl border border-indigo-200 shadow-xs flex flex-col justify-center">
-                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Net Payable</span>
-                <span className="text-lg font-black text-indigo-950 font-mono">₹{netPayable.toLocaleString('en-IN')}</span>
+              <div className="bg-white p-3 rounded-xl border border-orange-200 shadow-xs flex flex-col justify-center">
+                <span className="text-[10px] font-black uppercase text-orange-600 tracking-wider">Net Payable</span>
+                <span className="text-lg font-black text-orange-950 font-mono">₹{netPayable.toLocaleString('en-IN')}</span>
                 <span className="text-[9px] text-slate-400 font-bold">Orig (₹{originalAmount}) - Disc (₹{discount}) + Tax (₹{tax})</span>
               </div>
 
@@ -683,7 +712,7 @@ export default function EditBillingModal({
                 <select
                   value={paymentMethod}
                   onChange={e => setPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 >
                   <option value="UPI">UPI / QR Code</option>
                   <option value="Cash">Cash</option>
@@ -694,12 +723,23 @@ export default function EditBillingModal({
               </div>
 
               <div>
-                <label className="font-extrabold text-slate-700 block mb-1">Payment Date</label>
+                <label className="font-extrabold text-slate-700 block mb-1">Transaction Date *</label>
                 <input
                   type="date"
                   value={paymentDate}
                   onChange={e => setPaymentDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-extrabold text-slate-700 block mb-1">Transaction Time *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 05:30 PM"
+                  value={paymentTime}
+                  onChange={e => setPaymentTime(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 focus:border-orange-500 focus:outline-none"
                 />
               </div>
 
@@ -709,7 +749,7 @@ export default function EditBillingModal({
                   type="text"
                   value={invoiceNumber}
                   onChange={e => setInvoiceNumber(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-[#C2410C] focus:border-indigo-500 focus:outline-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-mono font-bold text-orange-700 focus:border-orange-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -721,7 +761,7 @@ export default function EditBillingModal({
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 placeholder="Reason for adjustment, discount remark, payment reference..."
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:border-indigo-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium text-xs text-slate-800 focus:border-orange-500 focus:outline-none"
               />
             </div>
           </div>
@@ -744,8 +784,8 @@ export default function EditBillingModal({
                   <div>Net Payable: <span className="font-black text-slate-900">₹{netPayable.toLocaleString('en-IN')}</span></div>
                   <div>Amount Paid: <span className="font-black text-emerald-600">₹{Number(amountPaid).toLocaleString('en-IN')}</span></div>
                   <div>Pending: <span className="font-black text-red-600">₹{pendingAmount.toLocaleString('en-IN')}</span></div>
-                  <div>Start Date: <span className="font-bold text-indigo-600">{startDate}</span></div>
-                  <div>Expiry Date: <span className="font-bold text-indigo-600">{expiryDate}</span></div>
+                  <div>Start Date: <span className="font-bold text-orange-600">{startDate}</span></div>
+                  <div>Expiry Date: <span className="font-bold text-orange-600">{expiryDate}</span></div>
                 </div>
               </div>
 
@@ -754,7 +794,7 @@ export default function EditBillingModal({
                   type="button"
                   disabled={isSaving}
                   onClick={() => executeSave(false)}
-                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer disabled:opacity-50"
                 >
                   {isSaving ? 'Updating...' : 'Yes, Confirm & Save'}
                 </button>
@@ -796,7 +836,7 @@ export default function EditBillingModal({
             <button
               type="button"
               onClick={() => executeSave(true)}
-              className="px-5 py-2.5 bg-gradient-to-r from-[#F97316] to-[#EA580C] hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer shadow-md flex items-center gap-1.5 active:scale-95"
+              className="px-5 py-2.5 bg-gradient-to-r from-orange-600 to-amber-700 hover:from-orange-700 hover:to-amber-800 text-white font-extrabold rounded-xl text-xs transition-all border-none cursor-pointer shadow-md flex items-center gap-1.5 active:scale-95"
             >
               <Printer size={14} /> Save &amp; Generate Bill
             </button>

@@ -888,6 +888,198 @@ class HikvisionProvider(BiometricProvider):
             }
         }
 
+    # ------------------------------------------------------------------
+    # Extended user management: access block/unblock, delete, validity sync, face photo push
+    # (ISAPI calls follow the documented Hikvision access-control terminal API;
+    #  results are always verified by reading the user back from the terminal.)
+    # ------------------------------------------------------------------
+    def _isapi_request(self, method: str, path: str, json_body: Optional[Dict[str, Any]] = None,
+                       timeout: int = 10, **kwargs) -> requests.Response:
+        """Authenticated ISAPI request with one Digest-nonce refresh retry on HTTP 401."""
+        url = f"{self.base_url}{path}"
+        resp = None
+        for attempt in range(2):
+            resp = self.session.request(method, url, json=json_body, timeout=timeout, **kwargs)
+            if resp.status_code == 401 and attempt == 0:
+                self._ensure_authenticated()
+                continue
+            break
+        return resp
+
+    def _isapi_ok(self, resp: requests.Response) -> Dict[str, Any]:
+        parsed = self._parse_hikvision_response(resp)
+        ok = resp.status_code in (200, 201) and (
+            parsed.get("statusCode") in (1, "1") or str(parsed.get("subStatusCode") or "").lower() == "ok"
+            or (parsed.get("statusCode") is None and parsed.get("errorCode") is None and not parsed.get("errorMsg"))
+        )
+        return {
+            "success": bool(ok),
+            "httpStatus": resp.status_code,
+            "parsedResponse": parsed,
+            "errorMessage": None if ok else (parsed.get("errorMsg") or parsed.get("subStatusCode") or f"HTTP {resp.status_code}"),
+        }
+
+    def get_user_info(self, employee_no: str) -> Optional[Dict[str, Any]]:
+        """Returns the raw UserInfo record of one terminal user, or None if it does not exist."""
+        clean = str(employee_no).strip()
+        body = {
+            "UserInfoSearchCond": {
+                "searchID": f"user_info_{clean}_{int(time.time())}",
+                "searchResultPosition": 0,
+                "maxResults": 1,
+                "EmployeeNoList": [{"employeeNo": clean}],
+            }
+        }
+        resp = self._isapi_request("POST", "/ISAPI/AccessControl/UserInfo/Search?format=json", body, timeout=8)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Terminal returned HTTP {resp.status_code} while reading user {clean}")
+        users = (resp.json().get("UserInfoSearch") or {}).get("UserInfo") or []
+        return users[0] if users else None
+
+    @staticmethod
+    def _valid_window(begin: Optional[str], end: Optional[str], existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        def norm(value, fallback, suffix):
+            text = str(value or "").strip()[:10]
+            if len(text) == 10 and text[4] == "-" and text[7] == "-":
+                return f"{text}T{suffix}"
+            return fallback
+        existing = existing or {}
+        return {
+            "beginTime": norm(begin, existing.get("beginTime") or "2024-01-01T00:00:00", "00:00:00"),
+            "endTime": norm(end, existing.get("endTime") or "2035-12-31T23:59:59", "23:59:59"),
+            "timeType": existing.get("timeType") or "local",
+        }
+
+    def upsert_user(self, employee_no: str, name: str, enabled: bool = True,
+                    begin: Optional[str] = None, end: Optional[str] = None) -> Dict[str, Any]:
+        """Creates the user if missing, otherwise updates name/validity. Keeps face + fingerprint templates."""
+        clean = str(employee_no).strip()
+        try:
+            existing = self.get_user_info(clean)
+        except Exception as exc:
+            return {"success": False, "errorMessage": str(exc)}
+        valid = self._valid_window(begin, end, (existing or {}).get("Valid"))
+        valid["enable"] = bool(enabled)
+        user = {
+            "employeeNo": clean,
+            "name": str(name or (existing or {}).get("name") or f"Member {clean}")[:32],
+            "userType": (existing or {}).get("userType") or "normal",
+            "Valid": valid,
+            "doorRight": (existing or {}).get("doorRight") or "1",
+        }
+        if (existing or {}).get("RightPlan"):
+            user["RightPlan"] = existing["RightPlan"]
+        else:
+            user["RightPlan"] = [{"doorNo": 1, "planTemplateNo": "1"}]
+        payload = {"UserInfo": user}
+        try:
+            if existing is None:
+                resp = self._isapi_request("POST", "/ISAPI/AccessControl/UserInfo/Record?format=json", payload)
+                result = self._isapi_ok(resp)
+                if not result["success"]:
+                    resp = self._isapi_request("PUT", "/ISAPI/AccessControl/UserInfo/SetUp?format=json", payload)
+                    result = self._isapi_ok(resp)
+            else:
+                resp = self._isapi_request("PUT", "/ISAPI/AccessControl/UserInfo/Modify?format=json", payload)
+                result = self._isapi_ok(resp)
+                if not result["success"]:
+                    resp = self._isapi_request("PUT", "/ISAPI/AccessControl/UserInfo/SetUp?format=json", payload)
+                    result = self._isapi_ok(resp)
+            result["created"] = existing is None
+            return result
+        except Exception as exc:
+            logger.error(f"[Hikvision Upsert User] {exc}")
+            return {"success": False, "errorMessage": str(exc)}
+
+    def set_user_access(self, employee_no: str, enabled: bool) -> Dict[str, Any]:
+        """Blocks/unblocks one terminal user by toggling UserInfo.Valid.enable. Templates are never touched."""
+        clean = str(employee_no).strip()
+        try:
+            existing = self.get_user_info(clean)
+        except Exception as exc:
+            return {"success": False, "errorMessage": str(exc)}
+        if existing is None:
+            return {"success": False, "errorMessage": f"Terminal user {clean} was not found; no access flag was changed."}
+        result = self.upsert_user(clean, existing.get("name") or f"Member {clean}", enabled=bool(enabled))
+        if not result.get("success"):
+            return result
+        # Read back: never report success unless the terminal really holds the requested state.
+        status = self.get_user_biometric_status(clean)
+        info = self.get_user_info(clean) or {}
+        actual = bool((info.get("Valid") or {}).get("enable", True))
+        if actual != bool(enabled):
+            return {"success": False, "errorMessage": "Terminal accepted the request but did not apply the access state.", "verified": False}
+        return {
+            "success": True, "verified": True, "enabled": actual,
+            "hasFace": bool(status.get("hasFace")), "hasFingerprint": bool(status.get("hasFingerprint")),
+            "numOfFace": status.get("numOfFace", 0), "numOfFP": status.get("numOfFP", 0),
+        }
+
+    def delete_user(self, employee_no: str) -> Dict[str, Any]:
+        """Removes the user (and its face/fingerprint templates) from the terminal; verifies by read-back."""
+        clean = str(employee_no).strip()
+        try:
+            if self.get_user_info(clean) is None:
+                return {"success": True, "alreadyAbsent": True, "verified": True}
+            body = {"UserInfoDetail": {"mode": "byEmployeeNo", "EmployeeNoList": [{"employeeNo": clean}]}}
+            resp = self._isapi_request("PUT", "/ISAPI/AccessControl/UserInfoDetail/Delete?format=json", body)
+            result = self._isapi_ok(resp)
+            if not result["success"]:
+                body = {"UserInfoDelCond": {"EmployeeNoList": [{"employeeNo": clean}]}}
+                resp = self._isapi_request("PUT", "/ISAPI/AccessControl/UserInfo/Delete?format=json", body)
+                result = self._isapi_ok(resp)
+            if not result["success"]:
+                return result
+            time.sleep(1)
+            if self.get_user_info(clean) is not None:
+                return {"success": False, "errorMessage": "Terminal accepted the delete request but the user still exists.", "verified": False}
+            result["verified"] = True
+            return result
+        except Exception as exc:
+            logger.error(f"[Hikvision Delete User] {exc}")
+            return {"success": False, "errorMessage": str(exc)}
+
+    def push_face_photo(self, employee_no: str, image_bytes: bytes) -> Dict[str, Any]:
+        """Uploads a JPEG portrait into the terminal face library (FDID 1) for an existing user."""
+        clean = str(employee_no).strip()
+        try:
+            img = Image.open(BytesIO(image_bytes)).convert("RGB")
+            img.thumbnail((640, 640))
+            for quality in (88, 78, 68, 58):
+                buf = BytesIO()
+                img.save(buf, format="JPEG", quality=quality)
+                if buf.tell() <= 190 * 1024:
+                    break
+            jpeg = buf.getvalue()
+        except Exception as exc:
+            return {"success": False, "errorMessage": f"Photo could not be decoded: {exc}"}
+        record = {"faceLibType": "blackFD", "FDID": "1", "FPID": clean}
+        def files():
+            return {
+                "FaceDataRecord": (None, json.dumps(record), "application/json"),
+                "FaceImage": ("face.jpg", jpeg, "image/jpeg"),
+            }
+        try:
+            resp = self._isapi_request("POST", "/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json", files=files(), timeout=25)
+            result = self._isapi_ok(resp)
+            if not result["success"]:
+                resp = self._isapi_request("PUT", "/ISAPI/Intelligent/FDLib/FDSetUp?format=json", files=files(), timeout=25)
+                result = self._isapi_ok(resp)
+            if not result["success"]:
+                return result
+            time.sleep(1)
+            status = self.get_user_biometric_status(clean)
+            result["hasFace"] = bool(status.get("hasFace"))
+            result["numOfFace"] = status.get("numOfFace", 0)
+            result["verified"] = bool(status.get("hasFace"))
+            if not result["verified"]:
+                result["success"] = False
+                result["errorMessage"] = "Terminal accepted the photo but no face template was created (photo may be unsuitable)."
+            return result
+        except Exception as exc:
+            logger.error(f"[Hikvision Face Push] {exc}")
+            return {"success": False, "errorMessage": str(exc)}
+
     def enroll_face(self, employee_no: str, name: Optional[str] = None) -> Dict[str, Any]:
         """Triggers face enrollment workflow after verifying user creation."""
         prov = self.provision_user(employee_no, name or f"User {employee_no}")

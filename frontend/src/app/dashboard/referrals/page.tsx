@@ -212,8 +212,8 @@ export default function ReferralsAdminPage() {
 
   // Conversion Funnel data
   const funnelData = [
-    { name: 'Invites Sent', count: totalInvites, fill: '#6366F1' },
-    { name: 'App Installed', count: referrals.filter(r => r.currentStep >= 1).length, fill: '#3B82F6' },
+    { name: 'Invites Sent', count: totalInvites, fill: '#F97316' },
+    { name: 'App Installed', count: referrals.filter(r => r.currentStep >= 1).length, fill: '#F97316' },
     { name: 'Registrations', count: registeredCount, fill: '#F59E0B' },
     { name: 'Purchased', count: purchasesCount, fill: '#d4ff00' },
     { name: 'Rewarded', count: conversionsCount, fill: '#10B981' }
@@ -289,12 +289,12 @@ export default function ReferralsAdminPage() {
       {/* Metrics Ribbon Card Panel */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         {[
-          { label: 'Invites Sent', val: totalInvites, icon: Share2, color: 'text-indigo-600 bg-indigo-50' },
+          { label: 'Invites Sent', val: totalInvites, icon: Share2, color: 'text-orange-600 bg-orange-50' },
           { label: 'Registrations', val: registeredCount, icon: Users, color: 'text-amber-500 bg-amber-50' },
           { label: 'Purchases', val: purchasesCount, icon: CheckCircle2, color: 'text-emerald-500 bg-emerald-50' },
-          { label: 'Conversion Rate', val: `${conversionRate}%`, icon: TrendingUp, color: 'text-[#F97316] bg-[#FFF7ED]' },
+          { label: 'Conversion Rate', val: `${conversionRate}%`, icon: TrendingUp, color: 'text-orange-500 bg-orange-50' },
           { label: 'Referral Revenue', val: `₹${totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'text-rose-500 bg-rose-50' },
-          { label: 'Rewards Issued', val: rewards.length, icon: Gift, color: 'text-[#0052FF] bg-[#FFF7ED]' }
+          { label: 'Rewards Issued', val: rewards.length, icon: Gift, color: 'text-[#EA580C] bg-orange-50' }
         ].map((m, idx) => (
           <div key={idx} className="bg-white border border-slate-100 p-4 rounded-[22px] shadow-sm flex items-center gap-3">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${m.color}`}>
@@ -448,7 +448,7 @@ export default function ReferralsAdminPage() {
                 {filteredRoster.map((r, idx) => {
                   let statusColor = 'bg-slate-100 text-slate-600 border-slate-200';
                   if (r.status === 'Reward Credited') statusColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
-                  else if (r.status === 'Membership Purchased') statusColor = 'bg-[#FFEDD5] text-[#C2410C] border-[#FED7AA] border-dashed animate-pulse';
+                  else if (r.status === 'Membership Purchased') statusColor = 'bg-orange-100 text-orange-700 border-orange-200 border-dashed animate-pulse';
                   else if (r.status === 'Registered') statusColor = 'bg-amber-100 text-amber-700 border-amber-200';
                   else if (r.status === 'Rejected') statusColor = 'bg-red-100 text-red-700 border-red-200';
 
@@ -459,7 +459,7 @@ export default function ReferralsAdminPage() {
                         <div className="text-[9px] text-slate-400 font-mono mt-0.5">{r.friendPhone}</div>
                       </td>
                       <td className="py-3">{r.referrerName}</td>
-                      <td className="py-3 font-mono font-bold text-indigo-600">{r.referralCode}</td>
+                      <td className="py-3 font-mono font-bold text-orange-600">{r.referralCode}</td>
                       <td className="py-3">{r.joinPlan || 'Not selected'}</td>
                       <td className="py-3 text-slate-400">{formatDate(r.createdAt || '')}</td>
                       <td className="py-3">
@@ -534,7 +534,7 @@ export default function ReferralsAdminPage() {
                       </div>
                       <span className="font-black text-slate-950">{rew.referrerName}</span>
                     </td>
-                    <td className="py-3 text-indigo-600 font-black">{rew.rewardName}</td>
+                    <td className="py-3 text-orange-600 font-black">{rew.rewardName}</td>
                     <td className="py-3 text-slate-500">{rew.referralsMilestone} successful referrals</td>
                     <td className="py-3 font-mono font-bold text-slate-900 bg-slate-50 px-2 py-1 rounded-lg inline-block mt-2 border border-slate-100">{rew.couponCode}</td>
                     <td className="py-3 text-slate-400">{formatDate(rew.issuedAt)}</td>

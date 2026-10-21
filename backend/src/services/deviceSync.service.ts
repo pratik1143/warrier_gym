@@ -66,7 +66,18 @@ const processDeviceAttendanceLog = async (memberId: string, device: any) => {
 
     let isUpcoming = startDateStr > todayStr;
     let isExpired = false;
+    let isBioBlocked = member.biometricBlocked === true || member.status === 'blocked' || member.status === 'blacklisted';
     let isFrozen = member.status === 'frozen' || member.membershipStatus === 'frozen';
+
+    if (isBioBlocked) {
+      await db.addDeviceLog({
+        deviceId: device.id || device.deviceId,
+        deviceName: device.deviceName,
+        level: 'ERROR',
+        message: `[Membership Validation] Access Denied: Member ${member.name} (${member.memberId}) biometric access is blocked. Gate closed.`
+      });
+      return;
+    }
     
     if (member.expiryDate) {
       const expiry = new Date(member.expiryDate);
@@ -202,9 +213,9 @@ const runSyncCycle = async () => {
 
         await db.addDeviceLog({
           deviceId: device.id,
-          deviceName: device.deviceName,
+          deviceName: device.deviceName || device.name || 'EasyBio Biometric Device',
           level: isConnected ? 'INFO' : 'ERROR',
-          message: `[Device Connector] Device ${device.deviceName} (${device.deviceType}) status changed to ${status.toUpperCase()} at ${ip}:${port}.`
+          message: `[Device Connector] Device ${device.deviceName || 'EasyBio Device'} status changed to ${status.toUpperCase()} at ${ip}:${port}.`
         });
       } else if (isConnected && simulationCycleCounter % 6 === 0) {
         // Periodically update lastSync timestamp to show connection health is alive

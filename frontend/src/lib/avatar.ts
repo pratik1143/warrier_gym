@@ -1,5 +1,5 @@
 /**
- * Centralized Avatar Resolver for Warrior Gym OS
+ * Centralized Avatar Resolver for The Warrior Gym OS
  * 
  * Rules:
  * 1. Existing valid uploaded profile image is ALWAYS prioritized.
@@ -18,9 +18,9 @@ export function resolveAvatarUrl(entity: any): string {
 
   // 1. Existing valid uploaded photo
   const photo = 
-    entity.photoUrl ||
     entity.profilePhotoUrl ||
     entity.photoURL ||
+    entity.photoUrl ||
     entity.photo ||
     entity.avatarUrl ||
     entity.avatar ||

@@ -176,7 +176,7 @@ export const globalSearchService = {
         statusClass = 'bg-amber-100 text-amber-800 border-amber-200';
       }
 
-      const displayId = m.memberId || m.clientId || m.customId || `TWG-${String(m.id).slice(-4)}`;
+      const displayId = m.memberId || m.clientId || m.customId || `AZ-${String(m.id).slice(-4)}`;
       const safeAge = m.age ?? calculateAge(m.dob || m.dateOfBirth);
 
       matchedMembers.push({

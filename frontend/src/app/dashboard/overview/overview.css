@@ -1,0 +1,133 @@
+.overview-dashboard {
+  --overview-orange: #EA580C;
+  --overview-ink: #10223c;
+  position: relative;
+  isolation: isolate;
+}
+
+.overview-dashboard::before,
+.overview-dashboard::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+  border-radius: 9999px;
+  filter: blur(70px);
+}
+
+.overview-dashboard::before {
+  width: 22rem;
+  height: 22rem;
+  top: 7rem;
+  left: -8rem;
+  background: rgba(45, 132, 232, 0.1);
+}
+
+.overview-dashboard::after {
+  width: 20rem;
+  height: 20rem;
+  top: 34rem;
+  right: -7rem;
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.overview-hero {
+  background-color: #101a37;
+  background-image:
+    radial-gradient(ellipse at 82% 8%, rgba(91, 113, 255, 0.22), transparent 32%),
+    radial-gradient(ellipse at 4% 100%, rgba(0, 198, 255, 0.13), transparent 38%),
+    linear-gradient(105deg, rgba(12, 24, 49, 0.96) 0%, rgba(16, 30, 61, 0.91) 34%, rgba(19, 29, 65, 0.72) 72%, rgba(15, 23, 49, 0.82) 100%),
+    url('/overview-gym-atmosphere.webp');
+  background-size: cover;
+  background-position: center, center, center, right 44%;
+  box-shadow: 0 24px 60px -34px rgba(18, 47, 103, 0.68), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.overview-hero::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  opacity: 0.18;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(110deg, black, transparent 72%);
+}
+
+.overview-hero > .overview-hero-orb {
+  opacity: .62;
+  mix-blend-mode: screen;
+}
+
+.overview-hero-orb {
+  animation: overview-orbit 12s ease-in-out infinite alternate;
+}
+
+.overview-hero-orb-delayed {
+  animation: overview-orbit 15s ease-in-out -5s infinite alternate-reverse;
+}
+
+.overview-glass-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(246, 250, 255, 0.72));
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 32px -22px rgba(38, 82, 143, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: border-color 220ms ease, box-shadow 220ms ease, background 220ms ease;
+}
+
+.overview-glass-card:hover {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 247, 255, 0.87));
+  border-color: rgba(70, 145, 238, 0.4);
+  box-shadow: 0 22px 42px -25px rgba(31, 104, 197, 0.36), inset 0 1px 0 white;
+}
+
+.overview-stat-card {
+  min-height: 96px;
+  transform: translateZ(0);
+}
+
+.overview-stat-card::after {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  top: -38px;
+  right: -28px;
+  content: "";
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(70, 145, 238, 0.16), transparent 70%);
+  transition: transform 300ms ease, opacity 300ms ease;
+  opacity: 0.45;
+}
+
+.overview-stat-card:hover::after {
+  transform: scale(1.8);
+  opacity: 1;
+}
+
+.overview-chart-panel {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(247, 250, 255, 0.78));
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 20px 48px -34px rgba(29, 66, 123, 0.4), inset 0 1px 0 white;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+@keyframes overview-orbit {
+  from { transform: translate3d(0, 0, 0) scale(0.94); }
+  to { transform: translate3d(-18px, 14px, 0) scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overview-hero-orb,
+  .overview-hero-orb-delayed {
+    animation: none;
+  }
+
+  .overview-glass-card,
+  .overview-stat-card::after {
+    transition-duration: 0.01ms;
+  }
+}

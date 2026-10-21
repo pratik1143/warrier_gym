@@ -8,6 +8,7 @@ import API from '@/services/api';
 import { useGymStore } from '@/store';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import toast from '@/lib/toast';
+import { useRouter } from 'next/navigation';
 
 import SuccessPopup from './popups/SuccessPopup';
 import UnknownPopup from './popups/UnknownPopup';
@@ -18,16 +19,17 @@ import BlacklistedPopup from './popups/BlacklistedPopup';
 
 interface PopupData {
   id: string;
-  type: 'success' | 'unknown' | 'duplicate' | 'expired' | 'frozen' | 'blacklisted';
+  type: 'success' | 'unknown' | 'duplicate' | 'expired' | 'frozen' | 'blacklisted' | 'blocked';
   data: any;
 }
 
 export default function AttendancePopupManager() {
+  const router = useRouter();
   const [queue, setQueue] = useState<PopupData[]>([]);
   const [activePopup, setActivePopup] = useState<PopupData | null>(null);
   const processedDocIds = useRef<Set<string>>(new Set());
 
-  // Audio elements or synthesized sounds can be triggered here
+  // Audio elements / chime player
   const playSound = (type: string) => {
     try {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -68,125 +70,155 @@ export default function AttendancePopupManager() {
     if (!docId || processedDocIds.current.has(docId)) return;
     processedDocIds.current.add(docId);
 
-    // Realtime guard: allow punches received in the last 45 seconds to prevent stale popups on load
-    const rawTimeStr = data.receivedAt || data.eventTime || data.createdAt || data.timestamp || data.checkIn;
+    // Suppress popups for punches older than 20 seconds
+    const rawTimeStr = data.checkIn || data.timestamp || data.eventTime || data.receivedAt || data.createdAt;
     if (rawTimeStr) {
       const punchMs = new Date(rawTimeStr).getTime();
       const nowMs = Date.now();
       const ageSec = (nowMs - punchMs) / 1000;
-      if (ageSec > 45 || ageSec < -30) {
+      if (ageSec > 20 || ageSec < -5) {
         return;
       }
     }
 
-    const members = useGymStore.getState().members;
-    const bioId = String(data.biometricId || data.employeeNo || data.deviceUserId || '').trim();
+    // Hikvision events may carry the terminal user number as employeeNo / deviceUserId
+    const punchBioId = String(data.biometricId || data.employeeNo || data.deviceUserId || data.hikvisionUserId || '').trim();
+    const statusLower = String(data.status || data.accessResult || '').toLowerCase();
 
-    // Strictly resolve member by biometricId, employeeId, or memberId (Requirement 8)
-    const match = bioId
-      ? members.find((m: any) =>
-          String(m.biometricId || '').trim() === bioId ||
-          String(m.employeeId || '').trim() === bioId ||
-          String(m.deviceUserId || '').trim() === bioId ||
-          (data.memberId && (m.id === data.memberId || m.memberId === data.memberId))
-        )
-      : null;
+    const members = useGymStore.getState().members;
+    const match = members.find((m: any) =>
+      (m.biometricId && punchBioId && String(m.biometricId).trim() === String(punchBioId).trim()) ||
+      (m.deviceUserId && punchBioId && String(m.deviceUserId).trim() === String(punchBioId).trim()) ||
+      (m.clientId && punchBioId && String(m.clientId).trim() === String(punchBioId).trim()) ||
+      (m.customId && punchBioId && String(m.customId).trim() === String(punchBioId).trim()) ||
+      (m.id && data.memberId && m.id === data.memberId) ||
+      (m.uid && data.memberId && m.uid === data.memberId) ||
+      (m.memberId && data.memberId && m.memberId === data.memberId) ||
+      (m.memberId && data.memberCode && m.memberId === data.memberCode) ||
+      (m.phone && data.phone && String(m.phone).replace(/\D/g, '') === String(data.phone).replace(/\D/g, '')) ||
+      (m.name && data.memberName && m.name.trim().toLowerCase() === String(data.memberName).trim().toLowerCase())
+    );
 
     let type: PopupData['type'] = 'success';
-    const statusUpper = String(data.status || '').toUpperCase();
 
-    if (statusUpper === 'UNKNOWN' || String(data.punchType || '').toUpperCase() === 'UNKNOWN_PUNCH' || !match && !data.memberName) {
-      type = 'unknown';
-    } else if (statusUpper === 'ALREADY_INSIDE' || statusUpper === 'DUPLICATE' || data.punchType === 'REPEAT_TAP') {
+    if (statusLower === 'duplicate' || statusLower === 'already_inside' || data.punchType === 'REPEAT_TAP' || data.method === 'duplicate' || data.isDuplicate) {
       type = 'duplicate';
-    } else if (statusUpper === 'HOLD_MEMBER' || match?.status?.toLowerCase() === 'hold') {
-      type = 'frozen';
-    } else if (statusUpper === 'EXPIRED' || statusUpper === 'DENIED') {
-      type = 'expired';
-    } else if (match) {
-      type = 'success';
-    } else {
+    } else if (statusLower === 'unknown' || statusLower === 'unmapped' || data.punchType === 'UNKNOWN_PUNCH' || (data.memberName && String(data.memberName).toLowerCase().includes('unmapped')) || (!match && data.unmapped)) {
       type = 'unknown';
+    } else if (statusLower === 'hold' || statusLower === 'frozen') {
+      type = 'frozen';
+    } else if (statusLower === 'blocked') {
+      type = 'blocked';
+    } else if (statusLower === 'expired') {
+      type = 'expired';
+    } else if (statusLower === 'denied') {
+      if (data.reason?.toLowerCase().includes('biometric') || match?.biometricBlocked === true) type = 'blocked';
+      else if (data.reason?.toLowerCase().includes('blacklisted')) type = 'blacklisted';
+      else if (data.reason?.toLowerCase().includes('frozen') || match?.status === 'frozen') type = 'frozen';
+      else type = 'expired';
     }
 
     const days = match?.expiryDate
       ? membershipEngine.calculateDaysLeft(match.expiryDate)
-      : (match?.status?.toLowerCase() === 'hold' ? 0 : 30);
+      : 30;
 
     if (type === 'success' && days <= 0 && match) {
       type = 'expired';
     }
 
-    const rawTime = data.eventTime || data.receivedAt || data.checkIn || data.timestamp || data.createdAt;
+    const rawTime = data.checkIn || data.timestamp || data.eventTime || data.receivedAt || data.createdAt;
     const formattedTime = rawTime
-      ? new Date(rawTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
-      : new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+      ? new Date(rawTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    const memberName = match?.name || data.memberName || (type === 'unknown' ? `Unknown Person #${bioId}` : 'Warrior Member');
-    const photoUrl = data.memberPhotoUrl || match?.photoUrl || match?.photo || match?.avatar || match?.avatarUrl || '';
-    const verifyMode = data.verificationMode || data.method || 'Face';
+    const formattedDate = rawTime
+      ? new Date(rawTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    // Birthday & Anniversary Check
+    const dobStr = match?.dob || match?.dateOfBirth;
+    let isBirthday = false;
+    if (dobStr) {
+      try {
+        const d = new Date(dobStr);
+        const today = new Date();
+        isBirthday = d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+      } catch (e) {}
+    }
+
+    const joinStr = match?.joinDate || match?.startDate || match?.createdAt;
+    let isAnniversary = false;
+    let anniversaryYears = 0;
+    if (joinStr) {
+      try {
+        const j = new Date(joinStr);
+        const today = new Date();
+        if (j.getMonth() === today.getMonth() && j.getDate() === today.getDate()) {
+          anniversaryYears = today.getFullYear() - j.getFullYear();
+          if (anniversaryYears > 0) isAnniversary = true;
+        }
+      } catch (e) {}
+    }
+
+    // Payment Status calculation
+    const rawPaid = Number(match?.amountPaid ?? match?.paid ?? match?.totalPaid ?? 0);
+    const rawPending = Number(match?.pendingAmount ?? match?.balanceAmount ?? match?.outstandingBalance ?? 0);
+    const payStatus = rawPending <= 0 ? 'FULLY PAID' : (rawPaid > 0 ? 'PARTIAL' : 'PENDING');
 
     const popupData: PopupData = {
       id: docId,
       type,
       data: {
-        memberName,
-        memberCode: match?.memberId || (bioId ? `BIO #${bioId}` : 'TWG-2026-0001'),
-        biometricId: bioId,
+        rawId: match?.id || data.memberId,
+        memberName: match?.name || data.memberName || 'Athlete',
+        memberCode: match?.memberId || match?.clientId || match?.customId || data.memberCode || data.memberId || '#TWG-2026-0001',
+        biometricId: punchBioId || match?.biometricId || match?.deviceUserId || '1',
         timestamp: formattedTime,
+        dateStr: formattedDate,
         deviceName: data.deviceName || 'Hikvision DS-K1T320EFWX',
+        method: data.verificationMode || data.verificationMethod || data.method || 'Face / Fingerprint',
         branch: match?.branch || data.branch || 'Mohali, Punjab',
-        avatarUrl: photoUrl,
-        plan: match?.plan || (type === 'unknown' ? 'Unknown Person' : (match?.status?.toLowerCase() === 'hold' ? 'Account on HOLD' : 'Monthly Standard')),
-        trainer: match?.trainer || 'No PT Assigned',
+        avatarUrl: match?.photo || match?.avatarUrl || match?.avatar || match?.profilePhotoUrl || data.avatarUrl || data.memberPhotoUrl || data.photo || '',
+        plan: match?.plan || match?.packageName || 'Monthly Standard',
+        status: (match?.status || 'active').toUpperCase(),
+        startDate: match?.startDate || match?.joinDate || 'N/A',
+        expiryDate: match?.expiryDate || 'N/A',
         remainingDays: days > 0 ? days : 0,
         expiredDays: days < 0 ? Math.abs(days) : 0,
-        workout: verifyMode,
-        reason: data.reason || (type === 'unknown' ? 'Member not found in CRM' : '')
+        payStatus,
+        phone: match?.phone || data.phone || '',
+        dob: dobStr || '',
+        gender: match?.gender || '',
+        isBirthday,
+        isAnniversary,
+        anniversaryYears,
+        trainer: match?.trainer || '',
+        workout: 'Push Day',
+        reason: data.reason || 'Attendance Recorded',
+        biometricBlocked: type === 'blocked'
       }
     };
 
-    // Toast notification for instant visual & sound cue (Requirement 13)
-    let toastTitle = 'Attendance Marked';
-    let toastIcon = '🟢';
-    if (type === 'unknown') {
-      toastTitle = 'Unknown Punch Detected';
-      toastIcon = '🟡';
-    } else if (type === 'duplicate') {
-      toastTitle = 'Punch Detected — Already Inside';
-      toastIcon = '🔵';
-    } else if (type === 'frozen') {
-      toastTitle = 'HOLD Member Punch';
-      toastIcon = '⏸️';
-    } else if (type === 'expired') {
-      toastTitle = 'Membership Expired';
-      toastIcon = '🔴';
-    }
-
-    toast(`${toastIcon} ${toastTitle}: ${memberName} (BIO: ${bioId || 'N/A'}) · ${verifyMode}`, {
+    const memberName = match?.name || data.memberName || `Biometric User #${punchBioId || data.memberId || '1'}`;
+    const isDenied = ['expired', 'frozen', 'blacklisted', 'blocked'].includes(type);
+    const toastTitle = type === 'unknown' ? 'Unmapped Biometric Punch' : (type === 'duplicate' ? 'Already Checked In' : isDenied ? `Access Denied${data.reason ? `: ${data.reason}` : ''}` : 'Attendance Marked');
+    toast(`⚡ ${toastTitle}: ${memberName}`, {
+      icon: type === 'success' ? '🟢' : type === 'duplicate' ? '🔵' : type === 'unknown' ? '🟡' : '🔴',
       duration: 5000,
-      style: {
-        background: '#0F172A',
-        color: '#fff',
-        border: type === 'success' ? '1px solid #22C55E' : type === 'duplicate' ? '1px solid #3B82F6' : type === 'unknown' ? '1px solid #F59E0B' : '1px solid #EF4444',
-        borderRadius: '16px',
-        fontWeight: 'bold',
-        fontSize: '13px'
-      }
+      style: { background: '#0F172A', color: '#fff', border: type === 'success' ? '1px solid #22C55E' : type === 'duplicate' ? '1px solid #F97316' : type === 'unknown' ? '1px solid #F59E0B' : '1px solid #EF4444', borderRadius: '16px', fontWeight: 'bold', fontSize: '13px' }
     });
 
     setQueue(prev => [...prev, popupData]);
   };
 
-  // REST API Polling for latest punch event (safety backup)
+  // REST API Polling for latest punch event
   useEffect(() => {
     let isMounted = true;
     
-    // Set initial baseline punch on mount to prevent stale popups
     API.get('/attendance/latest-punch').then(res => {
       const latest = res.data?.latestPunch;
       if (latest && isMounted) {
-        const id = latest.eventId || latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
+        const id = latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
         processedDocIds.current.add(id);
       }
     }).catch(() => {});
@@ -196,7 +228,7 @@ export default function AttendancePopupManager() {
         const res = await API.get('/attendance/latest-punch');
         const latest = res.data?.latestPunch;
         if (latest && isMounted) {
-          const docId = latest.eventId || latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
+          const docId = latest.id || `${latest.memberId}_${latest.checkIn || latest.createdAt}`;
           processPunchItem(latest, docId);
         }
       } catch (err) {}
@@ -209,13 +241,12 @@ export default function AttendancePopupManager() {
     };
   }, []);
 
-  // Firestore Realtime Listener for raw device punch events (Requirement 11 & 12)
+  // Firestore Realtime Listener (when Firebase ready)
   useEffect(() => {
     if (!isFirebaseReady || !fDb) return;
 
-    // Listen directly to attendanceEvents collection
-    const eventsCollection = collection(fDb, 'attendanceEvents');
-    const qPop = query(eventsCollection, orderBy('receivedAt', 'desc'), limit(20));
+    const attCollection = collection(fDb, 'attendance_logs');
+    const qPop = query(attCollection, orderBy('createdAt', 'desc'), limit(15));
     let isInitialLoad = true;
 
     const unsubscribe = onSnapshot(
@@ -223,7 +254,6 @@ export default function AttendancePopupManager() {
       (snapshot) => {
         if (isInitialLoad) {
           isInitialLoad = false;
-          // Mark historical docs as already seen so reopening page doesn't flood popups
           snapshot.docs.forEach(doc => processedDocIds.current.add(doc.id));
           return;
         }
@@ -231,10 +261,14 @@ export default function AttendancePopupManager() {
           if (change.type !== 'added') return;
           const data = change.doc.data();
           const docId = change.doc.id;
+          if (data.status === 'auto_checkout') return;
+
           processPunchItem(data, docId);
         });
       },
-      () => { /* silenced */ }
+      (error) => {
+        console.warn('[AttendancePopupManager] Firestore listener error:', error);
+      }
     );
 
     return () => unsubscribe();
@@ -250,12 +284,12 @@ export default function AttendancePopupManager() {
     }
   }, [queue, activePopup]);
 
-  // Auto Close Manager (4 seconds)
+  // Auto Close Manager (7 seconds)
   useEffect(() => {
     if (activePopup) {
       const timer = setTimeout(() => {
         setActivePopup(null);
-      }, 4000);
+      }, 7000);
 
       return () => clearTimeout(timer);
     }
@@ -265,27 +299,38 @@ export default function AttendancePopupManager() {
     setActivePopup(null);
   };
 
-  const handleRegister = () => {
+  const handleViewMember = (memberId?: string) => {
     handleClose();
-    toast('Open Add Member Wizard here...');
+    if (memberId) {
+      router.push(`/dashboard/members/${memberId}`);
+    } else {
+      router.push('/dashboard/members');
+    }
   };
 
-  const handleMap = () => {
+  const handleRenewMember = (memberId?: string) => {
     handleClose();
-    toast('Open Map Existing Member here...');
+    if (memberId) {
+      router.push(`/dashboard/billing/create?mode=renew&id=${encodeURIComponent(memberId)}`);
+    } else {
+      router.push('/dashboard/billing/create');
+    }
   };
+
+  if (!activePopup) return null;
 
   return (
-    <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-4 pointer-events-none">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md pointer-events-none">
       <AnimatePresence>
         {activePopup && (
           <div className="pointer-events-auto">
-            {activePopup.type === 'success' && <SuccessPopup data={activePopup.data} onClose={handleClose} />}
-            {activePopup.type === 'unknown' && <UnknownPopup data={activePopup.data} onClose={handleClose} onRegister={handleRegister} onMap={handleMap} />}
+            {activePopup.type === 'success' && <SuccessPopup data={activePopup.data} onClose={handleClose} onViewMember={() => handleViewMember(activePopup.data.rawId)} />}
+            {activePopup.type === 'unknown' && <UnknownPopup data={activePopup.data} onClose={handleClose} onRegister={() => handleViewMember()} onMap={() => handleViewMember()} />}
             {activePopup.type === 'duplicate' && <DuplicatePopup data={activePopup.data} onClose={handleClose} />}
-            {activePopup.type === 'expired' && <ExpiredPopup data={activePopup.data} onClose={handleClose} onRenew={() => { handleClose(); toast('Open Renew'); }} />}
-            {activePopup.type === 'frozen' && <FrozenPopup data={activePopup.data} onClose={handleClose} onResume={() => { handleClose(); toast('Resume'); }} />}
+            {activePopup.type === 'expired' && <ExpiredPopup data={activePopup.data} onClose={handleClose} onRenew={() => handleRenewMember(activePopup.data.rawId)} />}
+            {activePopup.type === 'frozen' && <FrozenPopup data={activePopup.data} onClose={handleClose} onResume={() => handleViewMember(activePopup.data.rawId)} />}
             {activePopup.type === 'blacklisted' && <BlacklistedPopup data={activePopup.data} onClose={handleClose} />}
+            {activePopup.type === 'blocked' && <BlacklistedPopup data={activePopup.data} onClose={handleClose} />}
           </div>
         )}
       </AnimatePresence>

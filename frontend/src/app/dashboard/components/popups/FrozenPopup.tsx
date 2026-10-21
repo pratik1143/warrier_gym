@@ -32,7 +32,7 @@ export default function FrozenPopup({ data, onClose, onResume }: { data: any, on
       <div className="absolute top-0 right-0 w-64 h-64 bg-purple-400/20 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
 
       <div className="flex items-center gap-4 relative z-10">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-indigo-600 flex items-center justify-center shadow-lg">
+        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-400 to-amber-600 flex items-center justify-center shadow-lg">
           <Snowflake className="text-white w-8 h-8 animate-spin-slow" />
         </div>
         <div>
@@ -59,7 +59,7 @@ export default function FrozenPopup({ data, onClose, onResume }: { data: any, on
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
               />
             ) : null}
-            <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-400 to-indigo-600 ${data.avatarUrl ? 'hidden' : ''}`}>
+            <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-400 to-amber-600 ${data.avatarUrl ? 'hidden' : ''}`}>
               <span className="text-white font-black text-4xl tracking-tight">
                 {data.memberName ? data.memberName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : '?'}
               </span>
@@ -97,14 +97,14 @@ export default function FrozenPopup({ data, onClose, onResume }: { data: any, on
          <button onClick={onClose} className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider text-slate-500 hover:bg-slate-100 transition-colors">
            Cancel
          </button>
-         <button onClick={onResume} className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-md transition-all flex items-center gap-2">
+         <button onClick={onResume} className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-gradient-to-r from-purple-500 to-amber-600 hover:from-purple-600 hover:to-amber-700 text-white shadow-md transition-all flex items-center gap-2">
            <Play size={14} /> Resume Membership
          </button>
       </div>
 
       <div className="absolute bottom-0 left-0 h-1.5 bg-purple-500/20 w-full">
         <div 
-          className="h-full bg-gradient-to-r from-purple-400 to-indigo-500 rounded-r-full transition-all duration-100"
+          className="h-full bg-gradient-to-r from-purple-400 to-amber-500 rounded-r-full transition-all duration-100"
           style={{ width: `${progress}%` }}
         />
       </div>

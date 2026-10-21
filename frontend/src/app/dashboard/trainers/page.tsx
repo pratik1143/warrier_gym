@@ -395,14 +395,14 @@ export default function TrainersPage() {
       
       {/* ── 1. PAGE HEADER (Unified with Employees, Members, Enquiries) ── */}
       <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div>
           <div className="flex items-center gap-2.5 mb-2">
-            <span className="px-3 py-1 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
+            <span className="px-3 py-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
               Staff & Trainer Engine
             </span>
-            <span className="text-xs text-slate-400 font-mono font-bold">TWG-TRN-v4.1</span>
+            <span className="text-xs text-slate-400 font-mono font-bold">AZ-TRN-v4.1</span>
           </div>
           <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 font-display">Trainers & Fitness Coaches</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">Manage gym trainers, assigned members, personal training and trainer performance.</p>
@@ -419,7 +419,7 @@ export default function TrainersPage() {
 
           <button
             onClick={handleOpenAddModal}
-            className="px-6 py-3.5 bg-gradient-to-r from-[#EA580C] to-[#FB923C] hover:from-[#C2410C] hover:to-[#EA580C] text-white rounded-2xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(234,88,12,0.25)] transition-all hover:scale-[1.02] active:scale-95 shrink-0"
+            className="px-6 py-3.5 bg-gradient-to-r from-[#EA580C] to-[#F97316] hover:from-[#C2410C] hover:to-[#EA580C] text-white rounded-2xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(234, 88, 12,0.25)] transition-all hover:scale-[1.02] active:scale-95 shrink-0"
           >
             <Plus size={16} /> Add Trainer
           </button>
@@ -431,10 +431,10 @@ export default function TrainersPage() {
         {[
           { label: 'Total Trainers', value: totalTrainers, sub: 'Registered gym coaches', icon: Dumbbell, badgeBg: 'bg-[#FFF7ED] border-[#FED7AA] text-[#EA580C]' },
           { label: 'Active Trainers', value: activeTrainers, sub: 'Currently on duty', icon: UserCheck, badgeBg: 'bg-emerald-50 border-emerald-200/60 text-emerald-600' },
-          { label: 'PT Members', value: totalAssignedPTMembers, sub: 'Assigned to trainers', icon: Users, badgeBg: 'bg-indigo-50 border-indigo-200/60 text-indigo-600' },
+          { label: 'PT Members', value: totalAssignedPTMembers, sub: 'Assigned to trainers', icon: Users, badgeBg: 'bg-orange-50 border-orange-200/60 text-orange-600' },
           { label: 'Unassigned Members', value: unassignedPTMembers, sub: 'No trainer assigned', icon: UserX, badgeBg: 'bg-slate-100 border-slate-200 text-slate-700' }
         ].map((stat, i) => (
-          <div key={i} className="bg-white border border-[#FED7AA] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234,88,12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
+          <div key={i} className="bg-white border border-[#FFEDD5] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234, 88, 12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{stat.label}</span>
               <div className={`p-2.5 rounded-2xl border ${stat.badgeBg}`}>
@@ -450,7 +450,7 @@ export default function TrainersPage() {
       </div>
 
       {/* ── 3. SEARCH & FILTERS BAR (Unified with Employees & Members) ── */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234,88,12,0.02)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234, 88, 12,0.02)]">
         <div className="relative flex-1 min-w-[240px]">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input 
@@ -458,7 +458,7 @@ export default function TrainersPage() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search trainer by name, phone, email or biometric ID..."
-            className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
+            className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
           />
         </div>
 
@@ -467,7 +467,7 @@ export default function TrainersPage() {
           <select 
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Statuses</option>
             <option value="Active">Active</option>
@@ -478,7 +478,7 @@ export default function TrainersPage() {
           <select 
             value={specFilter}
             onChange={e => setSpecFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Specializations</option>
             {SPECIALIZATIONS.map(s => (
@@ -502,7 +502,7 @@ export default function TrainersPage() {
       </div>
 
       {/* ── 4. MAIN TRAINER TABLE (Unified with Employees & Members) ── */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234,88,12,0.03)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234, 88, 12,0.03)]">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs whitespace-nowrap">
             <thead className="bg-[#EA580C] text-[#fdfdfd] font-extrabold uppercase tracking-wider text-[9.5px] border-b border-[#C2410C]">
@@ -603,7 +603,7 @@ export default function TrainersPage() {
 
                       {/* 3. SPECIALIZATION */}
                       <td className="px-5 py-3.5">
-                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-[#FFF7ED] text-[#EA580C] border border-orange-200/60 inline-block font-sans">
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-orange-50 text-[#EA580C] border border-orange-200/60 inline-block font-sans">
                           {trainer.specialization || 'Fitness Trainer'}
                         </span>
                       </td>
@@ -624,7 +624,7 @@ export default function TrainersPage() {
                             e.stopPropagation();
                             handleOpenAssignMembers(trainer);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50/60 hover:bg-orange-100 text-[#EA580C] border border-[#FED7AA] rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50/80 hover:bg-orange-100 text-[#EA580C] border border-orange-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                           title="Click to view/assign members"
                         >
                           <Users size={12} />
@@ -705,9 +705,9 @@ export default function TrainersPage() {
               setActionsMenu(null);
               handleOpenAssignMembers(t);
             }}
-            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-[#C2410C] transition-colors font-extrabold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-orange-700 transition-colors font-extrabold"
           >
-            <Users size={14} className="text-[#EA580C]" />
+            <Users size={14} className="text-orange-600" />
             <span>Assign Members</span>
           </button>
 
@@ -786,7 +786,7 @@ export default function TrainersPage() {
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-center text-[#EA580C] shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#EA580C] shrink-0">
                     <UserPlus size={20} />
                   </div>
                   <div>
@@ -1000,7 +1000,7 @@ export default function TrainersPage() {
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-center text-[#EA580C] shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#EA580C] shrink-0">
                     <Edit size={20} />
                   </div>
                   <div>
@@ -1142,7 +1142,7 @@ export default function TrainersPage() {
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-center text-[#EA580C] shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#EA580C] shrink-0">
                     <Users size={20} />
                   </div>
                   <div>
@@ -1177,7 +1177,7 @@ export default function TrainersPage() {
                       <label 
                         key={m.id}
                         className={`p-2.5 rounded-xl flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                          isChecked ? 'bg-orange-50/60 font-bold' : 'hover:bg-white'
+                          isChecked ? 'bg-orange-50/80 font-bold' : 'hover:bg-white'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -1270,7 +1270,7 @@ export default function TrainersPage() {
                 />
                 <div>
                   <h3 className="text-lg font-extrabold text-slate-900">{activeTrainer.name}</h3>
-                  <span className="inline-block mt-1 px-3 py-1 bg-[#FFF7ED] text-[#EA580C] border border-orange-200/60 rounded-full text-[10px] font-black uppercase tracking-wider">
+                  <span className="inline-block mt-1 px-3 py-1 bg-orange-50 text-[#EA580C] border border-orange-200/60 rounded-full text-[10px] font-black uppercase tracking-wider">
                     {activeTrainer.specialization || 'Fitness Trainer'}
                   </span>
                 </div>
@@ -1328,7 +1328,7 @@ export default function TrainersPage() {
                           <span className="font-extrabold text-slate-900 block">{m.name}</span>
                           <span className="text-[10px] text-slate-400 font-mono">#{m.memberId || m.id} • 📞 {m.phone}</span>
                         </div>
-                        <span className="px-2 py-0.5 rounded-lg bg-[#FFF7ED] text-[#EA580C] text-[10px] font-bold border border-orange-200/60">
+                        <span className="px-2 py-0.5 rounded-lg bg-orange-50 text-[#EA580C] text-[10px] font-bold border border-orange-200/50">
                           {m.plan || 'Standard'}
                         </span>
                       </div>

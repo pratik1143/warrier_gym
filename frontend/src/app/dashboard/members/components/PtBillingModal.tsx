@@ -8,7 +8,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import toast from '@/lib/toast';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { doc, updateDoc, addDoc, collection, query, onSnapshot } from 'firebase/firestore';
 import { useGymStore } from '@/store';
 import API from '@/services/api';
@@ -261,8 +261,13 @@ export default function PtBillingModal({
     if (!member || !member.id || submitting) return;
     if (!validateForm()) {
       setStep(1);
+      toast.error('Please complete all required PT membership details.');
       return;
     }
+
+    // Authenticated check
+    const hasClientUser = Boolean(auth.currentUser);
+    const storedUserStr = typeof window !== 'undefined' ? localStorage.getItem('alpha_zone_user') : null;
 
     setSubmitting(true);
     try {
@@ -281,10 +286,24 @@ export default function PtBillingModal({
       const trainerAvatar = resolveAvatarUrl(selectedTrainer || { name: trainerName });
       const trainerPhone = selectedTrainer?.phone || '';
 
+      console.log('[PT Billing DevLog] Step 1: Initiating PT Creation', {
+        memberId: member.id,
+        memberName: member.name,
+        trainerId,
+        trainerName,
+        numAmount,
+        startDate,
+        expiryDate,
+        paymentMode,
+        hasClientUser,
+        hasStoredAuth: Boolean(storedUserStr),
+      });
+
       // 1. Create PT Payment / Billing Record in `payments` collection
       const ptPaymentPayload = {
         memberId: member.id,
         memberName: member.name,
+        memberPhone: member.phone || member.mobile || '',
         trainerId,
         trainerName,
         trainerRole,
@@ -313,13 +332,24 @@ export default function PtBillingModal({
         status: 'PAID',
         createdAt: new Date().toISOString(),
         isRealTimeToday: true,
+        idempotencyKey: `pt_${member.id}_${invoiceNo}`,
       };
 
+      let paymentSaved = false;
       try {
+        console.log('[PT Billing DevLog] Attempting direct Firestore payment creation...');
         await addDoc(collection(db, 'payments'), ptPaymentPayload);
-      } catch (payErr) {
-        console.warn('Direct Firestore payment creation warning, attempting API:', payErr);
-        await API.post('/payments', ptPaymentPayload).catch(() => {});
+        paymentSaved = true;
+        console.log('[PT Billing DevLog] Direct Firestore payment creation successful.');
+      } catch (payErr: any) {
+        console.warn('[PT Billing DevLog] Direct Firestore payment creation failed, executing REST API fallback:', payErr?.message || payErr);
+        try {
+          await API.post('/payments', ptPaymentPayload);
+          paymentSaved = true;
+          console.log('[PT Billing DevLog] REST API payment creation successful.');
+        } catch (apiPayErr: any) {
+          console.error('[PT Billing DevLog] REST API payment creation also failed:', apiPayErr?.response?.data || apiPayErr?.message);
+        }
       }
 
       // 2. Canonical PT Object Definition
@@ -381,7 +411,26 @@ export default function PtBillingModal({
         updatedAt: new Date().toISOString(),
       };
 
-      await updateDoc(doc(db, 'members', member.id), memberUpdateData);
+      let memberUpdated = false;
+      try {
+        console.log('[PT Billing DevLog] Attempting direct Firestore updateDoc to members collection...');
+        await updateDoc(doc(db, 'members', member.id), memberUpdateData);
+        memberUpdated = true;
+        console.log('[PT Billing DevLog] Direct Firestore member update successful.');
+      } catch (memErr: any) {
+        console.warn('[PT Billing DevLog] Direct Firestore member update failed, executing REST API fallback:', memErr?.message || memErr);
+        try {
+          await API.put(`/members/${member.id}`, memberUpdateData);
+          memberUpdated = true;
+          console.log('[PT Billing DevLog] REST API member update successful.');
+        } catch (apiMemErr: any) {
+          console.error('[PT Billing DevLog] REST API member update also failed:', apiMemErr?.response?.data || apiMemErr?.message);
+        }
+      }
+
+      if (!memberUpdated && !paymentSaved) {
+        throw new Error('PERMISSION_DENIED_BOTH');
+      }
 
       // 4. Update local in-memory reference
       Object.assign(member, memberUpdateData);
@@ -397,8 +446,15 @@ export default function PtBillingModal({
       toast.success(`PT membership created successfully! (${durationLabel} with ${trainerName})`);
       onClose();
     } catch (err: any) {
-      console.error('Failed to create PT bill:', err);
-      toast.error('Failed to create PT membership: ' + (err.message || err));
+      console.error('[PT Billing DevLog] Failed to create PT bill:', err);
+      const errStr = String(err?.message || err || '').toLowerCase();
+      if (errStr.includes('permission') || errStr.includes('denied') || err === 'PERMISSION_DENIED_BOTH') {
+        toast.error("Unable to create PT membership. You don't have permission for this action.");
+      } else if (errStr.includes('auth') || errStr.includes('unauthenticated') || errStr.includes('expired')) {
+        toast.error("Your session has expired. Please sign in again.");
+      } else {
+        toast.error("Unable to create PT membership. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -425,10 +481,10 @@ export default function PtBillingModal({
           exit={{ opacity: 0, scale: 0.96, y: 15 }}
           className="relative bg-white rounded-[24px] shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden z-10 text-slate-900 flex flex-col max-h-[92vh]"
         >
-          {/* Header Bar — Warrior Gym OS Clean Style */}
+          {/* Header Bar — The Warrior Gym OS Clean Style */}
           <div className="px-6 py-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] text-[#0066FF] border border-[#FED7AA] flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] flex items-center justify-center shrink-0">
                 <Dumbbell size={20} />
               </div>
               <div>
@@ -468,7 +524,7 @@ export default function PtBillingModal({
                       <div className="font-extrabold text-sm text-slate-900 truncate">{member?.name || 'Member'}</div>
                     </div>
                   </div>
-                  <span className="text-[11px] font-mono font-black text-indigo-600 bg-indigo-50 border border-indigo-200/80 px-2.5 py-1 rounded-lg shrink-0">
+                  <span className="text-[11px] font-mono font-black text-orange-600 bg-orange-50 border border-orange-200/80 px-2.5 py-1 rounded-lg shrink-0">
                     #{member?.clientId || member?.memberId || member?.id}
                   </span>
                 </div>
@@ -483,7 +539,7 @@ export default function PtBillingModal({
                       value={selectedTrainerId}
                       onChange={handleTrainerChange}
                       className={`w-full text-xs bg-slate-50 border rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:outline-none focus:bg-white transition-all cursor-pointer appearance-none pr-10 ${
-                        errors.trainer ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-[#0066FF]'
+                        errors.trainer ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-[#EA580C]'
                       }`}
                     >
                       <option value="">-- Choose Personal Trainer --</option>
@@ -508,9 +564,9 @@ export default function PtBillingModal({
                     </p>
                   )}
                   {selectedTrainer && (
-                    <div className="mt-2 p-2.5 bg-orange-50/60 border border-[#FED7AA] rounded-xl flex items-center justify-between text-[11px]">
+                    <div className="mt-2 p-2.5 bg-orange-50/60 border border-orange-100 rounded-xl flex items-center justify-between text-[11px]">
                       <span className="text-slate-600 font-medium">Assigned: <strong className="text-slate-900">{selectedTrainer.name}</strong></span>
-                      <span className="text-[10px] font-bold text-[#0066FF] bg-white px-2 py-0.5 rounded border border-[#FED7AA]">
+                      <span className="text-[10px] font-bold text-[#EA580C] bg-white px-2 py-0.5 rounded border border-orange-200">
                         {selectedTrainer.specialization || 'Personal Trainer'}
                       </span>
                     </div>
@@ -535,7 +591,7 @@ export default function PtBillingModal({
                         onClick={() => handleDurationClick(item.months)}
                         className={`py-2.5 px-2 rounded-xl border text-xs font-black transition-all cursor-pointer text-center ${
                           durationMonths === item.months
-                            ? 'bg-[#0066FF] text-white border-[#0066FF] shadow-xs'
+                            ? 'bg-[#EA580C] text-white border-[#EA580C] shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
@@ -567,7 +623,7 @@ export default function PtBillingModal({
                         }}
                         placeholder="2000"
                         className={`w-full text-xs bg-slate-50 border rounded-xl pl-7 pr-3.5 py-2.5 font-mono font-black text-slate-900 focus:outline-none focus:bg-white transition-all ${
-                          errors.amount ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-[#0066FF]'
+                          errors.amount ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-[#EA580C]'
                         }`}
                       />
                     </div>
@@ -586,7 +642,7 @@ export default function PtBillingModal({
                       <select
                         value={paymentMode}
                         onChange={(e) => setPaymentMode(e.target.value)}
-                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-[#0066FF] transition-all cursor-pointer appearance-none pr-10"
+                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-[#EA580C] transition-all cursor-pointer appearance-none pr-10"
                       >
                         <option value="UPI">UPI / QR Code</option>
                         <option value="Cash">Cash Payment</option>
@@ -608,7 +664,7 @@ export default function PtBillingModal({
                       type="date"
                       value={startDate}
                       onChange={handleStartDateChange}
-                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:bg-white focus:border-[#0066FF] transition-all cursor-pointer"
+                      className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 font-bold focus:outline-none focus:bg-white focus:border-[#EA580C] transition-all cursor-pointer"
                     />
                   </div>
 
@@ -651,7 +707,7 @@ export default function PtBillingModal({
                     </div>
                     <div>
                       <span className="text-[9px] text-slate-400 uppercase font-black block mb-0.5">Trainer</span>
-                      <span className="text-sm font-black text-[#0066FF]">
+                      <span className="text-sm font-black text-[#EA580C]">
                         {selectedTrainer?.name || 'Personal Trainer'}
                       </span>
                     </div>
@@ -705,7 +761,7 @@ export default function PtBillingModal({
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  className="px-6 py-2.5 bg-[#0066FF] hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  className="px-6 py-2.5 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer flex items-center gap-1.5 shadow-xs"
                 >
                   <span>Review Bill</span> <ArrowRight size={14} />
                 </button>
@@ -723,7 +779,7 @@ export default function PtBillingModal({
                   type="button"
                   disabled={submitting}
                   onClick={handleConfirmPTBilling}
-                  className="px-6 py-2.5 bg-[#0066FF] hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                  className="px-6 py-2.5 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer flex items-center gap-1.5 shadow-md disabled:opacity-50"
                 >
                   <CheckCircle2 size={16} />
                   <span>{submitting ? 'Creating PT Bill...' : 'Create PT Bill'}</span>

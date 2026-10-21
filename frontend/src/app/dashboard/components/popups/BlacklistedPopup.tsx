@@ -6,6 +6,7 @@ import { ShieldAlert, XOctagon } from 'lucide-react';
 
 export default function BlacklistedPopup({ data, onClose }: { data: any, onClose: () => void }) {
   const [progress, setProgress] = useState(0);
+  const isBiometricBlocked = data.biometricBlocked === true;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -72,9 +73,11 @@ export default function BlacklistedPopup({ data, onClose }: { data: any, onClose
               <div className="flex gap-3">
                  <ShieldAlert className="text-red-500 shrink-0 mt-0.5" />
                  <div>
-                    <h4 className="font-bold text-white">Member Blacklisted</h4>
+                    <h4 className="font-bold text-white">{isBiometricBlocked ? 'Biometric ID Blocked' : 'Member Blacklisted'}</h4>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      {data.memberName} is currently blacklisted. Access is strictly blocked. Contact the branch manager for resolution.
+                      {isBiometricBlocked
+                        ? `${data.memberName}'s biometric access is blocked. ${data.reason || 'The terminal must keep this ID disabled.'} Gate access denied.`
+                        : `${data.memberName} is currently blacklisted. Access is strictly blocked. Contact the branch manager for resolution.`}
                     </p>
                  </div>
               </div>

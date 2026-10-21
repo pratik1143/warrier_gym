@@ -52,7 +52,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }
   active:   { label: 'Active',   color: '#16a34a', bg: '#f0fdf4' },
   expiring: { label: 'Expiring', color: '#d97706', bg: '#fffbeb' },
   expired:  { label: 'Expired',  color: '#dc2626', bg: '#fef2f2' },
-  frozen:   { label: 'Frozen',   color: '#6366f1', bg: '#eef2ff' },
+  frozen:   { label: 'Frozen',   color: '#F97316', bg: '#FFF7ED' },
 };
 
 interface InvoiceBuilderModalProps {
@@ -80,22 +80,14 @@ export default function InvoiceBuilderModal({ isOpen, type, onClose, members }: 
   ];
 
   const activePlans = useMemo(() => {
-    const raw = (plans && plans.length > 0)
-      ? plans.map((p: any) => ({
-          id: p.id,
-          label: p.name,
-          months: Math.max(0.1, Math.round(((p.durationDays || 30) / 30) * 100) / 100),
-          price: p.price
-        }))
-      : defaultPlans;
-
-    const seenLabels = new Set<string>();
-    return raw.filter((p: any) => {
-      const key = String(p.label || '').trim().toLowerCase();
-      if (!key || seenLabels.has(key)) return false;
-      seenLabels.add(key);
-      return true;
-    });
+    if (plans && plans.length > 0) {
+      return plans.map((p: any) => ({
+        label: p.name,
+        months: Math.max(0.1, Math.round(((p.durationDays || 30) / 30) * 100) / 100),
+        price: p.price
+      }));
+    }
+    return defaultPlans;
   }, [plans]);
 
   // Form States
@@ -195,10 +187,10 @@ export default function InvoiceBuilderModal({ isOpen, type, onClose, members }: 
     setIsSubmitting(true);
 
     try {
-      // 1. Generate Idempotent Unique Invoice Number (TWG-INV-XXXXXX)
+      // 1. Generate Idempotent Unique Invoice Number (AZ-INV-XXXXXX)
       const dateCode = new Date().toISOString().replace(/\D/g, '').slice(2, 8); // e.g. 260823
       const randomCode = Math.floor(1000 + Math.random() * 9000);
-      const invoiceNumber = `TWG-INV-${dateCode}${randomCode}`;
+      const invoiceNumber = `AZ-INV-${dateCode}${randomCode}`;
       const docId = `inv_${invoiceNumber.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
       const todayIso = new Date().toISOString();
@@ -210,7 +202,7 @@ export default function InvoiceBuilderModal({ isOpen, type, onClose, members }: 
         invoiceNumber: invoiceNumber,
         memberId: memberId,
         memberName: selectedMember?.name || 'Member',
-        memberPhone: selectedMember?.phone || '',
+        memberPhone: selectedMember?.phone || selectedMember?.mobile || '',
         plan: rawData.plan,
         baseAmount: baseNum,
         gstPercent: gstPct,
@@ -380,7 +372,7 @@ export default function InvoiceBuilderModal({ isOpen, type, onClose, members }: 
                 const cfg = STATUS_CONFIG[status];
                 const days = membershipEngine.calculateDaysLeft(selectedMember.expiryDate);
                 return (
-                  <div className="mt-2.5 p-3 rounded-xl bg-orange-50/60 border border-[#FED7AA] flex items-center justify-between">
+                  <div className="mt-2.5 p-3 rounded-xl bg-orange-50/60 border border-orange-100 flex items-center justify-between">
                     <div>
                       <div className="text-xs font-black text-slate-900">{selectedMember.name}</div>
                       <div className="text-[11px] font-medium text-slate-500 flex items-center gap-2 mt-0.5">
@@ -412,16 +404,16 @@ export default function InvoiceBuilderModal({ isOpen, type, onClose, members }: 
               </label>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {activePlans.map((plan: any, idx: number) => {
+                {activePlans.map(plan => {
                   const isSelected = selectedPlanLabel === plan.label;
                   return (
                     <button
-                      key={plan.id || `${plan.label}_${idx}`}
+                      key={plan.label}
                       type="button"
                       onClick={() => handlePlanSelect(plan)}
                       className={`p-3 rounded-xl border transition-all text-left relative cursor-pointer ${
                         isSelected 
-                          ? 'border-[#EA580C] bg-orange-50/60 text-[#EA580C] shadow-sm' 
+                          ? 'border-[#EA580C] bg-orange-50/70 text-[#EA580C] shadow-sm' 
                           : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50'
                       }`}
                     >

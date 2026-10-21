@@ -182,7 +182,7 @@ export default function PhotoRepairTool() {
           <button
             onClick={handleMarkAllPaid}
             disabled={isMarkingPaid}
-            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white font-black rounded-xl text-sm hover:bg-indigo-700 transition-all shadow-sm cursor-pointer disabled:opacity-50 border-none"
+            className="flex items-center gap-2 px-4 py-2.5 bg-orange-600 text-white font-black rounded-xl text-sm hover:bg-orange-700 transition-all shadow-sm cursor-pointer disabled:opacity-50 border-none"
           >
             {isMarkingPaid ? (
               <>

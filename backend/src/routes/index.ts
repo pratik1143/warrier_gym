@@ -4,21 +4,18 @@ import whatsappRoutes from './whatsapp.routes';
 import { loginUser } from '../controllers/auth.controller';
 import { 
   getMembers, getMembersPaginated, getMemberById, createMember, updateMember, 
-  deleteMember, toggleFreezeMember, resetMemberPassword, sendMemberCredentials,
-  importBulkHoldMembers
+  deleteMember, toggleFreezeMember, resetMemberPassword, sendMemberCredentials, renewMembership,
+  upgradeMembership, importBulkHoldMembers
 } from '../controllers/member.controller';
-import { getAttendanceFeed, createCheckIn, checkoutLog, triggerGateUnlock, getAccessLogs, getDoorStatus, getDashboardAnalyticsFeed, getAttendanceSummaryFeed } from '../controllers/attendance.controller';
-import { 
-  getDevices, createDevice, updateDevice, deleteDevice, getDeviceLogs, triggerSimulationTap, 
-  restartDevice, queueConnectionTest, queueReadUsers, queueReadAttendance, getTesterStatus, 
-  queueSyncFirebase, queueImportUsers, startEnrollFingerprint, deleteEnrollment, syncMemberToDevice, 
-  getEnrollmentStatus, getPythonStatus, getLatestPunch, autoMapAllBiometrics,
+import { getAttendanceFeed, createCheckIn, checkoutLog, triggerGateUnlock, getGateStatus, getAccessLogs, getDoorStatus, getDashboardAnalyticsFeed, getAttendanceSummaryFeed } from '../controllers/attendance.controller';
+import {
+  getDevices, createDevice, updateDevice, deleteDevice, getDeviceLogs, triggerSimulationTap, restartDevice, queueConnectionTest, queueReadUsers, queueReadAttendance, getTesterStatus, queueSyncFirebase, queueImportUsers, startEnrollFingerprint, deleteEnrollment, syncMemberToDevice, setBiometricAccess, getEnrollmentStatus, getEnrollmentCommandStatus, getPythonStatus, getLatestPunch, autoMapAllBiometrics,
   getHikvisionStatus, triggerHikvisionDoorUnlock, getUnmappedDeviceUsers, mapDeviceUserToMember,
   testHikvisionConnection, syncHikvisionUsers, syncHikvisionEvents, getHikvisionEvents,
   getHikvisionDiagnostics, enrollHikvisionBiometrics, testHikvisionUserCreation,
   getHikvisionCapabilitiesController, getHikvisionTerminalUsers, bulkMapHikvisionUsers,
   getHikvisionPhotoManifest, syncHikvisionMemberPhotos, syncHikvisionUsersAndPhotos, getHikvisionMemberPhoto,
-  getHikvisionEnrollmentStatus, createHikvisionUserEndpoint, getHikvisionDoorUnlockStatus
+  getHikvisionEnrollmentStatus, createHikvisionUserEndpoint, getHikvisionDoorUnlockStatus, getHikvisionSyncStatus
 } from '../controllers/device.controller';
 import { getInvoices, createInvoice, updateInvoice, deleteInvoice, markPaymentPaid } from '../controllers/billing.controller';
 import { 
@@ -36,7 +33,7 @@ import { getSmtpConfig, saveSmtpConfig, getTemplates, saveTemplatesController, s
 import { getPlansController, createPlanController, updatePlanController, deletePlanController } from '../controllers/plan.controller';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, getEmployeeAttendance } from '../controllers/employee.controller';
 import { globalSearch } from '../controllers/search.controller';
-import { authenticateToken } from '../middleware/auth';
+import { authenticateToken, authorizeRoles } from '../middleware/auth';
 
 
 const router = Router();
@@ -45,6 +42,12 @@ const router = Router();
 router.post('/auth/login', loginUser);
 router.get('/python/status', getPythonStatus);
 router.get('/system/health', getPythonStatus);
+router.get('/gate/status', getGateStatus);
+
+// Unauthenticated Gate Unlock Endpoints (for Gym LAN Terminal & Quick Open)
+router.post('/gate/open', triggerGateUnlock);
+router.post('/attendance/gate-unlock', triggerGateUnlock);
+router.post('/attendance/unlock', triggerGateUnlock);
 
 // Protect all CRM / dashboard operations
 router.use(authenticateToken);
@@ -58,20 +61,21 @@ router.use('/whatsapp', whatsappRoutes);
 // Member CRUD & Actions
 router.get('/members', getMembers);
 router.get('/members/paginated', getMembersPaginated);
-router.post('/members/import-bulk', importBulkHoldMembers);
-router.post('/members/sanitize-hold-members', sanitizeHoldMembers);
 router.get('/members/next-biometric-id', nextBiometricId);
-router.post('/members/migrate', migrateMembers);
-router.post('/members/dry-run-migration', dryRunMigration);
-router.post('/members/repair-photos', repairImportedPhotos);
-router.post('/members/repair-billing', repairImportedBilling);
-router.post('/members/patch-legacy-amounts', patchLegacyAmounts);
-router.post('/members/mark-all-paid', markAllBillsPaid);
-router.post('/members/resume-migration', resumeMigration);
-router.post('/members/rebuild-analytics', rebuildAnalyticsAndIndex);
-router.get('/members/audit-verification', auditVerification);
-router.post('/members/rollback-migration', rollbackMigration);
-router.post('/members/purge-all', purgeCRMData);
+const requireCrmAdmin = authorizeRoles('super_admin', 'gym_owner');
+router.post('/members/import-bulk', importBulkHoldMembers);
+router.post('/members/sanitize-hold-members', requireCrmAdmin, sanitizeHoldMembers);
+router.post('/members/migrate', requireCrmAdmin, migrateMembers);
+router.post('/members/dry-run-migration', requireCrmAdmin, dryRunMigration);
+router.post('/members/repair-photos', requireCrmAdmin, repairImportedPhotos);
+router.post('/members/repair-billing', requireCrmAdmin, repairImportedBilling);
+router.post('/members/patch-legacy-amounts', requireCrmAdmin, patchLegacyAmounts);
+router.post('/members/mark-all-paid', requireCrmAdmin, markAllBillsPaid);
+router.post('/members/resume-migration', requireCrmAdmin, resumeMigration);
+router.post('/members/rebuild-analytics', requireCrmAdmin, rebuildAnalyticsAndIndex);
+router.get('/members/audit-verification', requireCrmAdmin, auditVerification);
+router.post('/members/rollback-migration', requireCrmAdmin, rollbackMigration);
+router.post('/members/purge-all', requireCrmAdmin, purgeCRMData);
 router.post('/members/map-biometric', mapBiometricUser);
 router.get('/members/:id', getMemberById);
 router.post('/members', createMember);
@@ -80,6 +84,8 @@ router.delete('/members/:id', deleteMember);
 router.post('/members/:id/freeze', toggleFreezeMember);
 router.post('/members/:id/reset-password', resetMemberPassword);
 router.post('/members/:id/send-credentials', sendMemberCredentials);
+router.post('/members/:id/renew', renewMembership);
+router.post('/members/:id/upgrade', upgradeMembership);
 
 // Attendance & Hardware Controller Sync
 router.get('/analytics/dashboard', getDashboardAnalyticsFeed);
@@ -110,6 +116,7 @@ router.get('/devices/testing/device-users', getDeviceUsers);
 router.post('/devices/testing/seed-users', seedDeviceUsers);
 router.get('/migrations', getMigrations);
 
+// Smart Biometric Enrollment
 // Dedicated Hikvision Endpoints
 router.get('/devices/hikvision/status', getHikvisionStatus);
 router.post('/devices/hikvision/test-connection', testHikvisionConnection);
@@ -118,6 +125,7 @@ router.get('/devices/hikvision/capabilities', getHikvisionCapabilitiesController
 router.get('/devices/hikvision/diagnostics', getHikvisionDiagnostics);
 router.post('/devices/hikvision/enroll', enrollHikvisionBiometrics);
 router.get('/devices/hikvision/enrollment-status/:biometricId', getHikvisionEnrollmentStatus);
+router.get('/devices/hikvision/sync-status/:biometricId', getHikvisionSyncStatus);
 router.post('/devices/hikvision/create-user', createHikvisionUserEndpoint);
 router.post('/devices/hikvision/sync-users', syncHikvisionUsers);
 router.post('/devices/hikvision/sync-events', syncHikvisionEvents);
@@ -133,10 +141,16 @@ router.post('/devices/hikvision/sync-photos', syncHikvisionMemberPhotos);
 router.post('/devices/hikvision/sync-users-and-photos', syncHikvisionUsersAndPhotos);
 router.get('/devices/hikvision/photo/:biometricId', getHikvisionMemberPhoto);
 
-// Smart Biometric Enrollment
+router.post('/devices/enroll-user', startEnrollFingerprint);
+router.post('/devices/enroll-fingerprint', startEnrollFingerprint);
+router.post('/devices/biometric/enroll-fingerprint', startEnrollFingerprint);
+router.post('/devices/delete-enrollment', deleteEnrollment);
+router.post('/devices/sync-member', syncMemberToDevice);
 router.post('/devices/biometric/enroll-fingerprint', startEnrollFingerprint);
 router.post('/devices/biometric/delete', deleteEnrollment);
 router.post('/devices/biometric/sync', syncMemberToDevice);
+router.post('/devices/biometric/access', setBiometricAccess);
+router.get('/devices/biometric/command/:commandId', getEnrollmentCommandStatus);
 router.post('/devices/biometric/auto-map-all', autoMapAllBiometrics);
 router.get('/devices/biometric/status/:memberId', getEnrollmentStatus);
 
@@ -146,6 +160,11 @@ router.post('/billing', createInvoice);
 router.put('/billing/:id', updateInvoice);
 router.delete('/billing/:id', deleteInvoice);
 router.post('/billing/pay/:memberId', markPaymentPaid);
+
+// Payments Aliases (compatibility with REST API client calls)
+router.get('/payments', getInvoices);
+router.post('/payments', createInvoice);
+router.delete('/payments/:id', deleteInvoice);
 
 // Trainer Workout & Diet Builders
 router.get('/trainers/workouts/:memberId', getWorkoutPlan);

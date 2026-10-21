@@ -170,7 +170,7 @@ export default function DashboardRightPanel({
                     />
                     <div className="text-left leading-tight">
                       <div className="text-[10px] font-black text-slate-800">{safeName}</div>
-                      <div className="text-[8px] text-slate-400 font-bold">{log.memberCode || 'TWG-2026-0000'}</div>
+                      <div className="text-[8px] text-slate-400 font-bold">{log.memberCode || 'AZ-2026-0000'}</div>
                     </div>
                   </div>
                   <div className="text-right leading-none shrink-0">
@@ -255,13 +255,13 @@ export default function DashboardRightPanel({
       </div>
 
       {/* Widget 3: Live Clock (Deep Blue Brand Gradient) */}
-      <div className="bg-gradient-to-br from-[#083f82] to-[#EA580C] text-white p-5 rounded-2xl shadow-md flex flex-col justify-between min-h-[140px] relative overflow-hidden border border-orange-400/30">
+      <div className="bg-gradient-to-br from-[#9A3412] to-[#EA580C] text-white p-5 rounded-2xl shadow-md flex flex-col justify-between min-h-[140px] relative overflow-hidden border border-orange-400/20">
         <div className="absolute right-0 bottom-0 w-28 h-28 bg-white/5 rounded-full blur-xl pointer-events-none" />
 
         <div className="flex justify-between items-center">
-          <span className="text-[9px] font-black uppercase tracking-wider text-orange-100">Live Clock</span>
-          <div className="flex items-center gap-1 text-[8px] text-orange-100 font-black uppercase">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-300 animate-ping" />
+          <span className="text-[9px] font-black uppercase tracking-wider text-orange-200">Live Clock</span>
+          <div className="flex items-center gap-1 text-[8px] text-orange-200 font-black uppercase">
+            <span className="w-1.5 h-1.5 rounded-full bg-orange-300 animate-ping" />
             <span>Live Sync</span>
           </div>
         </div>
@@ -273,7 +273,7 @@ export default function DashboardRightPanel({
         </div>
 
         <div className="flex items-center justify-between mt-5 border-t border-white/10 pt-3">
-          <span className="text-[8px] text-blue-200/80 font-bold uppercase tracking-wider">Mohali, Punjab (IST)</span>
+          <span className="text-[8px] text-orange-200/80 font-bold uppercase tracking-wider">Mohali, Punjab (IST)</span>
           <div className="text-[8px] text-white font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full border border-white/20">
             UTC +5:30
           </div>

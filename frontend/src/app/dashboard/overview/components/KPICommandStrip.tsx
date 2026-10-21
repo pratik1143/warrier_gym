@@ -106,9 +106,9 @@ export default function KPICommandStrip({
       trendUp: true,
       sparkline: [5, 12, 19, 14, 25, 32, 28],
       icon: UserCheck,
-      iconColor: "#2563EB",
-      iconBg: "bg-blue-50 border-blue-100",
-      accentBorder: "group-hover:border-blue-400",
+      iconColor: "#EA580C",
+      iconBg: "bg-orange-50 border-orange-100",
+      accentBorder: "group-hover:border-orange-400",
       onClick: onOpenPresentModal,
     },
     {

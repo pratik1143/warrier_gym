@@ -928,9 +928,9 @@ export default function BulkImportModal({
                   <span className="text-[9px] font-black uppercase text-slate-400 block">Excel Members</span>
                   <span className="text-sm font-black font-mono text-slate-900">{mappingCounts.total}</span>
                 </div>
-                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-2xl">
-                  <span className="text-[9px] font-black uppercase text-blue-700 block">Hikvision Users</span>
-                  <span className="text-sm font-black font-mono text-blue-900">{mappingCounts.terminalFound}</span>
+                <div className="p-2.5 bg-orange-50 border border-orange-200 rounded-2xl">
+                  <span className="text-[9px] font-black uppercase text-orange-700 block">Hikvision Users</span>
+                  <span className="text-sm font-black font-mono text-orange-900">{mappingCounts.terminalFound}</span>
                 </div>
                 <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl">
                   <span className="text-[9px] font-black uppercase text-emerald-700 block">Successfully Mapped</span>

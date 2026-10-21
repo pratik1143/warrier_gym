@@ -17,6 +17,7 @@ import { doc, setDoc, getDoc } from 'firebase/firestore';
 import BiometricMappingModal from '../members/components/BiometricMappingModal';
 import { SystemHealthFullSection } from '../components/RealDeviceStatusEngine';
 import HikvisionDeviceCard from '../components/HikvisionDeviceCard';
+import gymConfig from '@/lib/gymConfig';
 
 interface Device {
   id: string;
@@ -55,10 +56,10 @@ interface Member {
 export default function SettingsGodLevelPage() {
   const router = useRouter();
   const { user, setUser } = useAuthStore();
-  const [gymName, setGymName] = useState('The Warrior Gym');
+  const [gymName, setGymName] = useState(gymConfig.name);
   const [operatorName, setOperatorName] = useState(user?.name || 'Gym Owner');
-  const [contactEmail, setContactEmail] = useState(user?.email || 'Ramansingh6158@gmail.com');
-  const [contactPhone, setContactPhone] = useState('+91 98170 23336');
+  const [contactEmail, setContactEmail] = useState(user?.email || gymConfig.supportEmail);
+  const [contactPhone, setContactPhone] = useState(gymConfig.supportPhone);
   const [savingBranch, setSavingBranch] = useState(false);
   const [activeTab, setActiveTab] = useState<'system-health' | 'hardware' | 'logs' | 'branch' | 'security' | 'data-tools'>('system-health');
   const [showBiometricMappingModal, setShowBiometricMappingModal] = useState(false);
@@ -165,9 +166,9 @@ export default function SettingsGodLevelPage() {
   const [formData, setFormData] = useState({
     deviceId: '',
     deviceName: '',
-    deviceType: 'ESSL K90 Pro',
-    ip: '192.168.18.11',
-    port: '4370',
+    deviceType: 'Hikvision DS-K1T320EFWX',
+    ip: '192.168.1.45',
+    port: '443',
     branch: 'The Warrior Gym Main Branch',
     enabled: true
   });
@@ -202,9 +203,9 @@ export default function SettingsGodLevelPage() {
             id: 'dev_1702143317300',
             deviceId: 'dev_1702143317300',
             deviceName: 'main gate',
-            deviceType: 'ESSL K90 Pro',
-            ip: '192.168.18.11',
-            port: 4370,
+            deviceType: 'Hikvision DS-K1T320EFWX',
+            ip: '192.168.1.45',
+            port: 443,
             branch: 'The Warrior Gym Main Branch',
             enabled: true,
             status: 'connected',
@@ -228,7 +229,7 @@ export default function SettingsGodLevelPage() {
       if (deviceLogs.length === 0) {
         setDeviceLogs([
           { id: 'l1', deviceId: 'dev_1', deviceName: 'Main Gate', level: 'SUCCESS', message: 'Biometric punch verified for Rahul Sharma (ID: TWG-2026-0001)', timestamp: new Date().toISOString() },
-          { id: 'l2', deviceId: 'dev_1', deviceName: 'Main Gate', level: 'INFO', message: 'Relay gate unlock signal transmitted successfully to IP 192.168.18.11:4370', timestamp: new Date(Date.now() - 120000).toISOString() },
+          { id: 'l2', deviceId: 'dev_1', deviceName: 'Main Gate', level: 'INFO', message: 'Relay gate unlock signal transmitted successfully to IP 192.168.1.45:443', timestamp: new Date(Date.now() - 120000).toISOString() },
           { id: 'l3', deviceId: 'dev_1', deviceName: 'Main Gate', level: 'SUCCESS', message: 'Terminal user database auto-synchronized (198 active users)', timestamp: new Date(Date.now() - 600000).toISOString() },
         ]);
       }
@@ -390,7 +391,7 @@ export default function SettingsGodLevelPage() {
       
       {/* ── 1. HEADER CONTROL CENTER CARD ──────────────────────────────────────── */}
       <div className="bg-white rounded-[32px] p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.02)] mb-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
@@ -417,7 +418,7 @@ export default function SettingsGodLevelPage() {
                 setShowAddDevice(true);
                 setEditingDevice(null);
               }}
-              className="px-5 py-3 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-xs font-black transition-all shadow-md hover:scale-[1.02] flex items-center gap-2 cursor-pointer"
+              className="px-5 py-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white rounded-2xl text-xs font-black transition-all shadow-md hover:scale-[1.02] flex items-center gap-2 cursor-pointer"
             >
               <Plus size={16} /> Link New Device
             </button>
@@ -436,11 +437,11 @@ export default function SettingsGodLevelPage() {
           <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-[10px] font-black uppercase tracking-wider">Linked Gate Terminals</span>
-              <Server size={16} className="text-[#F97316]" />
+              <Server size={16} className="text-orange-500" />
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{devices.length}</span>
-              <span className="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">ESSL / ZK</span>
+              <span className="text-[10px] font-bold text-slate-500 bg-slate-200/60 px-1.5 py-0.5 rounded">Hikvision</span>
             </div>
           </div>
 
@@ -458,11 +459,11 @@ export default function SettingsGodLevelPage() {
           <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-[10px] font-black uppercase tracking-wider">Today's Biometric Taps</span>
-              <Fingerprint size={16} className="text-indigo-500" />
+              <Fingerprint size={16} className="text-orange-500" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-indigo-600">{stats.attendanceToday || 42}</span>
-              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Synced</span>
+              <span className="text-2xl font-black text-orange-600">{stats.attendanceToday || 42}</span>
+              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">Synced</span>
             </div>
           </div>
 
@@ -520,7 +521,7 @@ export default function SettingsGodLevelPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
               <div>
                 <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                  <Fingerprint className="text-[#EA580C]" size={20} /> Hardware Access & Terminal Controller
+                  <Fingerprint className="text-orange-600" size={20} /> Hardware Access & Terminal Controller
                 </h3>
                 <p className="text-xs font-semibold text-slate-400 mt-0.5">
                   Connected turnstile gates, biometric readers, and relay IP endpoints.
@@ -536,7 +537,7 @@ export default function SettingsGodLevelPage() {
                 </button>
                 <button
                   onClick={() => { setShowAddDevice(true); setEditingDevice(null); }}
-                  className="px-4 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
                   <Plus size={14} /> Add Terminal
                 </button>
@@ -585,7 +586,7 @@ export default function SettingsGodLevelPage() {
 
                         {/* Counters Row */}
                         <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] font-bold text-slate-500">
-                          <span className="text-[#EA580C]">👥 Users: {device.totalUsers || 198}</span>
+                          <span className="text-orange-600">👥 Users: {device.totalUsers || 198}</span>
                           <span>•</span>
                           <span className="text-amber-600">👆 Fingerprints: {device.totalFingerprints || 196}</span>
                           <span>•</span>
@@ -603,14 +604,14 @@ export default function SettingsGodLevelPage() {
                         disabled={testingId === device.id}
                         className="px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                       >
-                        {testingId === device.id ? <RefreshCw size={12} className="animate-spin text-[#EA580C]" /> : <Wifi size={12} className="text-emerald-500" />}
+                        {testingId === device.id ? <RefreshCw size={12} className="animate-spin text-orange-600" /> : <Wifi size={12} className="text-emerald-500" />}
                         Test IP
                       </button>
 
                       <button
                         onClick={() => handleSyncDeviceNow(device)}
                         disabled={syncingId === device.id}
-                        className="px-3.5 py-2 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                        className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm cursor-pointer"
                       >
                         <RefreshCw size={12} className={syncingId === device.id ? 'animate-spin' : ''} />
                         Sync Logs
@@ -653,7 +654,7 @@ export default function SettingsGodLevelPage() {
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Terminal size={20} className="text-indigo-600" /> Biometric Gate Relay Console Logs
+                <Terminal size={20} className="text-orange-600" /> Biometric Gate Relay Console Logs
               </h3>
               <p className="text-xs font-semibold text-slate-400 mt-0.5">
                 Real-time terminal event streaming, TCP socket status, and punch verification logs.
@@ -688,11 +689,11 @@ export default function SettingsGodLevelPage() {
                   log.level === 'SUCCESS' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
                   log.level === 'ERROR' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
                   log.level === 'WARNING' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                  'bg-blue-500/20 text-[#FB923C] border border-blue-500/30'
+                  'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                 }`}>
                   {log.level}
                 </span>
-                <span className="text-indigo-400 font-bold shrink-0">[{log.deviceName}]:</span>
+                <span className="text-orange-400 font-bold shrink-0">[{log.deviceName}]:</span>
                 <span className="text-slate-200 leading-relaxed">{log.message}</span>
               </div>
             ))}
@@ -704,7 +705,7 @@ export default function SettingsGodLevelPage() {
       {activeTab === 'branch' && (
         <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.02)]">
           <h3 className="text-lg font-black text-slate-900 pb-4 mb-6 border-b border-slate-100 flex items-center gap-2">
-            <Building2 size={20} className="text-[#EA580C]" /> Branch & Operator Profile
+            <Building2 size={20} className="text-orange-600" /> Branch & Operator Profile
           </h3>
 
           <form onSubmit={handleSaveGym} className="space-y-6 max-w-3xl">
@@ -715,7 +716,7 @@ export default function SettingsGodLevelPage() {
                   type="text"
                   value={gymName}
                   onChange={e => setGymName(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
                 />
               </div>
 
@@ -725,7 +726,7 @@ export default function SettingsGodLevelPage() {
                   type="text"
                   value={operatorName}
                   onChange={e => setOperatorName(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
                 />
               </div>
 
@@ -735,7 +736,7 @@ export default function SettingsGodLevelPage() {
                   type="email"
                   value={contactEmail}
                   onChange={e => setContactEmail(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
                 />
               </div>
 
@@ -745,7 +746,7 @@ export default function SettingsGodLevelPage() {
                   type="text"
                   value={contactPhone}
                   onChange={e => setContactPhone(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
                 />
               </div>
             </div>
@@ -754,7 +755,7 @@ export default function SettingsGodLevelPage() {
               <button
                 type="submit"
                 disabled={savingBranch}
-                className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-2xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-2"
+                className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-2"
               >
                 {savingBranch ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />} Save Profile Changes
               </button>
@@ -772,16 +773,16 @@ export default function SettingsGodLevelPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-              <span className="text-[10px] font-black text-[#EA580C] uppercase tracking-wider block">Biometric Gateway</span>
-              <h4 className="text-sm font-black text-slate-900">TCP Socket Listener</h4>
-              <p className="text-xs font-semibold text-slate-500">Listening on port 4370 for hardware relay punches.</p>
+              <span className="text-[10px] font-black text-orange-600 uppercase tracking-wider block">Biometric Gateway</span>
+              <h4 className="text-sm font-black text-slate-900">Hikvision Event Listener</h4>
+              <p className="text-xs font-semibold text-slate-500">On-site agent streams live Hikvision ISAPI access events.</p>
               <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-600 font-bold text-[10px] rounded-full border border-emerald-200">
                 ACTIVE & RUNNING
               </span>
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block">Database Engine</span>
+              <span className="text-[10px] font-black text-orange-600 uppercase tracking-wider block">Database Engine</span>
               <h4 className="text-sm font-black text-slate-900">Firebase Firestore + Admin</h4>
               <p className="text-xs font-semibold text-slate-500">Real-time bi-directional synchronization online.</p>
               <span className="inline-block px-2.5 py-1 bg-emerald-50 text-emerald-600 font-bold text-[10px] rounded-full border border-emerald-200">
@@ -806,7 +807,7 @@ export default function SettingsGodLevelPage() {
         <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_2px_15px_rgba(0,0,0,0.02)] space-y-6">
           <div className="pb-5 border-b border-slate-100">
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <Database className="text-indigo-600" size={20} /> MEMBER DATA &amp; BIOMETRIC TOOLS
+              <Database className="text-orange-600" size={20} /> MEMBER DATA &amp; BIOMETRIC TOOLS
             </h3>
             <p className="text-xs font-semibold text-slate-400 mt-0.5">
               Administrative member data mapping, legacy biometric sync, and data exports.
@@ -815,9 +816,9 @@ export default function SettingsGodLevelPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* 1. Map Biometric ID Card */}
-            <div className="bg-slate-50/70 border border-slate-200/80 hover:border-indigo-300 rounded-3xl p-6 space-y-4 transition-all flex flex-col justify-between">
+            <div className="bg-slate-50/70 border border-slate-200/80 hover:border-orange-300 rounded-3xl p-6 space-y-4 transition-all flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center">
+                <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 border border-orange-100 flex items-center justify-center">
                   <Fingerprint size={24} />
                 </div>
                 <div>
@@ -837,9 +838,9 @@ export default function SettingsGodLevelPage() {
             </div>
 
             {/* 2. Auto Map Legacy Data Card */}
-            <div className="bg-slate-50/70 border border-slate-200/80 hover:border-[#EA580C] rounded-3xl p-6 space-y-4 transition-all flex flex-col justify-between">
+            <div className="bg-slate-50/70 border border-slate-200/80 hover:border-orange-300 rounded-3xl p-6 space-y-4 transition-all flex flex-col justify-between">
               <div className="space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] flex items-center justify-center">
+                <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 border border-orange-100 flex items-center justify-center">
                   <Zap size={24} />
                 </div>
                 <div>
@@ -912,7 +913,7 @@ export default function SettingsGodLevelPage() {
                   <h3 className="text-lg font-black text-slate-900">
                     {editingDevice ? 'Edit Hardware Terminal' : 'Link Biometric Gate Terminal'}
                   </h3>
-                  <p className="text-xs font-semibold text-slate-400">Configure ESSL / ZK / EasyBio terminal parameters</p>
+                  <p className="text-xs font-semibold text-slate-400">Configure Hikvision / ESSL terminal parameters</p>
                 </div>
                 <button onClick={() => setShowAddDevice(false)} className="w-8 h-8 rounded-lg bg-slate-100 text-slate-400 flex items-center justify-center">
                   <X size={16} />
@@ -940,7 +941,7 @@ export default function SettingsGodLevelPage() {
                       required
                       value={formData.ip}
                       onChange={e => setFormData({ ...formData, ip: e.target.value })}
-                      placeholder="192.168.18.11"
+                      placeholder="192.168.1.45"
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 font-mono"
                     />
                   </div>
@@ -951,7 +952,7 @@ export default function SettingsGodLevelPage() {
                       type="text"
                       value={formData.port}
                       onChange={e => setFormData({ ...formData, port: e.target.value })}
-                      placeholder="4370"
+                      placeholder="443"
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 font-mono"
                     />
                   </div>
@@ -964,10 +965,10 @@ export default function SettingsGodLevelPage() {
                     onChange={e => setFormData({ ...formData, deviceType: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800"
                   >
-                    <option value="ESSL K90 Pro">ESSL K90 Pro</option>
-                    <option value="ZK Software">ZKTeco uFace 800</option>
-                    <option value="EasyBio Fingerprint">EasyBio Gate Relay</option>
+                    <option value="Hikvision DS-K1T320EFWX">Hikvision DS-K1T320EFWX</option>
                     <option value="Hikvision Face Reader">Hikvision Face Reader</option>
+                    <option value="ESSL K90 Pro">ESSL K90 Pro</option>
+                    <option value="EasyBio Fingerprint">EasyBio Gate Relay</option>
                   </select>
                 </div>
 
@@ -975,7 +976,7 @@ export default function SettingsGodLevelPage() {
                   <button type="button" onClick={() => setShowAddDevice(false)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold">
                     Cancel
                   </button>
-                  <button type="submit" className="px-5 py-2 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-bold shadow-md cursor-pointer">
+                  <button type="submit" className="px-5 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer">
                     {editingDevice ? 'Save Terminal' : 'Link Terminal Device'}
                   </button>
                 </div>

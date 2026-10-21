@@ -56,7 +56,7 @@ export default function QuickActionsGrid({
       label: "IMPORT MEMBERS",
       desc: "Excel batch sync",
       icon: UploadCloud,
-      color: "#0284C7",
+      color: "#EA580C",
       bg: "bg-sky-50 border-sky-200 group-hover:bg-sky-600 group-hover:text-white",
       onClick: () => router.push("/dashboard/members?action=import")
     },

@@ -7,13 +7,16 @@ import * as XLSX from 'xlsx';
  */
 export function normalizeDate(val: any): string {
   if (!val && val !== 0) return '';
+  const toIsoDate = (year: number, month: number, day: number): string => {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return '';
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
 
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return '';
     const y = val.getUTCFullYear();
-    const m = String(val.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(val.getUTCDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return toIsoDate(y, val.getUTCMonth() + 1, val.getUTCDate());
   }
 
   if (typeof val === 'number') {
@@ -21,9 +24,7 @@ export function normalizeDate(val: any): string {
       const d = XLSX.SSF.parse_date_code(val);
       if (!d) return '';
       const y = d.y;
-      const m = String(d.m).padStart(2, '0');
-      const day = String(d.d).padStart(2, '0');
-      return `${y}-${m}-${day}`;
+      return toIsoDate(y, d.m, d.d);
     } catch (_) {
       return '';
     }
@@ -56,9 +57,19 @@ export function normalizeDate(val: any): string {
       let year = parseInt(textMatch[3], 10);
       if (year < 100) year += 2000;
       const mon = monthNames[monStr];
-      if (mon && day >= 1 && day <= 31) {
-        return `${year}-${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (mon) {
+        return toIsoDate(year, mon, day);
       }
+    }
+
+    // The CRM's primary export format uses Indian day-first numeric dates (DD/MM/YYYY).
+    const dayFirstMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (dayFirstMatch) {
+      const day = parseInt(dayFirstMatch[1], 10);
+      const month = parseInt(dayFirstMatch[2], 10);
+      let year = parseInt(dayFirstMatch[3], 10);
+      if (year < 100) year += 2000;
+      return toIsoDate(year, month, day);
     }
 
     // Match standard ISO YYYY-MM-DD
@@ -67,16 +78,13 @@ export function normalizeDate(val: any): string {
       const y = parseInt(isoMatch[1], 10);
       const m = parseInt(isoMatch[2], 10);
       const d = parseInt(isoMatch[3], 10);
-      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      return toIsoDate(y, m, d);
     }
 
     // Fallback standard Date parsing
     const parsed = new Date(s);
     if (!isNaN(parsed.getTime())) {
-      const y = parsed.getFullYear();
-      const m = String(parsed.getMonth() + 1).padStart(2, '0');
-      const day = String(parsed.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
+      return toIsoDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
     }
   }
 
@@ -112,14 +120,14 @@ export function normalizePackageName(pkg: string | undefined | null): string {
  * Calculates dynamic membership status based on expiryDate compared to today.
  * NEVER modifies stored expiryDate.
  */
-export function calculateDynamicStatus(expiryDateStr?: string, isHold?: boolean): {
-  status: 'active' | 'expiring_soon' | 'expiring_today' | 'expired' | 'hold';
+export function calculateDynamicStatus(expiryDateStr: string): {
+  status: 'active' | 'expiring_soon' | 'expiring_today' | 'expired';
   label: string;
   daysLeft: number;
   badgeClass: string;
 } {
-  if (isHold || !expiryDateStr || expiryDateStr === '—' || expiryDateStr === 'N/A' || expiryDateStr.trim() === '') {
-    return { status: 'hold', label: 'HOLD (NO PLAN)', daysLeft: 0, badgeClass: 'bg-amber-100 text-amber-800 border-amber-300' };
+  if (!expiryDateStr) {
+    return { status: 'expired', label: 'Expired', daysLeft: 0, badgeClass: 'bg-rose-50 text-rose-700 border-rose-200' };
   }
 
   const today = new Date();
@@ -148,41 +156,20 @@ export function calculateDynamicStatus(expiryDateStr?: string, isHold?: boolean)
   return { status: 'active', label: 'Active', daysLeft, badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
 }
 
-function getFlexibleValue(raw: Record<string, any>, candidateKeys: string[]): any {
-  for (const k of candidateKeys) {
-    if (raw[k] !== undefined && raw[k] !== null && String(raw[k]).trim() !== '') {
-      return raw[k];
-    }
-  }
-  const rawKeys = Object.keys(raw);
-  for (const k of candidateKeys) {
-    const targetNorm = k.toLowerCase().replace(/[\s_\-.]/g, '');
-    const matchedKey = rawKeys.find(rk => rk.toLowerCase().replace(/[\s_\-.]/g, '') === targetNorm);
-    if (matchedKey && raw[matchedKey] !== undefined && raw[matchedKey] !== null && String(raw[matchedKey]).trim() !== '') {
-      return raw[matchedKey];
-    }
-  }
-  return '';
-}
-
 /**
  * Zod Schema for Member Row Validation
  */
 export const ImportedMemberRowSchema = z.object({
-  clientId: z.string().trim().min(1, 'ID is required'),
-  name: z.string().trim().min(1, 'Name is required'),
-  phone: z.string().trim().optional().default(''),
+  clientId: z.string().trim().min(1, 'Client ID is required'),
+  name: z.string().trim().min(1, 'Client name is required'),
+  phone: z.string().trim().min(5, 'Valid phone number is required'),
   gender: z.enum(['Male', 'Female', 'Unknown']).default('Unknown'),
-  startDate: z.string().optional().default(() => new Date().toISOString().split('T')[0]),
-  packageName: z.string().trim().optional().default('General Membership'),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid Start Date (YYYY-MM-DD) is required'),
+  packageName: z.string().trim().min(1, 'Package is required'),
   originalPackageName: z.string().optional(),
-  expiryDate: z.string().optional().default(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    return d.toISOString().split('T')[0];
-  }),
-  amountPaid: z.number().min(0).optional().default(0),
-  balanceAmount: z.number().min(0).optional().default(0),
+  expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Valid Expiry Date (YYYY-MM-DD) is required'),
+  amountPaid: z.number().min(0, 'Amount paid must be >= 0'),
+  balanceAmount: z.number().min(0, 'Balance amount must be >= 0'),
   photoUrl: z.string().nullable().optional(),
 });
 
@@ -206,41 +193,23 @@ export interface ParsedImportRow {
   isValid: boolean;
   dynamicStatus: ReturnType<typeof calculateDynamicStatus>;
   rawRow: Record<string, any>;
-  isMinimalTwoColumn?: boolean;
 }
 
 /**
  * Parses and validates an Excel row into a normalized ParsedImportRow.
- * Fully supports minimal 2-column sheets (ID + Name only) as well as rich 10-column sheets.
  */
 export function parseAndValidateMemberRow(raw: Record<string, any>, rowNumber: number): ParsedImportRow | null {
-  const rawClientId = getFlexibleValue(raw, [
-    'Client ID', 'clientId', 'ClientID', 'client_id',
-    'Employee ID', 'employeeId', 'EmployeeID', 'employee_id',
-    'Emp ID', 'empId', 'Biometric ID', 'biometricId', 'biometric_id',
-    'User ID', 'userId', 'user_id', 'ID', 'id', 'Id',
-    'No', 'No.', 'S.No', 'Sr. No', 'Member ID', 'memberId', 'member_id'
-  ]);
-
-  const rawName = getFlexibleValue(raw, [
-    'Client name', 'ClientName', 'client_name', 'name', 'Name',
-    'Member Name', 'memberName', 'MemberName', 'member_name',
-    'Employee Name', 'employeeName', 'User Name', 'userName',
-    'Full Name', 'fullName', 'member', 'Person Name', 'personName'
-  ]);
-
-  const rawPhone = getFlexibleValue(raw, [
-    'Number', 'number', 'phone', 'Phone', 'mobile', 'Mobile',
-    'Contact', 'contact', 'cell', 'Cell', 'Telephone'
-  ]);
-
-  const rawGender = getFlexibleValue(raw, ['Gender', 'gender', 'Sex', 'sex']);
-  const rawStartDate = getFlexibleValue(raw, ['Start Date', 'startDate', 'Registration', 'joinDate', 'Join Date', 'DOJ', 'Date of Joining']);
-  const rawPackage = getFlexibleValue(raw, ['Package', 'package', 'plan', 'Plan', 'Membership', 'membership', 'Package Name']);
-  const rawExpiryDate = getFlexibleValue(raw, ['Expiry Date', 'expiryDate', 'Expiration', 'Expiry', 'End Date', 'endDate', 'validTill']);
-  const rawAmount = getFlexibleValue(raw, ['Amount', 'amount', 'paid', 'Paid', 'AmountPaid', 'Fee', 'fee', 'Total']);
-  const rawBalance = getFlexibleValue(raw, ['Balance', 'balance', 'BalanceAmount', 'Due', 'due', 'Pending']);
-  const rawPhoto = getFlexibleValue(raw, ['Photo', 'photo', 'photoUrl', 'avatar', 'avatarUrl', 'Image', 'image']);
+  // Check if row is completely blank
+  const rawClientId = raw['Client ID'] ?? raw['clientId'] ?? raw['id'] ?? raw['ClientID'] ?? '';
+  const rawName = raw['Client name'] ?? raw['name'] ?? raw['ClientName'] ?? raw['member'] ?? '';
+  const rawPhone = raw['Number'] ?? raw['phone'] ?? raw['mobile'] ?? raw['Phone'] ?? '';
+  const rawGender = raw['Gender'] ?? raw['gender'] ?? raw['Sex'] ?? '';
+  const rawStartDate = raw['Start Date'] ?? raw['startDate'] ?? raw['Registration'] ?? raw['joinDate'] ?? '';
+  const rawPackage = raw['Package'] ?? raw['package'] ?? raw['plan'] ?? '';
+  const rawExpiryDate = raw['Expiry Date'] ?? raw['expiryDate'] ?? raw['Expiration'] ?? '';
+  const rawAmount = raw['Amount'] ?? raw['amount'] ?? raw['paid'] ?? raw['AmountPaid'] ?? '';
+  const rawBalance = raw['Balance'] ?? raw['balance'] ?? raw['BalanceAmount'] ?? '';
+  const rawPhoto = raw['Photo'] ?? raw['photo'] ?? raw['photoUrl'] ?? raw['avatar'] ?? '';
 
   const isEmpty = (
     String(rawClientId).trim() === '' &&
@@ -266,18 +235,19 @@ export function parseAndValidateMemberRow(raw: Record<string, any>, rowNumber: n
   if (gStr === 'male' || gStr === 'm') gender = 'Male';
   else if (gStr === 'female' || gStr === 'f') gender = 'Female';
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const isMinimalTwoColumn = !rawPhone && !rawPackage && !rawStartDate && !rawExpiryDate;
-  const isHold = isMinimalTwoColumn || (!rawPackage && !rawExpiryDate);
+  const startDate = normalizeDate(rawStartDate);
+  const expiryDate = normalizeDate(rawExpiryDate);
+  const originalPackageName = String(rawPackage).trim();
+  const packageName = normalizePackageName(rawPackage);
 
-  const startDate = isHold ? '' : (normalizeDate(rawStartDate) || todayStr);
-  const expiryDate = isHold ? '' : normalizeDate(rawExpiryDate);
-
-  const originalPackageName = isHold ? '' : String(rawPackage || '').trim();
-  const packageName = isHold ? '' : normalizePackageName(rawPackage);
-
-  const amountPaid = isHold ? 0 : (typeof rawAmount === 'number' ? rawAmount : (parseFloat(String(rawAmount).replace(/[^0-9.]/g, '')) || 0));
-  const balanceAmount = isHold ? 0 : (typeof rawBalance === 'number' ? rawBalance : (parseFloat(String(rawBalance).replace(/[^0-9.]/g, '')) || 0));
+  const parseAmount = (value: any): number => {
+    if (typeof value === 'number') return value;
+    const cleaned = String(value ?? '').trim().replace(/[₹,\s]/g, '');
+    if (!cleaned) return 0;
+    return /^-?\d+(\.\d{1,2})?$/.test(cleaned) ? Number(cleaned) : Number.NaN;
+  };
+  const amountPaid = parseAmount(rawAmount);
+  const balanceAmount = parseAmount(rawBalance);
   
   const photoTrimmed = String(rawPhoto).trim();
   const photoUrl = photoTrimmed && (photoTrimmed.startsWith('http://') || photoTrimmed.startsWith('https://')) ? photoTrimmed : null;
@@ -285,22 +255,34 @@ export function parseAndValidateMemberRow(raw: Record<string, any>, rowNumber: n
   const warnings: string[] = [];
   const errors: string[] = [];
 
-  // Validation Rules: Strictly require ID and Name
-  if (!clientId) errors.push('ID (Client/Employee/Biometric ID) is required');
-  if (!name) errors.push('Member Name is required');
-  if (amountPaid < 0) errors.push('Amount paid must be >= 0');
-  if (balanceAmount < 0) errors.push('Balance amount must be >= 0');
+  // Validation Rules
+  if (!clientId) errors.push('Client ID is required');
+  if (!name) errors.push('Client Name is required');
+  if (!phone || phone.replace(/\D/g, '').length < 5) errors.push('Phone Number must contain at least 5 digits');
+  if (!packageName) errors.push('Package Name is required');
+  if (!startDate) errors.push('Invalid Start Date format');
+  if (!expiryDate) errors.push('Invalid Expiry Date format');
+  if (!Number.isFinite(amountPaid) || amountPaid < 0) errors.push('Amount paid must be a valid number >= 0');
+  if (!Number.isFinite(balanceAmount) || balanceAmount < 0) errors.push('Balance amount must be a valid number >= 0');
 
   // Source Data Warnings (Preserve values, flag for inspection)
   if (balanceAmount > amountPaid && amountPaid > 0) {
     warnings.push(`⚠️ Source data warning: Balance (₹${balanceAmount.toLocaleString('en-IN')}) is greater than Amount Paid (₹${amountPaid.toLocaleString('en-IN')})`);
   }
 
+  if (!photoUrl) {
+    warnings.push('No photo URL supplied; the member profile will use its default avatar.');
+  }
+
+  if (/^\d+(?:\.\d+)?$/.test(originalPackageName)) {
+    warnings.push(`Package value "${originalPackageName}" looks numeric; it will be preserved as supplied for review.`);
+  }
+
   if (startDate && expiryDate && expiryDate < startDate) {
     warnings.push(`⚠️ Expiry date (${expiryDate}) is before start date (${startDate})`);
   }
 
-  const dynamicStatus = calculateDynamicStatus(expiryDate, isHold);
+  const dynamicStatus = calculateDynamicStatus(expiryDate);
 
   return {
     rowNumber,
@@ -319,7 +301,6 @@ export function parseAndValidateMemberRow(raw: Record<string, any>, rowNumber: n
     errors,
     isValid: errors.length === 0,
     dynamicStatus,
-    rawRow: raw,
-    isMinimalTwoColumn
+    rawRow: raw
   };
 }

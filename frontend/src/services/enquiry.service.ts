@@ -28,6 +28,7 @@ export interface EnquiryItem {
   address?: string;
   nextFollowUp?: string;
   nextFollowUpDate?: string;
+  enquiryDate?: string;
   followUpTime?: string;
   trialDate?: string;
   status: 'Pending' | 'Closed' | 'Contacted' | 'Trial Scheduled' | 'Converted' | 'Lost' | string;
@@ -42,6 +43,24 @@ export interface EnquiryItem {
   updatedAt?: string;
 }
 
+export const getEnquirySortTime = (e: any): number => {
+  if (e?.createdAt) {
+    const t = typeof e.createdAt === 'object' && e.createdAt.seconds
+      ? e.createdAt.seconds * 1000
+      : new Date(e.createdAt).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (e?.enquiryDate) {
+    const t = new Date(e.enquiryDate).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (e?.date) {
+    const t = new Date(e.date).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  return 0; // safe fallback for historical records without timestamps
+};
+
 export const enquiryService = {
   // Real-time listener with deduplication and API fallback
   subscribe: (onData: (items: EnquiryItem[]) => void, onError?: (err: Error) => void) => {
@@ -55,6 +74,7 @@ export const enquiryService = {
             const rawStatus = (d.status || 'Pending').trim().toLowerCase();
             const normStatus = rawStatus === 'close' || rawStatus === 'closed' ? 'Closed' : rawStatus === 'converted' ? 'Converted' : 'Pending';
             const cleanDate = (d.nextFollowUpDate || d.nextFollowUp || d.followupDate || '').split('T')[0];
+            const cleanEnqDate = d.enquiryDate || (d.createdAt ? d.createdAt.split('T')[0] : '');
 
             return {
               ...d,
@@ -66,9 +86,11 @@ export const enquiryService = {
               interestedPlan: d.interestedPlan || d.duration || '1 month',
               nextFollowUpDate: cleanDate,
               nextFollowUp: cleanDate,
+              enquiryDate: cleanEnqDate,
               history: Array.isArray(d.history) ? d.history : []
             };
           });
+          list.sort((a, b) => getEnquirySortTime(b) - getEnquirySortTime(a));
           onData(list);
         }
       })
@@ -86,6 +108,7 @@ export const enquiryService = {
           const rawStatus = (d.status || 'Pending').trim().toLowerCase();
           const normStatus = rawStatus === 'close' || rawStatus === 'closed' ? 'Closed' : rawStatus === 'converted' ? 'Converted' : 'Pending';
           const cleanDate = (d.nextFollowUpDate || d.nextFollowUp || d.followupDate || '').split('T')[0];
+          const cleanEnqDate = d.enquiryDate || (d.createdAt ? d.createdAt.split('T')[0] : '');
 
           const item: EnquiryItem = {
             id: docSnap.id,
@@ -99,7 +122,8 @@ export const enquiryService = {
             address: d.address || '',
             nextFollowUp: cleanDate,
             nextFollowUpDate: cleanDate,
-            followUpTime: d.followUpTime || d.followupTime || '11:00',
+            enquiryDate: cleanEnqDate,
+            followUpTime: d.followUpTime || d.followupTime || '05:00',
             trialDate: d.trialDate || '',
             status: normStatus,
             assignedTo: d.assignedTo || d.attendedBy || 'Reception Desk',
@@ -107,16 +131,17 @@ export const enquiryService = {
             source: d.source || 'Walk-in',
             interestedPlan: d.interestedPlan || d.duration || d.inquiryFor || '1 month',
             duration: d.duration || d.interestedPlan || '1 month',
-            remarks: d.remarks || '',
+            remarks: d.remarks || d.remark || '',
             history: Array.isArray(d.history) ? d.history : [],
-            createdAt: d.createdAt || new Date().toISOString(),
-            updatedAt: d.updatedAt || d.createdAt || new Date().toISOString()
+            createdAt: d.createdAt || '',
+            updatedAt: d.updatedAt || d.createdAt || ''
           };
 
           itemMap.set(docSnap.id, item);
         });
 
         const list = Array.from(itemMap.values());
+        list.sort((a, b) => getEnquirySortTime(b) - getEnquirySortTime(a));
         onData(list);
       },
       (err) => {

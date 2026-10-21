@@ -284,9 +284,9 @@ export default function HikvisionPhotoSyncModal({
                 <span className="text-[9px] font-black uppercase text-slate-400 block truncate">CRM Members</span>
                 <span className="text-lg font-black text-white font-mono">{counts.crmMembersFound}</span>
               </div>
-              <div className="bg-blue-500/10 p-3 rounded-2xl border border-blue-500/20 text-center">
-                <span className="text-[9px] font-black uppercase text-blue-400 block truncate">ID Matched</span>
-                <span className="text-lg font-black text-blue-400 font-mono">{counts.idMatched}</span>
+              <div className="bg-orange-500/10 p-3 rounded-2xl border border-orange-500/20 text-center">
+                <span className="text-[9px] font-black uppercase text-orange-400 block truncate">ID Matched</span>
+                <span className="text-lg font-black text-orange-400 font-mono">{counts.idMatched}</span>
               </div>
               <div className="bg-amber-500/10 p-3 rounded-2xl border border-amber-500/20 text-center">
                 <span className="text-[9px] font-black uppercase text-amber-400 block truncate">Photos Available</span>
@@ -408,7 +408,7 @@ export default function HikvisionPhotoSyncModal({
                 <button
                   onClick={() => setFilterTab('exists')}
                   className={`px-3 py-1.5 rounded-lg font-bold transition-all border-none cursor-pointer ${
-                    filterTab === 'exists' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white bg-transparent'
+                    filterTab === 'exists' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white bg-transparent'
                   }`}
                 >
                   CRM Photo
@@ -492,7 +492,7 @@ export default function HikvisionPhotoSyncModal({
 
                             {/* Biometric ID */}
                             <td className="py-2.5 px-3">
-                              <span className="px-2 py-1 rounded-md bg-blue-500/10 text-blue-300 font-mono font-bold text-xs border border-blue-500/20">
+                              <span className="px-2 py-1 rounded-md bg-orange-500/10 text-orange-300 font-mono font-bold text-xs border border-orange-500/20">
                                 {r.biometricId}
                               </span>
                             </td>
@@ -549,7 +549,7 @@ export default function HikvisionPhotoSyncModal({
                                 </span>
                               )}
                               {r.syncStatus === 'ALREADY_EXISTS' && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-orange-500/20 text-orange-400 border border-orange-500/30">
                                   ✓ ALREADY EXISTS
                                 </span>
                               )}
@@ -583,7 +583,7 @@ export default function HikvisionPhotoSyncModal({
                                     <button
                                       type="button"
                                       onClick={() => setConflictMember(r)}
-                                      className="px-2 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-[10px] font-bold transition-all border border-blue-500/30 cursor-pointer"
+                                      className="px-2 py-1 rounded-lg bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 text-[10px] font-bold transition-all border border-orange-500/30 cursor-pointer"
                                     >
                                       Compare
                                     </button>
@@ -631,7 +631,7 @@ export default function HikvisionPhotoSyncModal({
           {conflictMember && (
             <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
               <div className="w-full max-w-md bg-slate-900 border border-white/15 rounded-3xl p-6 space-y-5 shadow-2xl text-center">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center mx-auto">
+                <div className="w-12 h-12 rounded-2xl bg-orange-500/20 text-orange-400 flex items-center justify-center mx-auto">
                   <Camera size={24} />
                 </div>
                 <div>
@@ -652,7 +652,7 @@ export default function HikvisionPhotoSyncModal({
                         className="w-full h-full object-cover" 
                       />
                     </div>
-                    <span className="text-[9px] font-bold text-blue-300 block">Source: Manual Upload</span>
+                    <span className="text-[9px] font-bold text-orange-300 block">Source: Manual Upload</span>
                   </div>
 
                   {/* Hikvision Photo */}

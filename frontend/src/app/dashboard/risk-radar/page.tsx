@@ -437,10 +437,10 @@ export default function RiskRadarPage() {
             Clear Heatmap Filters
           </button>
 
-          <div className="p-3 bg-indigo-950/45 border border-indigo-500/20 rounded-2xl text-[10px] leading-relaxed text-left text-white flex gap-2">
-            <Info size={14} className="text-indigo-400 shrink-0 mt-0.5" />
+          <div className="p-3 bg-orange-950/45 border border-orange-500/20 rounded-2xl text-[10px] leading-relaxed text-left text-white flex gap-2">
+            <Info size={14} className="text-orange-400 shrink-0 mt-0.5" />
             <div>
-              <span className="font-black uppercase text-indigo-400 tracking-wider block">Branch Risk Analytics</span>
+              <span className="font-black uppercase text-orange-400 tracking-wider block">Branch Risk Analytics</span>
               <p className="text-[9.5px] mt-0.5 font-bold">Mohali, Punjab Branch is currently sitting at a <span className="text-emerald-400">92%</span> retention rate. Expected churn is estimated at 4 members next week.</p>
             </div>
           </div>
@@ -597,7 +597,7 @@ export default function RiskRadarPage() {
                   <div className="pt-3.5 border-t border-slate-50 flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-widest block leading-none">Suggested Action</span>
-                      <span className="text-[10px] font-extrabold text-indigo-600 block mt-1 leading-none">{m.ai.recAction}</span>
+                      <span className="text-[10px] font-extrabold text-orange-600 block mt-1 leading-none">{m.ai.recAction}</span>
                     </div>
 
                     <div className="flex gap-1">
@@ -619,7 +619,7 @@ export default function RiskRadarPage() {
                       </button>
                       <button
                         onClick={() => handleRetentionAction(m, 'Send Push Notification')}
-                        className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[9.5px] font-black uppercase tracking-wider cursor-pointer border-none"
+                        className="px-2.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-[9.5px] font-black uppercase tracking-wider cursor-pointer border-none"
                         title="Simulate Push Notification Nudge"
                       >
                         <Bell size={12} className="inline mr-1" /> Push
@@ -658,8 +658,8 @@ export default function RiskRadarPage() {
           {/* AI Insights Sidebar widget */}
           <div className="bg-slate-900 text-white border border-slate-800 p-5 rounded-[32px] shadow-sm space-y-4 text-left">
             <div className="flex justify-between items-center">
-              <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400 block">Fitness Intelligence</span>
-              <Cpu size={14} className="text-indigo-400 shrink-0" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-orange-400 block">Fitness Intelligence</span>
+              <Cpu size={14} className="text-orange-400 shrink-0" />
             </div>
             
             <h3 className="text-xs font-black uppercase tracking-wider font-display text-white">AI Retention Insights</h3>
@@ -675,7 +675,7 @@ export default function RiskRadarPage() {
                     className="space-y-3"
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-black text-[9px] flex items-center justify-center">
+                      <div className="w-6 h-6 rounded-lg bg-orange-600 text-white font-black text-[9px] flex items-center justify-center">
                         {getInitials(match.name)}
                       </div>
                       <span className="font-bold text-white text-[11px]">{match.name}</span>
@@ -690,7 +690,7 @@ export default function RiskRadarPage() {
                     </p>
                     <button 
                       onClick={() => setAiInsightMemberId(null)}
-                      className="text-[9.5px] text-indigo-400 font-bold hover:underline bg-transparent border-none cursor-pointer"
+                      className="text-[9.5px] text-orange-400 font-bold hover:underline bg-transparent border-none cursor-pointer"
                     >
                       ← Back to General Summary
                     </button>
@@ -724,7 +724,7 @@ export default function RiskRadarPage() {
             <div>
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">CRM Audit Log</span>
               <h3 className="text-xs font-black text-slate-800 uppercase mt-0.5 font-display flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#0052FF] animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-[#EA580C] animate-pulse" />
                 Retention Actions Logs
               </h3>
             </div>

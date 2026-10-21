@@ -45,9 +45,9 @@ export default function KPIInspectorModal({
           className="relative bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden text-left z-10 text-white"
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-6 py-4 flex items-center justify-between border-b border-slate-800">
+          <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-slate-900 px-6 py-4 flex items-center justify-between border-b border-slate-800">
             <div className="flex items-center gap-2">
-              <Database size={18} className="text-indigo-400" />
+              <Database size={18} className="text-orange-400" />
               <h3 className="font-black text-sm uppercase tracking-wider text-white">
                 KPI Audit Inspector: <span className="text-amber-400">{kpiTitle}</span>
               </h3>
@@ -65,7 +65,7 @@ export default function KPIInspectorModal({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-800 text-xs font-semibold">
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Source Collection</span>
-                <span className="text-indigo-300 font-mono font-bold flex items-center gap-1 mt-0.5">
+                <span className="text-orange-300 font-mono font-bold flex items-center gap-1 mt-0.5">
                   <Layers size={12} /> {sourceCollection}
                 </span>
               </div>

@@ -144,22 +144,22 @@ export default function PresentMembersModal({ isOpen, onClose, attendanceLogs, m
           className="bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 max-w-4xl w-full relative space-y-4 text-slate-900 z-10 max-h-[90vh] flex flex-col"
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-stone-100 pb-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center border border-[#FED7AA] shadow-xs">
+              <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center border border-teal-100">
                 <Users size={24} />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-black text-slate-900 text-xl tracking-tight">Today's Present Members Roster</h3>
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] text-xs font-black">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 text-xs font-black">
                     {todayPresentList.length} Present Today
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-2">
                   <span>📅 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}</span>
                   <span>•</span>
-                  <span className="text-[#EA580C] font-bold">Real-time Biometric Check-in Log</span>
+                  <span className="text-teal-600 font-bold">Real-time Biometric Check-in Log</span>
                 </p>
               </div>
             </div>
@@ -167,13 +167,13 @@ export default function PresentMembersModal({ isOpen, onClose, attendanceLogs, m
             <div className="flex items-center gap-2">
               <button
                 onClick={handleExportCSV}
-                className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all border-none cursor-pointer"
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all border-none cursor-pointer"
               >
                 <Download size={14} /> Export CSV
               </button>
               <button
                 onClick={onClose}
-                className="w-9 h-9 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all border-none cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-all border-none cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -181,7 +181,7 @@ export default function PresentMembersModal({ isOpen, onClose, attendanceLogs, m
           </div>
 
           {/* Search & Filter Controls */}
-          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-stone-50 p-3 rounded-2xl border border-stone-100">
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50 p-3 rounded-2xl border border-slate-100">
             <div className="relative flex-1 w-full">
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -189,7 +189,7 @@ export default function PresentMembersModal({ isOpen, onClose, attendanceLogs, m
                 placeholder="Search present member by Name, Phone, Ref Code, or Bio ID..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="w-full bg-white border border-stone-200 rounded-xl pl-10 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 outline-none focus:border-[#F97316] transition-all"
+                className="w-full bg-white border border-slate-200 rounded-xl pl-10 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 outline-none focus:border-teal-500 transition-all"
               />
             </div>
 
@@ -242,7 +242,7 @@ export default function PresentMembersModal({ isOpen, onClose, attendanceLogs, m
 
                       <div className="flex items-center gap-3 text-[11px] text-slate-500 font-semibold mt-1 flex-wrap">
                         {item.biometricId && (
-                          <span className="flex items-center gap-1 text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-indigo-100">
+                          <span className="flex items-center gap-1 text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-orange-100">
                             <Fingerprint size={12} /> Bio #{item.biometricId}
                           </span>
                         )}

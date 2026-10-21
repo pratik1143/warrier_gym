@@ -56,7 +56,9 @@ export default function EmployeePopupManager() {
           }
         }
       });
-    }, () => { /* silenced */ });
+    }, (err) => {
+      console.warn("Firestore employeeNotifications query error:", err);
+    });
 
     return () => unsubscribe();
   }, []);
@@ -84,11 +86,11 @@ export default function EmployeePopupManager() {
       borderColor = 'border-emerald-200';
       badgeColor = 'bg-emerald-50 text-emerald-600';
     } else if (role.includes('reception')) {
-      themeColor = 'from-blue-600 to-cyan-500'; // Blue
-      borderColor = 'border-[#FED7AA]';
-      badgeColor = 'bg-[#FFF7ED] text-[#EA580C]';
+      themeColor = 'from-orange-600 to-cyan-500'; // Blue
+      borderColor = 'border-orange-200';
+      badgeColor = 'bg-orange-50 text-orange-600';
     } else if (role.includes('manager')) {
-      themeColor = 'from-purple-600 to-indigo-500'; // Purple
+      themeColor = 'from-purple-600 to-amber-500'; // Purple
       borderColor = 'border-purple-200';
       badgeColor = 'bg-purple-50 text-purple-600';
     } else if (role.includes('cleaner') || role.includes('security')) {

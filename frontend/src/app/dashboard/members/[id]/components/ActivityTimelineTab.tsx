@@ -205,7 +205,7 @@ export default function ActivityTimelineTab({ member }: { member: any }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-6">
         <div>
           <div className="flex items-center gap-2">
-            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+            <div className="p-2.5 bg-orange-50 text-orange-600 rounded-2xl">
               <Activity size={22} />
             </div>
             <h2 className="text-xl font-black text-slate-900 tracking-tight">Activity Timeline &amp; Audit Logs</h2>
@@ -268,7 +268,7 @@ export default function ActivityTimelineTab({ member }: { member: any }) {
                         </span>
                       )}
                       {evt.invoice && (
-                        <span className="font-mono text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                        <span className="font-mono text-[10px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md">
                           {evt.invoice}
                         </span>
                       )}

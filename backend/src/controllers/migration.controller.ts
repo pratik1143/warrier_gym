@@ -3,6 +3,7 @@ import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
 import { db, admin, isFirebaseInitialized, mockMembers, mockPayments, saveMockDb } from '../firebase';
+import { getNextAvailableBiometricId } from '../services/biometricId.service';
 
 /**
  * Generate unique fingerprint hash for idempotency checking.
@@ -430,31 +431,18 @@ export function validateMemberRecord(record: any, rowIndex: number): {
  */
 export const nextBiometricId = async (req: Request, res: Response) => {
   try {
-    const members = await db.getMembers();
-    let maxId = 0;
-
-    members.forEach((m: any) => {
-      if (m.biometricId) {
-        const parsed = parseInt(m.biometricId, 10);
-        if (!isNaN(parsed) && parsed > maxId) maxId = parsed;
-      }
+    const candidate = await getNextAvailableBiometricId();
+    const nextIdStr = String(candidate);
+    res.json({
+      success: true,
+      nextId: candidate,
+      nextBiometricId: nextIdStr,
+      nextMemberId: nextIdStr,
+      maxDeviceId: 65535
     });
-
-    if (isFirebaseInitialized && admin) {
-      const snap = await admin.firestore().collection('device_users').get();
-      snap.docs.forEach((doc: any) => {
-        const data = doc.data();
-        if (data.userId) {
-          const parsed = parseInt(data.userId, 10);
-          if (!isNaN(parsed) && parsed > maxId) maxId = parsed;
-        }
-      });
-    }
-
-    const nextId = maxId + 1;
-    res.json({ nextId });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    const exhausted = String(error?.message || '').includes('All EasyBio biometric IDs');
+    res.status(exhausted ? 409 : 503).json({ error: error.message });
   }
 };
 
@@ -575,9 +563,9 @@ export const dryRunMigration = async (req: Request, res: Response) => {
         return;
       }
 
-      if (!clientId || !name) {
+      if (!clientId || !name || !phone) {
         errorsCount++;
-        errorsList.push(`Row #${idx + 1}: Missing critical identifiers (ID: ${clientId || 'Missing'}, Name: ${name || 'Missing'})`);
+        errorsList.push(`Row #${idx + 1}: Missing critical identifiers (Client ID: ${clientId || 'Missing'}, Name: ${name || 'Missing'}, Phone: ${phone || 'Missing'})`);
         return;
       }
 
@@ -669,6 +657,25 @@ export const migrateMembers = async (req: Request, res: Response) => {
     const existingMembers = await db.getMembers();
     const existingDocIds = new Set(existingMembers.map((m: any) => String(m.id || m.uid || '').trim()));
     const existingClientIds = new Set(existingMembers.map((m: any) => String(m.clientId || '').trim()));
+    const seenPayloadClientIds = new Set<string>();
+    for (const [idx, record] of payload.entries()) {
+      const clientId = String(record?.clientId || record?.['Client ID'] || record?.id || '').trim();
+      if (!clientId) continue;
+      if (clientId.includes('/')) {
+        return res.status(400).json({ error: `Row #${idx + 1}: Client ID cannot contain a slash.` });
+      }
+      if (seenPayloadClientIds.has(clientId)) {
+        return res.status(400).json({ error: `Duplicate Client ID "${clientId}" in this batch. Remove or correct the duplicate row before importing.` });
+      }
+      seenPayloadClientIds.add(clientId);
+    }
+    const existingByClientId = new Map<string, any>();
+    existingMembers.forEach((member: any) => {
+      const clientId = String(member.clientId || '').trim();
+      const documentId = String(member.id || member.uid || '').trim();
+      if (clientId) existingByClientId.set(clientId, member);
+      if (documentId.startsWith('member_')) existingByClientId.set(documentId.slice('member_'.length), member);
+    });
 
     const firestore = isFirebaseInitialized && admin ? admin.firestore() : null;
     const auth = isFirebaseInitialized && admin ? admin.auth() : null;
@@ -716,8 +723,8 @@ export const migrateMembers = async (req: Request, res: Response) => {
         return;
       }
 
-      if (!clientId || !name) {
-        errors.push(`Row #${idx + 1}: Missing Client ID or Name`);
+      if (!clientId || !name || !phone) {
+        errors.push(`Row #${idx + 1}: Missing Client ID, Name, or Phone`);
         return;
       }
 
@@ -742,85 +749,14 @@ export const migrateMembers = async (req: Request, res: Response) => {
         warnings.push(`Member ${name} (ID ${clientId}): Expiry date (${eNorm}) is before Start date (${sNorm})`);
       }
 
-      const isHoldMember = Boolean(
-        record.isHold ||
-        record.isMinimalTwoColumn ||
-        String(record.status || '').toUpperCase() === 'HOLD' ||
-        (!record.originalPackageName && !record.Package && !record.plan && (!record.packageName || record.packageName === 'General Membership')) ||
-        (!record.expiryDate && !record['Expiry Date'] && !record.startDate && !record['Start Date'] && amountPaid === 0 && balanceAmount === 0)
-      );
-
-      const memberId = `TWG-${clientId}`;
-
-      if (isHoldMember) {
-        const memberData = {
-          uid: docId,
-          id: docId,
-          clientId,
-          memberId,
-          name,
-          phone: phone || '',
-          email: record.email || (phone ? `${phone}@thewarriorgym.in` : `member_${clientId}@thewarriorgym.in`),
-          gender,
-          startDate: null,
-          joinDate: new Date().toISOString().split('T')[0],
-          createdAt: new Date().toISOString(),
-          expiryDate: null,
-          membershipStartDate: null,
-          membershipExpiryDate: null,
-          packageName: null,
-          originalPackageName: null,
-          plan: null,
-          membershipPlan: null,
-          amountPaid: 0,
-          balanceAmount: 0,
-          balance: 0,
-          totalBilled: 0,
-          price: 0,
-          amount: 0,
-          totalPackageAmount: 0,
-          paid: 0,
-          totalPaid: 0,
-          outstandingBalance: 0,
-          pendingBalance: 0,
-          paymentStatus: 'NOT_BILLED',
-          photoUrl: photoUrl || null,
-          avatarUrl: photoUrl || null,
-          avatar: photoUrl || null,
-          photo: photoUrl || null,
-          profilePhotoUrl: photoUrl || null,
-          status: 'HOLD',
-          membershipStatus: 'HOLD',
-          activationStatus: 'PENDING_ACTIVATION',
-          smartStatus: 'Hold',
-          daysLeft: null,
-          branch: record.branch || 'Mohali, Punjab',
-          trainer: record.trainer || '',
-          biometricId: clientId,
-          isImportedMember: true,
-          migrationSessionId,
-          billingHistory: [],
-          membershipHistory: [],
-          payments: [],
-          updatedAt: new Date().toISOString()
-        };
-
-        membersToSave.push(memberData);
-        importedList.push(memberData);
-        return; // Pure HOLD member - DO NOT create fake invoice!
-      }
-
-      // Dynamic membership status calculation for members with real packages
+      // Dynamic membership status calculation
       const currentSmart = calculateSmartStatus(eNorm);
       if (currentSmart.status === 'active') activeCount++;
       else expiredCount++;
 
       const totalBilled = amountPaid + balanceAmount;
+      const memberId = `AZ-${clientId}`;
       const invNum = `INV-LEG-${clientId}`;
-
-      const computedPayStatus = totalBilled === 0
-        ? 'NOT_BILLED'
-        : (amountPaid >= totalBilled ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'));
 
       const invoiceObj = {
         id: `inv_${docId}`,
@@ -829,7 +765,7 @@ export const migrateMembers = async (req: Request, res: Response) => {
         memberId: docId,
         clientId,
         memberName: name,
-        memberPhone: phone || 'N/A',
+        memberPhone: phone,
         invoiceType: 'MEMBERSHIP',
         billingType: 'MEMBERSHIP',
         package: normalizedPkg,
@@ -842,8 +778,8 @@ export const migrateMembers = async (req: Request, res: Response) => {
         balanceAmount,
         outstandingAmount: balanceAmount,
         pendingAmount: balanceAmount,
-        paymentStatus: computedPayStatus,
-        status: computedPayStatus,
+        paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
+        status: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
         paymentMethod: 'Imported',
         method: 'Imported',
         transactionType: 'historical_import',
@@ -860,14 +796,16 @@ export const migrateMembers = async (req: Request, res: Response) => {
         createdAt: new Date().toISOString()
       };
 
+      const existingMember = existingByClientId.get(clientId);
+      const priorBillingHistory = Array.isArray(existingMember?.billingHistory) ? existingMember.billingHistory : [];
       const memberData = {
         uid: docId,
         id: docId,
         clientId,
         memberId,
         name,
-        phone: phone || '',
-        email: record.email || (phone ? `${phone}@thewarriorgym.in` : `member_${clientId}@thewarriorgym.in`),
+        phone,
+        email: record.email || `${phone}@thewarriorgym.in`,
         gender,
         startDate: sNorm,
         joinDate: sNorm,
@@ -885,7 +823,7 @@ export const migrateMembers = async (req: Request, res: Response) => {
         paid: amountPaid,
         totalPaid: amountPaid,
         outstandingBalance: balanceAmount,
-        paymentStatus: computedPayStatus,
+        paymentStatus: balanceAmount === 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'),
         photoUrl: photoUrl || null,
         avatarUrl: photoUrl || null,
         avatar: photoUrl || null,
@@ -896,10 +834,13 @@ export const migrateMembers = async (req: Request, res: Response) => {
         daysLeft: currentSmart.daysLeft,
         branch: record.branch || 'Mohali, Punjab',
         trainer: record.trainer || '',
-        biometricId: clientId,
+        // Device IDs are intentionally left unmapped during migration. They must be
+        // assigned from the live scanner by an operator after the member records load.
+        biometricId: null,
+        deviceUserId: null,
         isImportedMember: true,
         migrationSessionId,
-        billingHistory: [invoiceObj],
+        billingHistory: [...priorBillingHistory.filter((invoice: any) => invoice?.id !== invoiceObj.id), invoiceObj],
         updatedAt: new Date().toISOString()
       };
 
@@ -2083,5 +2024,3 @@ export const sanitizeHoldMembers = async (req?: Request, res?: Response) => {
     throw error;
   }
 };
-
-

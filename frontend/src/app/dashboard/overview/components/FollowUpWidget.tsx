@@ -113,7 +113,7 @@ export default function FollowUpWidget() {
               {item.status !== 'Completed' && (
                 <button 
                   onClick={() => markCompleted(item.id)}
-                  className="w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-600 flex items-center justify-center transition-colors"
+                  className="w-6 h-6 rounded bg-slate-100 text-slate-600 hover:bg-orange-100 hover:text-orange-600 flex items-center justify-center transition-colors"
                 >
                   <CheckCircle size={10} />
                 </button>
@@ -157,8 +157,8 @@ export default function FollowUpWidget() {
         <KanbanColumn 
           title="Upcoming Today" 
           items={grouped.upcomingToday} 
-          color="#3b82f6" 
-          countColor="bg-[#FFEDD5] text-[#EA580C]" 
+          color="#F97316" 
+          countColor="bg-orange-100 text-orange-600" 
         />
         <KanbanColumn 
           title="Completed" 

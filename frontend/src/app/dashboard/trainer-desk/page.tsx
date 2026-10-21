@@ -127,7 +127,7 @@ export default function TrainerDeskPage() {
       if (auth.currentUser) return await auth.currentUser.getIdToken();
     } catch (e) { /* ignore */ }
     try {
-      const userJson = localStorage.getItem('warrior_gym_user');
+      const userJson = localStorage.getItem('alpha_zone_user');
       if (userJson) { const u = JSON.parse(userJson); return u.token || ''; }
     } catch (e) { /* ignore */ }
     return '';
@@ -556,11 +556,11 @@ export default function TrainerDeskPage() {
       {activeTrainer && (
         <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4 text-white shadow-lg">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm">
+            <div className="w-11 h-11 rounded-2xl bg-orange-600 text-white flex items-center justify-center font-black text-sm">
               {getInitials(activeTrainer.name)}
             </div>
             <div>
-              <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400">{activeTrainer.specialization}</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider text-orange-400">{activeTrainer.specialization}</span>
               <h3 className="text-sm font-black tracking-wide leading-tight">{activeTrainer.name}</h3>
               <p className="text-[9px] text-slate-400 font-medium mt-0.5">Rating: {activeTrainer.rating || '4.8'} ⭐ · experience: {activeTrainer.experience} years</p>
             </div>
@@ -578,9 +578,9 @@ export default function TrainerDeskPage() {
             <div className="w-px h-6 bg-slate-800" />
             <button
               onClick={() => handleEnrollTrainerFingerprint(activeTrainer)}
-              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border-none transition-all shadow-md active:scale-95 shrink-0"
+              className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border-none transition-all shadow-md active:scale-95 shrink-0"
             >
-              <Fingerprint size={12} className="text-indigo-400 animate-pulse" />
+              <Fingerprint size={12} className="text-orange-400 animate-pulse" />
               <span>Finger ({activeTrainer.biometricId ? `#${activeTrainer.biometricId}` : 'None'})</span>
             </button>
           </div>
@@ -592,7 +592,7 @@ export default function TrainerDeskPage() {
         
         {/* Card 1: Total Members */}
         <div className="p-4 bg-white border border-slate-100 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
             <Users size={20} />
           </div>
           <div>
@@ -614,7 +614,7 @@ export default function TrainerDeskPage() {
 
         {/* Card 3: Today's Attendance */}
         <div className="p-4 bg-white border border-slate-100 rounded-3xl shadow-sm flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
             <Clock size={20} />
           </div>
           <div>
@@ -709,7 +709,7 @@ export default function TrainerDeskPage() {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
-                        isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                        isSelected ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         {initials}
                       </div>
@@ -722,7 +722,7 @@ export default function TrainerDeskPage() {
                         </p>
                       </div>
                     </div>
-                    <ChevronRight size={14} className={isSelected ? 'text-indigo-400' : 'text-slate-300 group-hover:text-slate-500'} />
+                    <ChevronRight size={14} className={isSelected ? 'text-orange-400' : 'text-slate-300 group-hover:text-slate-500'} />
                   </button>
                 );
               })}
@@ -739,7 +739,7 @@ export default function TrainerDeskPage() {
           <div className="bg-white border border-slate-100 rounded-[32px] p-5 shadow-sm h-[320px] flex flex-col justify-between">
             <div className="flex justify-between items-center border-b border-slate-50 pb-2 shrink-0">
               <div className="flex items-center gap-2">
-                <Shield size={16} className="text-indigo-600 animate-pulse" />
+                <Shield size={16} className="text-orange-600 animate-pulse" />
                 <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider font-display">Retention Alerts</h3>
               </div>
               <span className="text-[9px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-black">
@@ -801,9 +801,9 @@ export default function TrainerDeskPage() {
 
               {/* 4. Active Trainer Followups */}
               {activeTrainerFollowups.map(f => (
-                <div key={`f-${f.id}`} className="flex justify-between items-center bg-indigo-50/50 border border-indigo-100/50 p-2.5 rounded-xl">
+                <div key={`f-${f.id}`} className="flex justify-between items-center bg-orange-50/50 border border-orange-100/50 p-2.5 rounded-xl">
                   <div className="min-w-0">
-                    <span className="text-[7.5px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider">Follow Up Task</span>
+                    <span className="text-[7.5px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider">Follow Up Task</span>
                     <div className="text-xs font-black text-slate-800 truncate mt-1">{f.memberName}</div>
                     <div className="text-[8.5px] text-slate-400 font-semibold truncate max-w-[150px]">{f.notes}</div>
                   </div>
@@ -818,7 +818,7 @@ export default function TrainerDeskPage() {
                         }
                       }
                     }}
-                    className="px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-all text-[8px] font-black uppercase tracking-wider border-none cursor-pointer shrink-0"
+                    className="px-2 py-1 rounded-lg bg-orange-600 text-white hover:bg-orange-700 transition-all text-[8px] font-black uppercase tracking-wider border-none cursor-pointer shrink-0"
                   >
                     Done
                   </button>
@@ -840,7 +840,7 @@ export default function TrainerDeskPage() {
               {/* Header selection info */}
               <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black text-xs">
+                  <div className="w-10 h-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center font-black text-xs">
                     {getInitials(selectedClient.name)}
                   </div>
                   <div>
@@ -1028,7 +1028,7 @@ export default function TrainerDeskPage() {
                           <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block">Compliance %</span>
                           <div className="flex items-baseline gap-1.5 mt-2">
                             <span className="text-xl font-black text-slate-900">{clientCompliancePercent}%</span>
-                            <span className="text-[9px] text-[#0052FF] font-bold">Weekly</span>
+                            <span className="text-[9px] text-[#EA580C] font-bold">Weekly</span>
                           </div>
                         </div>
 
@@ -1041,7 +1041,7 @@ export default function TrainerDeskPage() {
                         </div>
 
                         <div className="bg-white border border-slate-100 p-3 rounded-2xl flex flex-col justify-between">
-                          <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-widest block flex items-center gap-1 font-mono">
+                          <span className="text-[8px] font-bold text-orange-500 uppercase tracking-widest block flex items-center gap-1 font-mono">
                             <Sparkles size={9} className="fill-current" />
                             AI Suggestion
                           </span>
@@ -1053,7 +1053,7 @@ export default function TrainerDeskPage() {
                         <button
                           onClick={handleGenerateAIDietPlan}
                           disabled={generatingAI}
-                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border-none shadow-sm"
+                          className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white font-black text-[10px] uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border-none shadow-sm"
                         >
                           <Sparkles size={12} />
                           <span>{generatingAI ? 'AI Running...' : 'Generate AI Diet Plan'}</span>
@@ -1162,7 +1162,7 @@ export default function TrainerDeskPage() {
                           <div key={idx} className={`flex ${isTrainerMsg ? 'justify-end' : 'justify-start'}`}>
                             <div className={`p-2.5 max-w-[80%] rounded-2xl leading-relaxed ${
                               isTrainerMsg 
-                                ? 'bg-indigo-600 text-white rounded-tr-none' 
+                                ? 'bg-orange-600 text-white rounded-tr-none' 
                                 : 'bg-white border border-slate-100 text-slate-800 rounded-tl-none shadow-sm'
                             }`}>
                               {m.text}
@@ -1446,7 +1446,7 @@ export default function TrainerDeskPage() {
               <div className={`absolute inset-0 opacity-20 pointer-events-none transition-all duration-700 ${
                 enrollStatus.status === 'success' ? 'bg-emerald-500' :
                 enrollStatus.status === 'failed' ? 'bg-red-500' :
-                enrollStatus.status === 'scanning' ? 'bg-[#F97316]' : 'bg-amber-500'
+                enrollStatus.status === 'scanning' ? 'bg-orange-500' : 'bg-amber-500'
               } blur-3xl`} />
 
               {/* Close Button */}
@@ -1472,8 +1472,8 @@ export default function TrainerDeskPage() {
                   {/* Outer pulsing ring */}
                   {(enrollStatus.status === 'scanning' || enrollStatus.status === 'ready' || enrollStatus.status === 'connecting') && (
                     <>
-                      <div className="absolute inset-0 rounded-full border-2 border-blue-500/30 animate-ping" />
-                      <div className="absolute inset-2 rounded-full border border-blue-500/20 animate-pulse" />
+                      <div className="absolute inset-0 rounded-full border-2 border-orange-500/30 animate-ping" />
+                      <div className="absolute inset-2 rounded-full border border-orange-500/20 animate-pulse" />
                     </>
                   )}
                   {enrollStatus.status === 'success' && (
@@ -1486,7 +1486,7 @@ export default function TrainerDeskPage() {
                     <circle
                       cx="60" cy="60" r="54"
                       fill="none"
-                      stroke={enrollStatus.status === 'success' ? '#10b981' : enrollStatus.status === 'failed' ? '#ef4444' : '#3b82f6'}
+                      stroke={enrollStatus.status === 'success' ? '#10b981' : enrollStatus.status === 'failed' ? '#ef4444' : '#F97316'}
                       strokeWidth="4"
                       strokeLinecap="round"
                       strokeDasharray={`${2 * Math.PI * 54}`}
@@ -1499,7 +1499,7 @@ export default function TrainerDeskPage() {
                   <div className={`absolute inset-0 flex items-center justify-center rounded-full ${
                     enrollStatus.status === 'success' ? 'bg-emerald-500/20' :
                     enrollStatus.status === 'failed' ? 'bg-red-500/20' :
-                    'bg-blue-500/10'
+                    'bg-orange-500/10'
                   }`}>
                     {enrollStatus.status === 'success' ? (
                       <CheckCheck size={36} className="text-emerald-400" />
@@ -1508,7 +1508,7 @@ export default function TrainerDeskPage() {
                     ) : enrollStatus.status === 'info' ? (
                       <AlertTriangle size={36} className="text-amber-400" />
                     ) : (
-                      <Fingerprint size={36} className={`${enrollStatus.status === 'scanning' ? 'text-[#FB923C] animate-pulse' : 'text-slate-400'}`} />
+                      <Fingerprint size={36} className={`${enrollStatus.status === 'scanning' ? 'text-orange-400 animate-pulse' : 'text-slate-400'}`} />
                     )}
                   </div>
                 </div>
@@ -1522,7 +1522,7 @@ export default function TrainerDeskPage() {
                       enrollStatus.scan > step
                         ? 'bg-emerald-500 border-emerald-400 text-white'
                         : enrollStatus.scan === step
-                        ? 'bg-blue-500/20 border-[#F97316] text-[#FB923C] animate-pulse'
+                        ? 'bg-orange-500/20 border-orange-500 text-orange-400 animate-pulse'
                         : 'bg-white/5 border-white/10 text-slate-500'
                     }`}>
                       {enrollStatus.scan > step ? '✓' : step}
@@ -1566,7 +1566,7 @@ export default function TrainerDeskPage() {
               {/* Loading bar */}
               {(enrollStatus.status === 'connecting' || enrollStatus.status === 'scanning' || enrollStatus.status === 'processing' || enrollStatus.status === 'ready') && (
                 <div className="h-0.5 bg-white/10 rounded-full overflow-hidden mb-4">
-                  <div className="h-full bg-[#F97316] rounded-full animate-pulse" style={{ width: `${enrollStatus.scan > 0 ? (enrollStatus.scan / enrollStatus.totalScans) * 100 : 30}%`, transition: 'width 0.7s ease' }} />
+                  <div className="h-full bg-orange-500 rounded-full animate-pulse" style={{ width: `${enrollStatus.scan > 0 ? (enrollStatus.scan / enrollStatus.totalScans) * 100 : 30}%`, transition: 'width 0.7s ease' }} />
                 </div>
               )}
 

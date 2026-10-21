@@ -145,10 +145,10 @@ export default function UniversalSearchBar() {
     <div ref={containerRef} className="relative w-full max-w-2xl z-40">
       {/* Search Bar Input Box */}
       <div
-        className={`relative flex items-center w-full rounded-2xl transition-all duration-200 border bg-white/90 backdrop-blur-md shadow-xs ${
+        className={`relative flex items-center w-full rounded-2xl transition-all duration-200 border bg-white/80 backdrop-blur-md shadow-sm ${
           isFocused
-            ? 'border-[#F97316] ring-4 ring-orange-500/10 shadow-lg bg-white'
-            : 'border-stone-200/80 hover:border-orange-300 hover:bg-white'
+            ? 'border-[#EA580C] ring-4 ring-[#EA580C]/10 shadow-lg bg-white'
+            : 'border-slate-200/80 hover:border-slate-300 hover:bg-white'
         }`}
       >
         <div className="pl-4 text-slate-400 flex items-center justify-center pointer-events-none">
@@ -166,7 +166,7 @@ export default function UniversalSearchBar() {
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Search Warrior Gym OS (Name, Phone, Member/Employee/Enquiry ID)..."
+          placeholder="Search The Warrior Gym OS (Name, Phone, Member/Employee/Enquiry ID)..."
           className="w-full py-2.5 pl-2.5 pr-20 bg-transparent text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-medium focus:outline-none"
         />
 
@@ -191,7 +191,7 @@ export default function UniversalSearchBar() {
               <X size={15} />
             </button>
           ) : (
-            <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md bg-stone-100 border border-stone-200 text-[10px] font-bold text-slate-400 select-none">
+            <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-400 select-none">
               <Command size={10} />
               <span>K</span>
             </div>
@@ -207,13 +207,13 @@ export default function UniversalSearchBar() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden z-50 divide-y divide-stone-100 max-h-[500px] overflow-y-auto custom-scrollbar"
+            className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 divide-y divide-slate-100 max-h-[500px] overflow-y-auto custom-scrollbar"
           >
             {/* Header info bar */}
-            <div className="px-4 py-2.5 bg-stone-50/90 flex items-center justify-between text-xs text-slate-500 font-semibold border-b border-stone-100">
+            <div className="px-4 py-2.5 bg-slate-50/80 flex items-center justify-between text-xs text-slate-500 font-semibold border-b border-slate-100">
               <span className="flex items-center gap-1.5 font-bold text-slate-700">
                 <Sparkles size={13} className="text-[#EA580C]" />
-                {loading ? 'Searching Warrior Gym OS...' : `Global Search Results (${results.total})`}
+                {loading ? 'Searching The Warrior Gym OS...' : `Global Search Results (${results.total})`}
               </span>
               <span className="text-[10px] text-slate-400 font-normal">Use ↑ ↓ to navigate, Enter to open</span>
             </div>
@@ -221,16 +221,16 @@ export default function UniversalSearchBar() {
             {/* Results Sections or Empty State */}
             {results.total === 0 && !loading ? (
               <div className="p-8 text-center space-y-2 text-left">
-                <div className="w-10 h-10 rounded-full bg-stone-100 text-slate-400 flex items-center justify-center mx-auto font-bold mb-2">
+                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto font-bold mb-2">
                   <Search size={18} />
                 </div>
                 <p className="text-xs font-bold text-slate-800 text-center">No matching records found for "{query}"</p>
-                <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/70 text-[11px] text-slate-500 space-y-1">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70 text-[11px] text-slate-500 space-y-1">
                   <span className="font-bold text-slate-700 block">Try searching by:</span>
                   <div className="grid grid-cols-2 gap-1 text-[10.5px]">
                     <span>• Full or partial Name</span>
                     <span>• 10-digit Phone Number</span>
-                    <span>• Member ID (TWG-2026-...)</span>
+                    <span>• Member ID (AZ-2026-...)</span>
                     <span>• Employee ID (EMP-10011)</span>
                     <span>• Biometric ID (#10011)</span>
                     <span>• Enquiry ID (ENQ-2054)</span>
@@ -238,7 +238,7 @@ export default function UniversalSearchBar() {
                 </div>
               </div>
             ) : (
-              <div className="divide-y divide-stone-100">
+              <div className="divide-y divide-slate-100">
                 
                 {/* 1. MEMBERS SECTION */}
                 {results.members.length > 0 && (
@@ -262,7 +262,7 @@ export default function UniversalSearchBar() {
                 {results.employees.length > 0 && (
                   <div className="py-2">
                     <div className="px-4 py-1 flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 flex items-center gap-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-orange-600 flex items-center gap-1.5">
                         <Briefcase size={12} /> Employees ({results.employees.length})
                       </span>
                     </div>
@@ -280,7 +280,7 @@ export default function UniversalSearchBar() {
                 {results.trainers.length > 0 && (
                   <div className="py-2">
                     <div className="px-4 py-1 flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-orange-700 flex items-center gap-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 flex items-center gap-1.5">
                         <Dumbbell size={12} /> Trainers ({results.trainers.length})
                       </span>
                     </div>
@@ -298,7 +298,7 @@ export default function UniversalSearchBar() {
                 {results.enquiries.length > 0 && (
                   <div className="py-2">
                     <div className="px-4 py-1 flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 flex items-center gap-1.5">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 flex items-center gap-1.5">
                         <MessageSquare size={12} /> Enquiries & Leads ({results.enquiries.length})
                       </span>
                     </div>
@@ -337,7 +337,7 @@ export default function UniversalSearchBar() {
             {results.total > 0 && (
               <div 
                 onClick={handleViewAll}
-                className="px-4 py-3 bg-stone-50 hover:bg-orange-50/80 border-t border-stone-100 flex items-center justify-between cursor-pointer transition-colors text-xs font-bold text-[#EA580C]"
+                className="px-4 py-3 bg-slate-50 hover:bg-orange-50/80 border-t border-slate-100 flex items-center justify-between cursor-pointer transition-colors text-xs font-bold text-[#EA580C]"
               >
                 <span>View all {results.total} results for "{query}"</span>
                 <span className="flex items-center gap-1 group-hover:translate-x-1 transition-transform">
@@ -362,14 +362,14 @@ function SearchResultRow({ item, onClick }: { item: SearchResultItem; onClick: (
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
         {/* Avatar */}
-        <div className="w-8 h-8 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center font-extrabold text-slate-700 text-[11px] shrink-0 group-hover:bg-[#EA580C] group-hover:text-white group-hover:border-[#EA580C] transition-all">
-          {item.avatarText || 'WG'}
+        <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-extrabold text-slate-700 text-[11px] shrink-0 group-hover:bg-orange-600 group-hover:text-white group-hover:border-orange-600 transition-all">
+          {item.avatarText || 'AZ'}
         </div>
 
         {/* Title + Subtitle */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black text-slate-900 truncate group-hover:text-[#EA580C] transition-colors">
+            <span className="text-xs font-black text-slate-900 truncate group-hover:text-orange-700 transition-colors">
               {item.title}
             </span>
             {item.phone && (
@@ -387,11 +387,11 @@ function SearchResultRow({ item, onClick }: { item: SearchResultItem; onClick: (
       {/* Right Action & Status */}
       <div className="flex items-center gap-2.5 shrink-0 ml-2">
         {item.status && (
-          <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded-md border ${item.statusClass || 'bg-stone-100 text-slate-700'}`}>
+          <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded-md border ${item.statusClass || 'bg-slate-100 text-slate-700'}`}>
             {item.status}
           </span>
         )}
-        <span className="text-[11px] font-bold text-[#EA580C] opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+        <span className="text-[11px] font-bold text-orange-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
           Open →
         </span>
       </div>

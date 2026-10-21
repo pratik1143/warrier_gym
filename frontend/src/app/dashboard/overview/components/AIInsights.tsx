@@ -69,21 +69,21 @@ export default function AIInsights() {
     switch (type) {
       case 'positive': return <TrendingUp size={14} className="text-emerald-500" />;
       case 'warning': return <AlertTriangle size={14} className="text-amber-500" />;
-      default: return <Info size={14} className="text-[#F97316]" />;
+      default: return <Info size={14} className="text-orange-500" />;
     }
   };
 
   return (
     <div className="bg-slate-900 rounded-3xl p-6 shadow-xl mt-6 relative overflow-hidden">
       {/* Background Glow */}
-      <div className="absolute top-1/2 left-1/4 w-32 h-32 bg-indigo-500 rounded-full blur-[80px] opacity-40 -z-0 pointer-events-none" />
+      <div className="absolute top-1/2 left-1/4 w-32 h-32 bg-orange-500 rounded-full blur-[80px] opacity-40 -z-0 pointer-events-none" />
       <div className="absolute bottom-0 right-1/4 w-40 h-40 bg-purple-500 rounded-full blur-[80px] opacity-30 -z-0 pointer-events-none" />
 
       <div className="relative z-10">
         <div className="flex items-center gap-2 mb-4">
-          <Sparkles size={16} className="text-indigo-400" />
+          <Sparkles size={16} className="text-orange-400" />
           <h3 className="text-sm font-black text-white tracking-tight font-display">AI Insights</h3>
-          <span className="bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full text-[9px] font-bold border border-indigo-500/30">Auto Generated</span>
+          <span className="bg-orange-500/20 text-orange-300 px-2 py-0.5 rounded-full text-[9px] font-bold border border-orange-500/30">Auto Generated</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

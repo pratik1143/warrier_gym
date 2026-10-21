@@ -57,9 +57,9 @@ export default function MemberActivityFeed({
         detail: a.device || a.branch || "Main Entrance Gate",
         timestamp: new Date(ts).getTime() || Date.now(),
         badge: "VERIFIED",
-        badgeClass: "bg-blue-100 text-blue-800 border-blue-200",
+        badgeClass: "bg-orange-100 text-orange-800 border-orange-200",
         icon: Fingerprint,
-        iconBg: "bg-blue-50 text-blue-600 border-blue-200"
+        iconBg: "bg-orange-50 text-orange-600 border-orange-200"
       });
     });
 

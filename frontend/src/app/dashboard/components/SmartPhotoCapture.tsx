@@ -378,7 +378,7 @@ export default function SmartPhotoCapture({ value, onCaptureComplete, label = 'M
       {/* Upload/Capture Picker UI Card */}
       <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col items-center gap-4 text-center">
         {previewUrl ? (
-          <div className="relative group w-28 h-28 rounded-full overflow-hidden border-2 border-indigo-500 shadow-inner bg-white shrink-0">
+          <div className="relative group w-28 h-28 rounded-full overflow-hidden border-2 border-orange-500 shadow-inner bg-white shrink-0">
             <img src={previewUrl} className="w-full h-full object-cover" alt="Profile" />
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
               <span className="text-[9px] text-white font-black uppercase tracking-wider">Change Photo</span>
@@ -440,7 +440,7 @@ export default function SmartPhotoCapture({ value, onCaptureComplete, label = 'M
             >
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <Camera size={16} className="text-indigo-600" />
+                  <Camera size={16} className="text-orange-600" />
                   Capture {label} Photo
                 </h3>
                 <button onClick={stopCamera} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer border-none">
@@ -500,7 +500,7 @@ export default function SmartPhotoCapture({ value, onCaptureComplete, label = 'M
                   <button
                     type="button"
                     onClick={captureFrame}
-                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer shadow-lg shadow-indigo-600/10 flex items-center justify-center gap-1.5"
+                    className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer shadow-lg shadow-orange-600/10 flex items-center justify-center gap-1.5"
                   >
                     <Camera size={14} />
                     Capture Photo
@@ -545,7 +545,7 @@ export default function SmartPhotoCapture({ value, onCaptureComplete, label = 'M
             >
               <div className="flex justify-between items-center">
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles size={16} className="text-indigo-600" />
+                  <Sparkles size={16} className="text-orange-600" />
                   Adjust {label} Photo
                 </h3>
                 <button onClick={() => setIsEditorOpen(false)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer border-none">
@@ -636,7 +636,7 @@ export default function SmartPhotoCapture({ value, onCaptureComplete, label = 'M
                 <button
                   type="button"
                   onClick={processAndUpload}
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/10"
+                  className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-orange-600/10"
                 >
                   <Check size={14} />
                   Use Photo

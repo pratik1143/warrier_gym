@@ -55,7 +55,7 @@ export default function LeaderboardPage() {
                         <div className="text-[9px] text-brand-text-muted">{m.branch} location</div>
                       </div>
                     </div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FFF7ED] text-[#C2410C] border border-[#FED7AA]">{m.attendancePercent || 80}%</span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">{m.attendancePercent || 80}%</span>
                   </div>
                 );
               })

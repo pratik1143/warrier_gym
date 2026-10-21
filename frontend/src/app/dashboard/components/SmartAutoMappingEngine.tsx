@@ -98,7 +98,7 @@ export default function SmartAutoMappingEngine({
 
     try {
       await API.post('/members/purge-all');
-      localStorage.removeItem('warrior_gym_staged_import');
+      localStorage.removeItem('alpha_zone_staged_import');
       setStagedFile(null);
       setValidationSummary(null);
       setRowExceptions([]);
@@ -115,7 +115,7 @@ export default function SmartAutoMappingEngine({
   // Restore staged file from localStorage if available
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('warrior_gym_staged_import');
+      const saved = localStorage.getItem('alpha_zone_staged_import');
       if (saved) {
         const parsed = JSON.parse(saved);
         setStagedFile(parsed);
@@ -345,7 +345,7 @@ export default function SmartAutoMappingEngine({
     try {
       const staged = await parseFileToStaged(file);
       setStagedFile(staged);
-      localStorage.setItem('warrior_gym_staged_import', JSON.stringify(staged));
+      localStorage.setItem('alpha_zone_staged_import', JSON.stringify(staged));
       toast.success(`File uploaded! Sheet: "${staged.sheetName}" (${staged.totalRows} Rows).`);
       
       // Auto Start Processing
@@ -427,7 +427,7 @@ export default function SmartAutoMappingEngine({
   };
 
   return (
-    <div className="space-y-6 font-poppins text-slate-800">
+    <div className="space-y-6 font-sans text-slate-800">
       <input
         ref={fileInputRef}
         type="file"
@@ -441,7 +441,7 @@ export default function SmartAutoMappingEngine({
       />
 
       {/* Top Banner & Auto Map Action Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 rounded-[28px] text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-slate-900 via-amber-950 to-slate-900 p-6 rounded-[28px] text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full bg-[#d4ff00] text-black font-black text-[9px] uppercase tracking-widest">
@@ -478,7 +478,7 @@ export default function SmartAutoMappingEngine({
           {stagedFile && (
             <button
               onClick={handleAutoMapClick}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0052FF] text-white font-extrabold text-xs hover:bg-orange-700 transition-all cursor-pointer shadow-md border-none"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#EA580C] text-white font-extrabold text-xs hover:bg-orange-700 transition-all cursor-pointer shadow-md border-none"
             >
               <Zap size={14} />
               <span>Auto Map Legacy Data</span>
@@ -495,7 +495,7 @@ export default function SmartAutoMappingEngine({
         <div className="bg-white p-6 rounded-[28px] border border-slate-200 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-black">
+              <div className="w-10 h-10 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center font-black">
                 <FileSpreadsheet size={20} />
               </div>
               <div>
@@ -513,7 +513,7 @@ export default function SmartAutoMappingEngine({
                     ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     : processingStatus === 'processing'
                     ? 'bg-amber-100 text-amber-800 border-amber-200 animate-pulse'
-                    : 'bg-[#FFEDD5] text-[#9A3412] border-[#FED7AA]'
+                    : 'bg-orange-100 text-orange-800 border-orange-200'
                 }`}
               >
                 {processingStatus === 'completed'
@@ -535,9 +535,9 @@ export default function SmartAutoMappingEngine({
               <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Members Ready</span>
               <div className="text-lg font-black text-emerald-700 mt-0.5">{validationSummary?.membersReady || stagedFile.totalRows}</div>
             </div>
-            <div className="bg-[#FFF7ED] p-3 rounded-2xl border border-[#FED7AA] text-center">
-              <span className="text-[9px] font-black text-[#EA580C] uppercase tracking-wider">History Records</span>
-              <div className="text-lg font-black text-[#C2410C] mt-0.5">{validationSummary?.historyRecords || stagedFile.totalRows}</div>
+            <div className="bg-orange-50 p-3 rounded-2xl border border-orange-200 text-center">
+              <span className="text-[9px] font-black text-orange-600 uppercase tracking-wider">History Records</span>
+              <div className="text-lg font-black text-orange-700 mt-0.5">{validationSummary?.historyRecords || stagedFile.totalRows}</div>
             </div>
             <div className="bg-purple-50 p-3 rounded-2xl border border-purple-200 text-center">
               <span className="text-[9px] font-black text-purple-600 uppercase tracking-wider">Billing Records</span>
@@ -570,7 +570,7 @@ export default function SmartAutoMappingEngine({
                   <AlertTriangle size={14} />
                   <span>{validationSummary.missingPhotoCount} Missing Member Photos</span>
                 </div>
-                <div className="flex items-center gap-2 text-[#C2410C]">
+                <div className="flex items-center gap-2 text-orange-700">
                   <Info size={14} />
                   <span>{validationSummary.duplicatePhoneCount} Phone Collisions (Auto Merged)</span>
                 </div>
@@ -624,7 +624,7 @@ export default function SmartAutoMappingEngine({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  localStorage.removeItem('warrior_gym_staged_import');
+                  localStorage.removeItem('alpha_zone_staged_import');
                   setStagedFile(null);
                   setValidationSummary(null);
                 }}
@@ -635,7 +635,7 @@ export default function SmartAutoMappingEngine({
 
               <button
                 onClick={() => setShowPreviewModal(true)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-black shadow-md hover:bg-indigo-700 transition-all cursor-pointer border-none"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 text-white text-xs font-black shadow-md hover:bg-orange-700 transition-all cursor-pointer border-none"
               >
                 <Eye size={15} />
                 <span>Preview Recorded Columns & Data</span>
@@ -667,7 +667,7 @@ export default function SmartAutoMappingEngine({
               {/* Modal Header */}
               <div className="bg-slate-900 text-white p-6 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-indigo-600 rounded-2xl text-white">
+                  <div className="p-2.5 bg-orange-600 rounded-2xl text-white">
                     <Eye size={22} />
                   </div>
                   <div>
@@ -688,7 +688,7 @@ export default function SmartAutoMappingEngine({
                 {/* Detected Columns Grid */}
                 <div>
                   <h4 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-3 flex items-center gap-2">
-                    <Cpu size={14} className="text-indigo-600" /> Detected Header Mapping ({stagedFile.headers.length} Columns)
+                    <Cpu size={14} className="text-orange-600" /> Detected Header Mapping ({stagedFile.headers.length} Columns)
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                     {stagedFile.headers.map((h, i) => {
@@ -718,7 +718,7 @@ export default function SmartAutoMappingEngine({
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <h4 className="text-xs font-black uppercase text-slate-500 tracking-wider flex items-center gap-2">
-                      <FileSpreadsheet size={14} className="text-indigo-600" /> Parsed Staged Payload Preview ({stagedFile.payload.length} Records)
+                      <FileSpreadsheet size={14} className="text-orange-600" /> Parsed Staged Payload Preview ({stagedFile.payload.length} Records)
                     </h4>
                     <div className="relative w-72">
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -727,7 +727,7 @@ export default function SmartAutoMappingEngine({
                         placeholder="Search preview by name, phone, amount..."
                         value={previewSearch}
                         onChange={(e) => setPreviewSearch(e.target.value)}
-                        className="w-full pl-9 pr-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full pl-9 pr-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500"
                       />
                     </div>
                   </div>
@@ -764,14 +764,14 @@ export default function SmartAutoMappingEngine({
                           .map((row, idx) => {
                             const amt = row.amount || row.Amount || row.Fee || row.Price || '0';
                             return (
-                              <tr key={idx} className="hover:bg-indigo-50/50 transition-colors">
+                              <tr key={idx} className="hover:bg-orange-50/50 transition-colors">
                                 <td className="px-3 py-2 text-center text-slate-400 font-mono text-[10px]">{idx + 1}</td>
                                 <td className="px-3 py-2 font-mono font-bold text-slate-700">{row.clientId || row['Client ID'] || 'N/A'}</td>
                                 <td className="px-3 py-2 font-extrabold text-slate-900">{row.name || row['Client Name'] || 'Unknown'}</td>
                                 <td className="px-3 py-2 font-mono text-slate-600">{row.phone || row.Number || 'N/A'}</td>
                                 <td className="px-3 py-2 capitalize">{row.gender || row.Gender || 'N/A'}</td>
                                 <td className="px-3 py-2">
-                                  <span className="px-2 py-0.5 rounded-full bg-[#FFF7ED] text-[#C2410C] font-bold text-[10px]">
+                                  <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 font-bold text-[10px]">
                                     {row.membershipPackage || row.Package || 'N/A'}
                                   </span>
                                 </td>
@@ -844,9 +844,9 @@ export default function SmartAutoMappingEngine({
               <span className="text-[9px] font-black text-emerald-600 uppercase">Imported</span>
               <div className="text-lg font-black text-emerald-700">{reportData.importedMembers || 0}</div>
             </div>
-            <div className="bg-[#FFF7ED] p-3 rounded-xl border border-[#FED7AA]">
-              <span className="text-[9px] font-black text-[#EA580C] uppercase">Skipped (Idempotent)</span>
-              <div className="text-lg font-black text-[#C2410C]">{reportData.skippedIdempotent || 0}</div>
+            <div className="bg-orange-50 p-3 rounded-xl border border-orange-200">
+              <span className="text-[9px] font-black text-orange-600 uppercase">Skipped (Idempotent)</span>
+              <div className="text-lg font-black text-orange-700">{reportData.skippedIdempotent || 0}</div>
             </div>
             <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
               <span className="text-[9px] font-black text-amber-600 uppercase">Merged Conflicts</span>

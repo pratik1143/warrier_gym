@@ -47,13 +47,13 @@ async function resolveEmail(memberName) {
   });
 
   const slug = count > 1 ? fullSlug(memberName) : fn;
-  let email  = `${slug}@alpha.com`;
+  let email  = `${slug}@thewarriorgym.in`;
 
   // Collision guard — check if email already taken by another member
   try {
     const existing = await auth.getUserByEmail(email);
     // Email taken — append number
-    email = `${slug}2@alpha.com`;
+    email = `${slug}2@thewarriorgym.in`;
   } catch (_) {
     // Not taken — good
   }

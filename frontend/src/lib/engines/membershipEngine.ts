@@ -1,80 +1,63 @@
 // No top-level firebase import here — avoids circular dependency with utils.ts
 // Firebase is used only inside selfHealMemberData() via lazy import
 
-const IST_TIME_ZONE = 'Asia/Kolkata';
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const getISTDateString = (date: Date = new Date()): string => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: IST_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value || '';
-  return `${part('year')}-${part('month')}-${part('day')}`;
-};
-
-const parseMembershipDay = (value: string | Date | null | undefined): Date | null => {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    const dateOnly = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (dateOnly) {
-      const [, year, month, day] = dateOnly;
-      const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-      if (parsed.toISOString().slice(0, 10) !== value.trim()) return null;
-      return parsed;
-    }
-  }
-
-  const instant = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(instant.getTime())) return null;
-  const [year, month, day] = getISTDateString(instant).split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day));
-};
-
-const formatMembershipDay = (date: Date): string => date.toISOString().slice(0, 10);
-
 export const membershipEngine = {
   calculateDaysLeft: (expiryDate: string | null | undefined): number => {
-    if (!expiryDate || expiryDate === 'N/A' || expiryDate === '—') return 0;
-    const expiryDay = parseMembershipDay(expiryDate);
-    const todayDay = parseMembershipDay(getISTDateString());
-    if (!expiryDay || !todayDay) return 0;
-    return Math.round((expiryDay.getTime() - todayDay.getTime()) / DAY_MS);
+    if (!expiryDate || expiryDate === 'N/A' || expiryDate === '—') return 999;
+    const expiry = new Date(expiryDate);
+    if (isNaN(expiry.getTime())) return 999;
+
+    const today = new Date();
+    
+    const eDay = new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate());
+    const tDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const diffTime = eDay.getTime() - tDay.getTime();
+    
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   },
 
   calculateDurationDays: (expiryDate: string | null | undefined, startDate?: string | null | undefined): number => {
     if (!expiryDate || expiryDate === 'N/A' || expiryDate === '—') return 30;
-    const expiryDay = parseMembershipDay(expiryDate);
-    if (!expiryDay) return 30;
-    const startDay = startDate && startDate !== 'N/A' && startDate !== '—'
-      ? parseMembershipDay(startDate) || parseMembershipDay(getISTDateString())
-      : parseMembershipDay(getISTDateString());
-    if (!startDay) return 30;
-    return Math.max(0, Math.round((expiryDay.getTime() - startDay.getTime()) / DAY_MS));
+    const expiry = new Date(expiryDate);
+    if (isNaN(expiry.getTime())) return 30;
+
+    let start: Date;
+    if (startDate && startDate !== 'N/A' && startDate !== '—') {
+      start = new Date(startDate);
+      if (isNaN(start.getTime())) start = new Date();
+    } else {
+      start = new Date();
+    }
+
+    const eDay = new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate());
+    const sDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const diffTime = eDay.getTime() - sDay.getTime();
+    
+    return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
   },
 
   calculateDaysUntilStart: (startDate: string | null | undefined): number => {
     if (!startDate || startDate === 'N/A' || startDate === '—') return 0;
-    const startDay = parseMembershipDay(startDate);
-    const todayDay = parseMembershipDay(getISTDateString());
-    if (!startDay || !todayDay) return 0;
-    return Math.round((startDay.getTime() - todayDay.getTime()) / DAY_MS);
+    const start = new Date(startDate);
+    if (isNaN(start.getTime())) return 0;
+
+    const today = new Date();
+    const sDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const tDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const diffTime = sDay.getTime() - tDay.getTime();
+    
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   },
 
   calculateMembershipStatus: (daysLeftOrExpiry: number | string | null | undefined, startDateOrManual?: string | null, manualStatus?: string): string => {
-    const statusVal = (typeof startDateOrManual === 'string' && ['Blocked', 'Frozen', 'Hold', 'Inactive', 'active', 'expired', 'frozen', 'blocked', 'hold', 'inactive', 'upcoming'].includes(startDateOrManual))
+    const statusVal = (typeof startDateOrManual === 'string' && ['Blocked', 'Frozen', 'active', 'expired', 'frozen', 'blocked', 'upcoming'].includes(startDateOrManual))
       ? startDateOrManual 
       : manualStatus;
 
-    const cleanStatus = String(statusVal || '').trim().toLowerCase();
-    if (cleanStatus === 'blocked') return 'Blocked';
-    if (cleanStatus === 'frozen') return 'Frozen';
-    if (cleanStatus === 'hold') return 'Hold';
-    if (cleanStatus === 'inactive') return 'Inactive';
+    if (statusVal === 'Blocked' || statusVal === 'blocked') return 'Blocked';
+    if (statusVal === 'Frozen' || statusVal === 'frozen') return 'Frozen';
 
-    const todayStr = getISTDateString();
+    const todayStr = new Date().toISOString().split('T')[0];
     let startStr = '';
 
     if (typeof startDateOrManual === 'string' && startDateOrManual.match(/^\d{4}-\d{2}-\d{2}/)) {
@@ -104,14 +87,8 @@ export const membershipEngine = {
     if (manualStatus === 'Frozen' || manualStatus === 'frozen') {
       return { granted: false, status: 'Frozen', reason: 'Membership is currently frozen', daysUntilStart: 0 };
     }
-    if (manualStatus === 'Hold' || manualStatus === 'hold') {
-      return { granted: false, status: 'Hold', reason: 'Member is on HOLD awaiting billing and activation', daysUntilStart: 0 };
-    }
-    if (manualStatus === 'Inactive' || manualStatus === 'inactive') {
-      return { granted: false, status: 'Inactive', reason: 'Member account is inactive', daysUntilStart: 0 };
-    }
 
-    const todayStr = getISTDateString();
+    const todayStr = new Date().toISOString().split('T')[0];
     const startStr = startDateStr ? startDateStr.split('T')[0] : todayStr;
     const expiryStr = expiryDateStr ? expiryDateStr.split('T')[0] : '';
 
@@ -154,8 +131,16 @@ export const membershipEngine = {
   },
 
   calculateMembershipExpiry: (startDateInput: string | Date | null | undefined, packageDuration: string | number): string => {
-    const start = parseMembershipDay(startDateInput) || parseMembershipDay(getISTDateString());
-    if (!start) return getISTDateString();
+    if (!startDateInput) return new Date().toISOString().split('T')[0];
+    let start: Date;
+    if (typeof startDateInput === 'string') {
+      start = new Date(startDateInput);
+    } else if (startDateInput instanceof Date) {
+      start = startDateInput;
+    } else {
+      start = new Date(startDateInput);
+    }
+    if (isNaN(start.getTime())) return new Date().toISOString().split('T')[0];
 
     let months = 0;
     let days = 0;
@@ -187,36 +172,46 @@ export const membershipEngine = {
       }
     }
 
-    let result = new Date(start.getTime());
+    const result = new Date(start.getFullYear(), start.getMonth(), start.getDate());
     if (months > 0) {
-      const startYear = start.getUTCFullYear();
-      const startMonth = start.getUTCMonth();
-      const startDay = start.getUTCDate();
-      const targetMonthStart = new Date(Date.UTC(startYear, startMonth + months, 1));
-      const targetYear = targetMonthStart.getUTCFullYear();
-      const targetMonth = targetMonthStart.getUTCMonth();
-      const targetLastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
-      // Keep the same day where possible; clamp month-end dates before applying
-      // the inclusive expiry rule (Jan 31 + one month ends on Feb 27/28).
-      result = new Date(Date.UTC(targetYear, targetMonth, Math.min(startDay, targetLastDay) - 1));
+      const targetMonth = result.getMonth() + months;
+      result.setMonth(targetMonth);
+      
+      // Handle month end overflow e.g. Jan 31 -> Feb 28
+      if (result.getDate() !== start.getDate()) {
+        result.setDate(0);
+      }
+      // Subtract 1 day for inclusive subscription period (e.g. 21-11 to 20-05)
+      result.setDate(result.getDate() - 1);
     } else if (days > 0) {
-      result = new Date(result.getTime() + (days - 1) * DAY_MS);
+      result.setDate(result.getDate() + days - 1);
     }
 
-    return formatMembershipDay(result);
+    const year = result.getFullYear();
+    const month = String(result.getMonth() + 1).padStart(2, '0');
+    const day = String(result.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   },
 
   calculateAutoStartDate: (member: any): string => {
-    const todayStr = getISTDateString();
+    const todayStr = new Date().toISOString().split('T')[0];
     if (!member || !member.expiryDate) return todayStr;
 
-    const eDay = parseMembershipDay(member.expiryDate);
-    const tDay = parseMembershipDay(todayStr);
-    if (!eDay || !tDay) return todayStr;
+    const expiry = new Date(member.expiryDate);
+    if (isNaN(expiry.getTime())) return todayStr;
+
+    const today = new Date();
+    const eDay = new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate());
+    const tDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
     // If active member (expiry >= today), next membership start date is existing expiryDate + 1 day
     if (eDay.getTime() >= tDay.getTime()) {
-      return formatMembershipDay(new Date(eDay.getTime() + DAY_MS));
+      const nextStart = new Date(eDay);
+      nextStart.setDate(nextStart.getDate() + 1);
+      const year = nextStart.getFullYear();
+      const month = String(nextStart.getMonth() + 1).padStart(2, '0');
+      const day = String(nextStart.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
 
     return todayStr;
@@ -328,9 +323,6 @@ export const membershipEngine = {
 
   selfHealMemberData: async (member: any) => {
     if (!member || !member.id) return member;
-    if (String(member.status || '').trim().toUpperCase() === 'HOLD') {
-      return member;
-    }
     
     let needsUpdate = false;
     const updates: any = {};

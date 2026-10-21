@@ -21,9 +21,9 @@ export const gymConfig: GymConfig = {
   shortName: "Warrior Gym",
   logo: "/gymlogo.png",
   logoAlt: "The Warrior Gym Logo",
-  primaryColor: "#DC2626", // Crimson Red
-  secondaryColor: "#0F172A", // Slate/Onyx
-  accentColor: "#F59E0B", // Amber Gold
+  primaryColor: "#F97316", // Warrior Orange
+  secondaryColor: "#FFFFFF", // White
+  accentColor: "#EA580C", // Deep Orange
   timezone: "Asia/Kolkata",
   currency: "INR",
   currencySymbol: "₹",

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import './members-ui.css';
 import {
   Search,
   Plus,
@@ -39,8 +40,7 @@ import {
   Trophy,
   Dumbbell,
   Zap,
-  Upload,
-  ScanFace
+  Upload
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useGymStore } from "@/store";
@@ -61,19 +61,13 @@ import {
   where,
   addDoc,
   setDoc,
-  deleteDoc
 } from "firebase/firestore";
 import MembersKPI from "./components/MembersKPI";
-import styles from "./members.module.css";
-import { getBiometricReadiness } from "@/lib/biometricStatus";
 import MembersTable from "./components/MembersTable";
 import AddMemberModal from "./components/AddMemberModal";
+import HikvisionPhotoSyncModal from "./components/HikvisionPhotoSyncModal";
 import RenewalCenterModal from "./components/RenewalCenterModal";
 import RenewalWizardModal from "./components/RenewalWizardModal";
-import BulkImportModal from "./components/BulkImportModal";
-import HikvisionPhotoSyncModal from "./components/HikvisionPhotoSyncModal";
-import CreateNewBillModal from "./components/CreateNewBillModal";
-import MemberDrawer from "./components/MemberDrawer";
 import SmartPhotoCapture from "../components/SmartPhotoCapture";
 import { db as fDb, isFirebaseReady } from "@/lib/firebase";
 import API from "@/services/api";
@@ -89,11 +83,11 @@ const getPlanTheme = (planName: string) => {
   const name = (planName || "").toLowerCase();
   if (name.includes("monthly")) {
     return {
-      color: "#3b82f6", // Indigo/Blue
-      bg: "rgba(59,130,246,0.05)",
-      border: "rgba(59,130,246,0.2)",
-      textLight: "#eff6ff",
-      textDark: "#1e3a8a",
+      color: "#F97316", // Indigo/Blue
+      bg: "rgba(249, 115, 22,0.05)",
+      border: "rgba(249, 115, 22,0.2)",
+      textLight: "#FFF7ED",
+      textDark: "#7C2D12",
     };
   }
   if (name.includes("quarterly")) {
@@ -141,22 +135,59 @@ export default function MembersPage() {
   } = useGymStore();
 
   const members = useMemo(() => {
-    const seenKeys = new Set<string>();
+    const seenIds = new Set<string>();
+    const seenClientIds = new Set<string>();
+    const seenMemberIds = new Set<string>();
+    const seenPhones = new Set<string>();
+
     const uniqueRaw = (rawMembers || []).filter((m: any) => {
-      const key = m.id
-        ? `id_${String(m.id).trim()}`
-        : (m.clientId
-          ? `cid_${String(m.clientId).trim()}`
-          : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-            ? `mid_${String(m.memberId).trim()}`
-            : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
-      if (seenKeys.has(key)) return false;
-      seenKeys.add(key);
+      if (!m) return false;
+
+      // 1. Primary document ID check
+      if (m.id) {
+        const idKey = String(m.id).trim();
+        if (idKey) {
+          if (seenIds.has(idKey)) return false;
+          seenIds.add(idKey);
+        }
+      }
+
+      // 2. Client ID check
+      if (m.clientId) {
+        const cId = String(m.clientId).trim();
+        if (cId) {
+          if (seenClientIds.has(cId)) return false;
+          seenClientIds.add(cId);
+        }
+      }
+
+      // 3. Member ID check (ignoring placeholder AZ-2026-0000)
+      if (m.memberId && String(m.memberId).trim() !== 'AZ-2026-0000') {
+        const mId = String(m.memberId).trim();
+        if (mId) {
+          if (seenMemberIds.has(mId)) return false;
+          seenMemberIds.add(mId);
+        }
+      }
+
+      // 4. Use phone only as a fallback identity when the record has no stable ID.
+      // Distinct members can legitimately share a family phone number.
+      const hasStableIdentity = Boolean(
+        m.id || m.clientId || (m.memberId && String(m.memberId).trim() !== 'AZ-2026-0000')
+      );
+      if (!hasStableIdentity && m.phone) {
+        const cleanPhone = String(m.phone).replace(/\D/g, '');
+        if (cleanPhone.length >= 7) {
+          if (seenPhones.has(cleanPhone)) return false;
+          seenPhones.add(cleanPhone);
+        }
+      }
+
       return true;
     });
 
-    return uniqueRaw.map((m: any) => {
-      const expiryDate = typeof m.expiryDate === 'string' ? m.expiryDate : (m.expiryDate ? new Date(m.expiryDate).toISOString().split('T')[0] : '');
+    const mapped: any[] = uniqueRaw.map((m: any) => {
+      let expiryDate = typeof m.expiryDate === 'string' ? m.expiryDate : (m.expiryDate ? new Date(m.expiryDate).toISOString().split('T')[0] : '');
       const todayStr = new Date().toISOString().split('T')[0];
       const rawJoin = m.startDate || m.joinDate || m.createdAt;
       const joinStr = typeof rawJoin === 'string'
@@ -171,10 +202,6 @@ export default function MembersPage() {
       if (derivedStatus === 'expiring soon' || derivedStatus === 'expiring') {
         derivedStatus = 'active';
       }
-      // Hold members must strictly retain hold status
-      if ((m.status || '').toLowerCase() === 'hold') {
-        derivedStatus = 'hold';
-      }
       return {
         ...m,
         expiryDate,
@@ -182,15 +209,35 @@ export default function MembersPage() {
         status: derivedStatus
       };
     });
+
+    const getMemberSortTime = (m: any): number => {
+      if (m?.createdAt) {
+        const t = typeof m.createdAt === 'object' && m.createdAt.seconds
+          ? m.createdAt.seconds * 1000
+          : new Date(m.createdAt).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      if (m?.joinDate) {
+        const t = new Date(m.joinDate).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      if (m?.startDate) {
+        const t = new Date(m.startDate).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+      return 0;
+    };
+
+    mapped.sort((a: any, b: any) => getMemberSortTime(b) - getMemberSortTime(a));
+    return mapped as any[];
   }, [rawMembers, plans]);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [mappingBiometrics, setMappingBiometrics] = useState(false);
+  const [showPhotoSyncModal, setShowPhotoSyncModal] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
-  const [showPhotoSyncModal, setShowPhotoSyncModal] = useState(false);
-  const [createBillTargetMember, setCreateBillTargetMember] = useState<any | null>(null);
   const [activeProfile, setActiveProfile] = useState<any | null>(null);
   const [editingMember, setEditingMember] = useState<any | null>(null);
   const [addStep, setAddStep] = useState(1);
@@ -229,6 +276,8 @@ export default function MembersPage() {
   );
   const [newAvatarUrl, setNewAvatarUrl] = useState("");
   const [newBiometricId, setNewBiometricId] = useState("");
+  const [unmappedPunchDeviceId, setUnmappedPunchDeviceId] = useState("");
+  const [isExistingPunchBiometric, setIsExistingPunchBiometric] = useState(false);
 
   const [trainers, setTrainers] = useState<any[]>([]);
   const [selectedTrainerForView, setSelectedTrainerForView] = useState<
@@ -244,69 +293,34 @@ export default function MembersPage() {
   }, []);
 
   useEffect(() => {
-    fetchMembers();
+    fetchMembers(true);
     fetchPlans();
-
-    if (isFirebaseReady && fDb) {
-      // 1. Immediate one-shot read for instant render
-      getDocs(collection(fDb, 'members')).then((snapshot) => {
-        if (!snapshot.empty) {
-          const list: any[] = [];
-          snapshot.forEach(docSnap => {
-            const d = docSnap.data();
-            if (!d.isDeleted && !d.deletedAt) {
-              list.push({ id: docSnap.id, ...d });
-            }
-          });
-          const seen = new Set<string>();
-          const unique = list.filter(m => {
-            const key = m.id
-              ? `id_${String(m.id).trim()}`
-              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-                ? `mid_${String(m.memberId).trim()}`
-                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-          useGymStore.setState({ members: unique });
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('action') === 'add') {
+        const requestedBiometricId = params.get('biometricId') || params.get('deviceUserId') || '';
+        const fromUnmappedPunch = params.get('source') === 'unmapped-punch';
+        if (fromUnmappedPunch && /^\d{1,5}$/.test(requestedBiometricId) && Number(requestedBiometricId) > 0) {
+          setNewBiometricId(requestedBiometricId);
+          setUnmappedPunchDeviceId(params.get('deviceId') || 'hikvision-main-gate');
+          setIsExistingPunchBiometric(true);
         }
-      }).catch(e => {
-        console.warn('Members immediate read error, falling back to server API:', e);
-        fetchMembers(true);
-      });
-
-      // 2. Real-time updates listener
-      const unsubMembers = onSnapshot(collection(fDb, 'members'), (snapshot) => {
-        const list: any[] = [];
-        snapshot.forEach(docSnap => {
-          const d = docSnap.data();
-          if (!d.isDeleted && !d.deletedAt) {
-            list.push({ id: docSnap.id, ...d });
-          }
-        });
-        const seen = new Set<string>();
-        const unique = list.filter(m => {
-          const key = m.id
-            ? `id_${String(m.id).trim()}`
-            : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-              ? `mid_${String(m.memberId).trim()}`
-              : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`));
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        useGymStore.setState({ members: unique });
-      }, (error) => {
-        console.warn('Realtime members onSnapshot error:', error.message);
-      });
-
-      return () => unsubMembers();
+        setShowAddModal(true);
+        if (fromUnmappedPunch) router.replace('/dashboard/members');
+      }
     }
-    if (typeof window !== 'undefined' && window.location.search.includes('action=add')) {
-      setShowAddModal(true);
-    }
-  }, [fetchMembers, fetchPlans]);
+  }, [fetchMembers, fetchPlans, router]);
+
+  // Realtime Firestore listener for new/updated members
+  useEffect(() => {
+    if (!isFirebaseReady || !fDb) return;
+    const unsub = onSnapshot(collection(fDb, 'members'), () => {
+      fetchMembers(true);
+    }, (err) => {
+      console.warn("Realtime members sync notice:", err);
+    });
+    return () => unsub();
+  }, [fetchMembers]);
 
   // ── Biometric Enrollment State ──────────────────────────────────────────────
   const [enrollModalOpen, setEnrollModalOpen] = useState(false);
@@ -405,9 +419,9 @@ export default function MembersPage() {
         e,
       );
     }
-    // 2. Fallback: stored token in warrior_gym_user (may be slightly old)
+    // 2. Fallback: stored token in alpha_zone_user (may be slightly old)
     try {
-      const userJson = localStorage.getItem("warrior_gym_user");
+      const userJson = localStorage.getItem("alpha_zone_user");
       if (userJson) {
         const user = JSON.parse(userJson);
         return user.token || "";
@@ -667,8 +681,6 @@ export default function MembersPage() {
         avatarUrl: newAvatarUrl,
         expiryDate: expiry,
         biometricId: newBiometricId,
-        paymentStatus: 'paid',
-        paymentMethod: 'UPI',
       });
 
       // Fetch the newly created member from the store
@@ -703,13 +715,13 @@ export default function MembersPage() {
           // If no invite was sent, create a new referral document starting at step 4
           const referrerMember = freshMembers.find(
             (m: any) =>
-              m.name.toUpperCase() + "2026" === newReferralCode.toUpperCase() ||
-              (m.memberId &&
-                m.memberId.toUpperCase() === newReferralCode.toUpperCase()),
+              (m?.name ? String(m.name).toUpperCase() + "2026" === newReferralCode.toUpperCase() : false) ||
+              (m?.memberId &&
+                String(m.memberId).toUpperCase() === newReferralCode.toUpperCase()),
           );
           await addDoc(collection(fDb, "referrals"), {
-            referrerId: referrerMember ? referrerMember.id : "",
-            referrerName: referrerMember ? referrerMember.name : "Direct Member",
+            referrerId: referrerMember ? referrerMember.id : "m1",
+            referrerName: referrerMember ? referrerMember.name : "Pratik",
             referrerPhone: referrerMember ? referrerMember.phone || "" : "",
             friendId: newMember.id,
             friendName: newName,
@@ -856,19 +868,20 @@ export default function MembersPage() {
   };
 
   const filtered = members.filter((m) => {
+    const s = (search || "").toLowerCase();
     const ms =
-      m.name.toLowerCase().includes(search.toLowerCase()) ||
-      m.phone.includes(search);
-    const st = statusFilter === "all" || m.status === statusFilter;
+      (m?.name || "").toLowerCase().includes(s) ||
+      String(m?.phone || "").includes(search || "");
+    const st = statusFilter === "all" || m?.status === statusFilter;
     return ms && st;
   });
 
   const counts = {
     all: members.length,
-    active: members.filter((m) => m.status === "active").length,
-    expiring: members.filter((m) => m.status === "expiring").length,
-    expired: members.filter((m) => m.status === "expired").length,
-    frozen: members.filter((m) => m.status === "frozen").length,
+    active: members.filter((m) => m?.status === "active").length,
+    expiring: members.filter((m) => m?.status === "expiring").length,
+    expired: members.filter((m) => m?.status === "expired").length,
+    frozen: members.filter((m) => m?.status === "frozen").length,
   };
 
   const handleExportCSV = () => {
@@ -930,134 +943,97 @@ export default function MembersPage() {
   };
 
   const expiredMembers = members.filter(m => {
-    if (m.status === 'blocked' || m.status === 'blacklisted') return false;
-    return membershipEngine.calculateDaysLeft(m.expiryDate) < 0;
+    if (m?.status === 'blocked' || m?.status === 'blacklisted') return false;
+    return membershipEngine.calculateDaysLeft(m?.expiryDate) < 0;
   });
 
   const urgentMembers = members.filter(m => {
-    if (m.status === 'blocked' || m.status === 'blacklisted') return false;
-    const days = membershipEngine.calculateDaysLeft(m.expiryDate);
+    if (m?.status === 'blocked' || m?.status === 'blacklisted') return false;
+    const days = membershipEngine.calculateDaysLeft(m?.expiryDate);
     return days >= 0 && days <= 7;
   });
 
-  const headerStats = useMemo(() => {
-    let active = 0;
-    let hold = 0;
-    let expiring = 0;
-    let expired = 0;
+  const handleAutoMapBiometrics = async () => {
+    if (mappingBiometrics) return;
+    setMappingBiometrics(true);
+    try {
+      const response = await API.post('/devices/biometric/auto-map-all', {}, { timeout: 30000 });
+      const result = response.data;
+      if (!result?.success) throw new Error(result?.error || 'Could not match members with the Hikvision terminal.');
 
-    (members || []).forEach((m: any) => {
-      const st = String(m.status || m.membershipStatus || '').toLowerCase();
-      const isHold = st === 'hold' || m.activationStatus === 'PENDING_ACTIVATION';
+      await fetchMembers(true);
+      const newLinks = Number(result.newlyMapped || 0);
+      const alreadyLinked = Number(result.alreadyMapped || 0);
+      const needsReview = Number(result.missingCount || 0);
+      const description = `${newLinks} newly linked · ${alreadyLinked} already matched · ${needsReview} need review`;
 
-      if (isHold) {
-        hold++;
+      if (needsReview > 0 && newLinks === 0) {
+        toast.warning('No safe new matches found', { description });
       } else {
-        const days = m.expiryDate ? membershipEngine.calculateDaysLeft(m.expiryDate) : 0;
-        if (days <= 0) expired++;
-        else if (days <= 15) {
-          expiring++;
-          active++;
-        } else {
-          active++;
-        }
+        toast.success('Hikvision mapping complete', { description });
       }
-    });
-
-    return { total: (members || []).length, active, hold, expiring, expired };
-  }, [members]);
-
-  // Members missing biometrics (skipped or never enrolled)
-  const missingBioCount = useMemo(() => {
-    return (members || []).filter((m: any) => getBiometricReadiness(m).needsMapping).length;
-  }, [members]);
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || error?.message || 'Could not read biometric IDs from the machine. Check the device connection and try again.');
+    } finally {
+      setMappingBiometrics(false);
+    }
+  };
 
   return (
-    <div className={`${styles.membersPage} space-y-6 pb-12 w-full text-slate-800 text-left font-sans`}>
-      {/* ── 1. POLISHED WARRIOR HEADER ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
-              Members
-            </h1>
-            <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-orange-100 text-[#EA580C] border border-orange-200">
-              The Warrior Gym
-            </span>
-          </div>
-          <p className="text-xs text-stone-500 mt-1">
-            Manage your gym members, memberships, attendance and payments.
+    <div className="members-dashboard space-y-6 pb-12 w-full text-slate-800 text-left">
+      <motion.div
+        className="members-page-heading flex flex-wrap items-center justify-between gap-4 mb-2"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
+        <div className="members-heading-copy">
+          <span className="members-eyebrow"><span className="members-live-dot" /> Member studio</span>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight font-display">
+            Members
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Your roster, membership health, and renewals — all in one place.
           </p>
-
-          {/* Small live statistics strip */}
-          <div className="flex flex-wrap items-center gap-2 mt-2.5 text-xs">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-stone-100 text-stone-700 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />
-              Total: <strong>{headerStats.total}</strong>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Active: <strong>{headerStats.active}</strong>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              On Hold: <strong>{headerStats.hold}</strong>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-50 text-rose-800 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-              Expiring: <strong>{headerStats.expiring}</strong>
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-stone-100 text-stone-600 font-medium">
-              Expired: <strong>{headerStats.expired}</strong>
-            </span>
-          </div>
         </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0">
+        <div className="flex items-center gap-2.5">
           <button
-            type="button"
-            className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
-            onClick={() => setShowBulkImportModal(true)}
+            className="members-secondary-action flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-wait"
+            onClick={handleAutoMapBiometrics}
+            disabled={mappingBiometrics}
+            title="Read users from the Hikvision terminal and safely match them to members"
           >
-            <Upload size={14} className="text-[#EA580C]" />
-            <span>Import Members</span>
+            <Fingerprint size={15} className={mappingBiometrics ? 'animate-pulse text-[#EA580C]' : 'text-[#EA580C]'} />
+            <span>{mappingBiometrics ? 'Reading Machine…' : 'Map Bio'}</span>
           </button>
           <button
-            type="button"
-            className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 hover:bg-orange-100 text-[#EA580C] border border-orange-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
+            className="members-secondary-action flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
             onClick={() => setShowPhotoSyncModal(true)}
+            title="Pull member face photos from the Hikvision terminal"
           >
-            <Camera size={14} />
+            <Camera size={15} className="text-[#EA580C]" />
             <span>Sync Photos</span>
           </button>
           <button
-            type="button"
-            className="relative flex items-center gap-2 px-4 py-2.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98"
-            onClick={() => router.push('/dashboard/members/map-bio')}
+            className="members-secondary-action flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+            onClick={() => router.push('/dashboard/import')}
           >
-            <ScanFace size={14} />
-            <span>Map Bio</span>
-            {missingBioCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
-                {missingBioCount}
-              </span>
-            )}
+            <Upload size={15} className="text-[#EA580C]" />
+            <span>Import Members</span>
           </button>
           <button
-            type="button"
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#FF7A00] to-[#F04400] hover:brightness-105 active:scale-98 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-orange-500/20 cursor-pointer border-none"
+            className="members-primary-action flex items-center gap-2 px-5 py-2.5 bg-[#EA580C] hover:bg-orange-600 text-white rounded-xl text-xs font-black transition-all shadow-md cursor-pointer border-none active:scale-95"
             onClick={() => setShowAddModal(true)}
           >
-            <Plus size={15} /> <span>Add Member</span>
+            <Plus size={16} /> Add Member
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* KPI Row */}
       <MembersKPI />
 
-      {/* Main Hybrid Table */}
+      {/* Main Table */}
       <MembersTable
         members={members}
         search={search}
@@ -1066,11 +1042,8 @@ export default function MembersPage() {
         setStatusFilter={setStatusFilter}
         selectedMemberId={null}
         onSelectMember={(m) => router.push(`/dashboard/members/${encodeURIComponent(m.id)}`)}
-        onQuickPreview={(m) => setActiveProfile(m)}
         onEdit={(m) => setEditingMember(m)}
         onRenew={(m) => setRenewWizardMember(m)}
-        onCreateBill={(m) => setCreateBillTargetMember(m)}
-        onMapBiometric={(m) => router.push(`/dashboard/members/map-bio?memberId=${encodeURIComponent(m.id)}`)}
         onFreeze={async (m) => {
           try {
             await toggleFreeze(m.id);
@@ -1082,20 +1055,6 @@ export default function MembersPage() {
         }}
         onDelete={(m) => {
           setDeleteMemberTarget(m);
-        }}
-      />
-
-      {/* Quick-Preview Profile Drawer */}
-      <MemberDrawer
-        member={activeProfile}
-        onClose={() => setActiveProfile(null)}
-        onRenew={(m) => {
-          setActiveProfile(null);
-          setRenewWizardMember(m);
-        }}
-        onCreateBill={(m) => {
-          setActiveProfile(null);
-          setCreateBillTargetMember(m);
         }}
       />
 
@@ -1114,33 +1073,6 @@ export default function MembersPage() {
         isOpen={!!renewWizardMember}
         member={renewWizardMember}
         onClose={() => setRenewWizardMember(null)}
-      />
-
-      {/* Bulk Import Modal (Strict 2-Column Excel + Step 2 Hikvision Machine Mapping) */}
-      <BulkImportModal
-        isOpen={showBulkImportModal}
-        onClose={() => setShowBulkImportModal(false)}
-        onImportSuccess={(targetTab) => {
-          setStatusFilter(targetTab || 'hold');
-          fetchMembers();
-        }}
-      />
-
-      {/* Hikvision Member Face Photo Sync Modal */}
-      <HikvisionPhotoSyncModal
-        isOpen={showPhotoSyncModal}
-        onClose={() => setShowPhotoSyncModal(false)}
-        onSyncComplete={() => fetchMembers()}
-      />
-
-      {/* Create New Bill Modal (Hold -> Active) */}
-      <CreateNewBillModal
-        isOpen={!!createBillTargetMember}
-        member={createBillTargetMember}
-        onClose={() => setCreateBillTargetMember(null)}
-        onSaved={() => {
-          setStatusFilter('active');
-        }}
       />
 
       {/* ─── Edit Member Modal ─── */}
@@ -1178,13 +1110,13 @@ export default function MembersPage() {
 
               {/* Personal Details */}
               <div className="space-y-3">
-                <h3 className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Personal Details</h3>
+                <h3 className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Personal Details</h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Name</label>
                     <input
                       type="text"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.name || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, name: e.target.value })}
                       required
@@ -1194,7 +1126,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Phone</label>
                     <input
                       type="text"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.phone || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, phone: e.target.value })}
                       required
@@ -1204,7 +1136,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Email</label>
                     <input
                       type="email"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.email || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, email: e.target.value })}
                     />
@@ -1214,12 +1146,12 @@ export default function MembersPage() {
 
               {/* Membership & Branch */}
               <div className="space-y-3">
-                <h3 className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Membership & Trainer</h3>
+                <h3 className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Membership & Trainer</h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Plan</label>
                     <select
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 bg-white font-bold"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 bg-white font-bold"
                       value={editingMember.plan || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, plan: e.target.value })}
                     >
@@ -1237,7 +1169,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Branch</label>
                     <input
                       type="text"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.branch || "Mohali, Punjab"}
                       onChange={(e) => setEditingMember({ ...editingMember, branch: e.target.value })}
                     />
@@ -1245,7 +1177,7 @@ export default function MembersPage() {
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Trainer</label>
                     <select
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 bg-white font-bold text-slate-700"
                       value={editingMember.trainer || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, trainer: e.target.value })}
                     >
@@ -1259,7 +1191,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Expiry Date</label>
                     <input
                       type="date"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.expiryDate || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, expiryDate: e.target.value })}
                     />
@@ -1285,7 +1217,7 @@ export default function MembersPage() {
                         setEditingMember({ ...editingMember, expiryDate: newExpiry });
                         toast.success(`\u2705 Auto-fixed: ${editingMember.plan} = ${days} days from join date`);
                       }}
-                      className="mt-1.5 w-full text-[9px] font-black text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg py-1.5 transition-all"
+                      className="mt-1.5 w-full text-[9px] font-black text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg py-1.5 transition-all"
                     >
                       \u26a1 Auto-fix from Plan + Join Date
                     </button>
@@ -1295,13 +1227,13 @@ export default function MembersPage() {
 
               {/* Physical Parameters */}
               <div className="space-y-3">
-                <h3 className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Physical & Health Metrics</h3>
+                <h3 className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Physical & Health Metrics</h3>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Age</label>
                     <input
                       type="number"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.age || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, age: e.target.value })}
                     />
@@ -1309,7 +1241,7 @@ export default function MembersPage() {
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Gender</label>
                     <select
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 bg-white font-bold text-slate-700"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 bg-white font-bold text-slate-700"
                       value={editingMember.gender || "Male"}
                       onChange={(e) => setEditingMember({ ...editingMember, gender: e.target.value })}
                     >
@@ -1322,7 +1254,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Blood Group</label>
                     <input
                       type="text"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.bloodGroup || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, bloodGroup: e.target.value })}
                       placeholder="e.g. O+"
@@ -1332,7 +1264,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Weight (kg)</label>
                     <input
                       type="number"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.weight || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, weight: e.target.value })}
                     />
@@ -1341,7 +1273,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Height (cm)</label>
                     <input
                       type="number"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.height || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, height: e.target.value })}
                     />
@@ -1350,7 +1282,7 @@ export default function MembersPage() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Emergency Contact</label>
                     <input
                       type="text"
-                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white"
+                      className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white"
                       value={editingMember.emergencyContact || ""}
                       onChange={(e) => setEditingMember({ ...editingMember, emergencyContact: e.target.value })}
                     />
@@ -1362,7 +1294,7 @@ export default function MembersPage() {
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase">Address</label>
                 <textarea
-                  className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 font-bold bg-white animate-fade-in"
+                  className="w-full mt-1 p-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 font-bold bg-white animate-fade-in"
                   value={editingMember.address || ""}
                   onChange={(e) => setEditingMember({ ...editingMember, address: e.target.value })}
                   rows={2}
@@ -1370,9 +1302,9 @@ export default function MembersPage() {
               </div>
 
               {/* PT Toggle */}
-              <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex items-center justify-between">
+              <div className="p-3.5 bg-orange-50/50 border border-orange-100 rounded-2xl flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center">
                     <Dumbbell size={16} />
                   </div>
                   <div>
@@ -1387,7 +1319,7 @@ export default function MembersPage() {
                     onChange={(e) => setEditingMember({ ...editingMember, isPt: e.target.checked })}
                     className="sr-only peer" 
                   />
-                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-600"></div>
                 </label>
               </div>
 
@@ -1401,7 +1333,7 @@ export default function MembersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer border-none"
+                  className="px-4 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer border-none"
                 >
                   Save Changes
                 </button>
@@ -1410,12 +1342,24 @@ export default function MembersPage() {
           </div>
         </div>
       )}
+      {/* Hikvision Member Face Photo Sync Modal */}
+      <HikvisionPhotoSyncModal
+        isOpen={showPhotoSyncModal}
+        onClose={() => setShowPhotoSyncModal(false)}
+        onSyncComplete={() => fetchMembers()}
+      />
+
       {/* ─── Add Member Modal — Premium White Theme ─── */}
       <AddMemberModal
         isOpen={showAddModal}
+        initialBiometricId={isExistingPunchBiometric ? newBiometricId : ''}
+        biometricAlreadyOnDevice={isExistingPunchBiometric}
+        fingerprintDeviceId={unmappedPunchDeviceId}
         onClose={() => {
           setShowAddModal(false);
           setNewCreatedMember(null);
+          setIsExistingPunchBiometric(false);
+          setUnmappedPunchDeviceId('');
         }}
       />
 
@@ -1455,7 +1399,7 @@ export default function MembersPage() {
                     : enrollStatus.status === "failed"
                       ? "bg-red-500"
                       : enrollStatus.status === "scanning"
-                        ? "bg-[#F97316]"
+                        ? "bg-orange-500"
                         : "bg-amber-500"
                 } blur-3xl`}
               />
@@ -1496,8 +1440,8 @@ export default function MembersPage() {
                     enrollStatus.status === "ready" ||
                     enrollStatus.status === "connecting") && (
                     <>
-                      <div className="absolute inset-0 rounded-full border-2 border-blue-500/30 animate-ping" />
-                      <div className="absolute inset-2 rounded-full border border-blue-500/20 animate-pulse" />
+                      <div className="absolute inset-0 rounded-full border-2 border-orange-500/30 animate-ping" />
+                      <div className="absolute inset-2 rounded-full border border-orange-500/20 animate-pulse" />
                     </>
                   )}
                   {enrollStatus.status === "success" && (
@@ -1527,7 +1471,7 @@ export default function MembersPage() {
                           ? "#10b981"
                           : enrollStatus.status === "failed"
                             ? "#ef4444"
-                            : "#3b82f6"
+                            : "#F97316"
                       }
                       strokeWidth="4"
                       strokeLinecap="round"
@@ -1544,7 +1488,7 @@ export default function MembersPage() {
                         ? "bg-emerald-500/20"
                         : enrollStatus.status === "failed"
                           ? "bg-red-500/20"
-                          : "bg-blue-500/10"
+                          : "bg-orange-500/10"
                     }`}
                   >
                     {enrollStatus.status === "success" ? (
@@ -1554,7 +1498,7 @@ export default function MembersPage() {
                     ) : enrollStatus.status === "info" ? (
                       <AlertTriangle size={36} className="text-amber-400" />
                     ) : enrollAction === "face" ? (
-                      <Scan size={36} className="text-[#FB923C] animate-pulse" />
+                      <Scan size={36} className="text-orange-400 animate-pulse" />
                     ) : enrollAction === "sync" ? (
                       <Wifi
                         size={36}
@@ -1568,7 +1512,7 @@ export default function MembersPage() {
                     ) : (
                       <Fingerprint
                         size={36}
-                        className={`${enrollStatus.status === "scanning" ? "text-[#FB923C] animate-pulse" : "text-slate-400"}`}
+                        className={`${enrollStatus.status === "scanning" ? "text-orange-400 animate-pulse" : "text-slate-400"}`}
                       />
                     )}
                   </div>
@@ -1588,7 +1532,7 @@ export default function MembersPage() {
                           enrollStatus.scan > step
                             ? "bg-emerald-500 border-emerald-400 text-white"
                             : enrollStatus.scan === step
-                              ? "bg-blue-500/20 border-[#F97316] text-[#FB923C] animate-pulse"
+                              ? "bg-orange-500/20 border-orange-500 text-orange-400 animate-pulse"
                               : "bg-white/5 border-white/10 text-slate-500"
                         }`}
                       >
@@ -1652,7 +1596,7 @@ export default function MembersPage() {
                 enrollStatus.status === "ready") && (
                 <div className="h-0.5 bg-white/10 rounded-full overflow-hidden mb-4">
                   <div
-                    className="h-full bg-[#F97316] rounded-full animate-[loading_2s_ease-in-out_infinite]"
+                    className="h-full bg-orange-500 rounded-full animate-[loading_2s_ease-in-out_infinite]"
                     style={{
                       width: `${enrollStatus.scan > 0 ? (enrollStatus.scan / enrollStatus.totalScans) * 100 : 30}%`,
                       transition: "width 0.7s ease",
@@ -1682,7 +1626,7 @@ export default function MembersPage() {
                           ? handleSyncDevice
                           : closeEnrollModal
                     }
-                    className="flex-1 py-3 rounded-xl bg-[#EA580C] hover:bg-orange-500 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer border-none"
+                    className="flex-1 py-3 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer border-none"
                   >
                     <RotateCcw size={12} className="inline mr-1" /> Retry
                   </button>
@@ -1716,7 +1660,7 @@ export default function MembersPage() {
                   className="w-16 h-16 rounded-2xl object-cover border border-slate-100 shadow-md"
                 />
                 <div>
-                  <span className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-0.5 rounded-full font-black tracking-wider uppercase inline-block">
+                  <span className="text-[9px] bg-orange-50 text-orange-700 border border-orange-100 px-2.5 py-0.5 rounded-full font-black tracking-wider uppercase inline-block">
                     {selectedTrainerForView.specialization}
                   </span>
                   <h3 className="text-sm font-black text-slate-900 mt-1.5">
@@ -1735,10 +1679,10 @@ export default function MembersPage() {
                     Bio Biography
                   </span>
                   <p className="text-[10px] text-slate-500 leading-relaxed italic mt-0.5">
-                    &quot;
+                    "
                     {selectedTrainerForView.bio ||
                       "Dedicated professional trainer."}
-                    &quot;
+                    "
                   </p>
                 </div>
                 <div>

@@ -113,10 +113,10 @@ export default function CommunicationTab({ member }: { member: any }) {
   const getIcon = (type: string) => {
     switch(type) {
       case 'WhatsApp': return <MessageSquare size={16} className="text-emerald-500" />;
-      case 'Call': return <Phone size={16} className="text-[#F97316]" />;
+      case 'Call': return <Phone size={16} className="text-orange-500" />;
       case 'Email': return <Mail size={16} className="text-rose-500" />;
       case 'SMS': return <MessageSquare size={16} className="text-amber-500" />;
-      case 'Renewal': return <Clock size={16} className="text-[#F97316]" />;
+      case 'Renewal': return <Clock size={16} className="text-orange-500" />;
       case 'Feedback': return <MessageSquare size={16} className="text-purple-500" />;
       default: return <StickyNote size={16} className="text-slate-500" />;
     }
@@ -140,7 +140,7 @@ export default function CommunicationTab({ member }: { member: any }) {
           </button>
           <button 
             onClick={() => setShowFollowupModal(true)}
-            className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-all"
+            className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-all"
           >
             <Calendar size={14} /> Add Follow-up
           </button>
@@ -163,13 +163,13 @@ export default function CommunicationTab({ member }: { member: any }) {
             </button>
           ))}
 
-          <div className="mt-8 bg-[#FFF7ED] border border-[#FED7AA] rounded-[24px] p-5">
-             <div className="flex items-center gap-2 mb-2 text-[#EA580C]">
+          <div className="mt-8 bg-orange-50 border border-orange-100 rounded-[24px] p-5">
+             <div className="flex items-center gap-2 mb-2 text-orange-600">
                <Zap size={16} />
                <h4 className="text-xs font-black uppercase tracking-wider">Priority Actions</h4>
              </div>
-             <p className="text-[10px] text-[#9A3412] font-semibold mb-4 leading-relaxed">Ensure timely follow-ups and reminders are scheduled.</p>
-             <button onClick={() => setShowFollowupModal(true)} className="w-full py-2.5 bg-[#EA580C] text-white rounded-xl text-xs font-black hover:bg-orange-700 transition-all flex justify-center items-center gap-2 mb-3">
+             <p className="text-[10px] text-orange-800 font-semibold mb-4 leading-relaxed">Ensure timely follow-ups and reminders are scheduled.</p>
+             <button onClick={() => setShowFollowupModal(true)} className="w-full py-2.5 bg-orange-600 text-white rounded-xl text-xs font-black hover:bg-orange-700 transition-all flex justify-center items-center gap-2 mb-3">
                <Calendar size={14} /> Schedule Follow-up
              </button>
              <button className="w-full py-2.5 bg-emerald-500 text-white rounded-xl text-xs font-black hover:bg-emerald-600 transition-all flex justify-center items-center gap-2">
@@ -233,7 +233,7 @@ export default function CommunicationTab({ member }: { member: any }) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             className="relative bg-white rounded-t-xl rounded-b-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col"
           >
-            <div className="bg-[#EA580C] px-6 py-4 flex justify-between items-center text-white">
+            <div className="bg-orange-600 px-6 py-4 flex justify-between items-center text-white">
               <h2 className="text-lg font-black">Add followup</h2>
               <button onClick={() => setShowFollowupModal(false)} className="hover:bg-white/20 p-1 rounded-lg transition-colors">
                 <X size={20} />
@@ -248,7 +248,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                   <select 
                     value={fType}
                     onChange={(e) => setFType(e.target.value)}
-                    className="w-full sm:w-64 bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-[#F97316] transition-colors"
+                    className="w-full sm:w-64 bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-orange-500 transition-colors"
                   >
                     <option value="Renewal">Renewal</option>
                     <option value="General">General</option>
@@ -262,7 +262,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                   <select 
                     value={fMethod}
                     onChange={(e) => setFMethod(e.target.value)}
-                    className="w-full sm:w-64 bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-[#F97316] transition-colors"
+                    className="w-full sm:w-64 bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-orange-500 transition-colors"
                   >
                     <option value="Manual">Manual (Popup)</option>
                     <option value="WhatsApp">WhatsApp (Auto-Send)</option>
@@ -276,10 +276,10 @@ export default function CommunicationTab({ member }: { member: any }) {
                 <label className="text-sm font-semibold text-slate-500">Schedule followup required :</label>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-800">
-                    <input type="radio" name="freq" value="Yes" checked={fRequired === 'Yes'} onChange={() => setFRequired('Yes')} className="w-4 h-4 text-[#EA580C] border-slate-300 focus:ring-orange-200" /> Yes
+                    <input type="radio" name="freq" value="Yes" checked={fRequired === 'Yes'} onChange={() => setFRequired('Yes')} className="w-4 h-4 text-orange-600 border-slate-300 focus:ring-orange-500" /> Yes
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-800">
-                    <input type="radio" name="freq" value="No" checked={fRequired === 'No'} onChange={() => setFRequired('No')} className="w-4 h-4 text-[#EA580C] border-slate-300 focus:ring-orange-200" /> No
+                    <input type="radio" name="freq" value="No" checked={fRequired === 'No'} onChange={() => setFRequired('No')} className="w-4 h-4 text-orange-600 border-slate-300 focus:ring-orange-500" /> No
                   </label>
                 </div>
               </div>
@@ -293,7 +293,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                       required
                       value={fDate}
                       onChange={(e) => setFDate(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-[#F97316] transition-colors"
+                      className="w-full bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-orange-500 transition-colors"
                     />
                   </div>
                   <div>
@@ -303,7 +303,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                       required
                       value={fTime}
                       onChange={(e) => setFTime(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-[#F97316] transition-colors"
+                      className="w-full bg-white border border-slate-300 rounded-full px-4 py-2 text-sm text-slate-700 outline-none focus:border-orange-500 transition-colors"
                     />
                   </div>
                 </div>
@@ -316,7 +316,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                   rows={4}
                   value={fFeedback}
                   onChange={(e) => setFFeedback(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg p-4 text-sm text-slate-700 outline-none focus:border-[#F97316] transition-colors resize-none"
+                  className="w-full bg-white border border-slate-300 rounded-lg p-4 text-sm text-slate-700 outline-none focus:border-orange-500 transition-colors resize-none"
                 />
               </div>
 
@@ -333,7 +333,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                 ))}
               </div>
 
-              <div className="bg-[#EA580C] -mx-6 -mb-6 px-6 py-4 flex justify-end mt-8">
+              <div className="bg-orange-600 -mx-6 -mb-6 px-6 py-4 flex justify-end mt-8">
                 <button 
                   type="submit"
                   className="bg-rose-500 hover:bg-rose-600 text-white px-6 py-2.5 rounded font-bold text-sm shadow-md transition-colors"
@@ -361,7 +361,7 @@ export default function CommunicationTab({ member }: { member: any }) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Type</label>
-                  <select value={newType} onChange={e => setNewType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-[#F97316] font-bold text-slate-800">
+                  <select value={newType} onChange={e => setNewType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-orange-500 font-bold text-slate-800">
                     <option value="Call">Call</option>
                     <option value="WhatsApp">WhatsApp</option>
                     <option value="Email">Email</option>
@@ -371,7 +371,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Outcome</label>
-                  <select value={newOutcome} onChange={e => setNewOutcome(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-[#F97316] font-bold text-slate-800">
+                  <select value={newOutcome} onChange={e => setNewOutcome(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-orange-500 font-bold text-slate-800">
                     <option value="Connected">Connected / Resolved</option>
                     <option value="No Answer">No Answer / Failed</option>
                     <option value="Left Message">Left Message</option>
@@ -386,7 +386,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                   rows={4}
                   value={newContent}
                   onChange={e => setNewContent(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-[#F97316] font-semibold text-slate-700 resize-none"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-orange-500 font-semibold text-slate-700 resize-none"
                   placeholder="Enter notes or message content..."
                 />
               </div>
@@ -394,7 +394,7 @@ export default function CommunicationTab({ member }: { member: any }) {
                 <button type="button" onClick={() => setShowNewModal(false)} className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all">
                   Cancel
                 </button>
-                <button type="submit" className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black shadow-md transition-all">
+                <button type="submit" className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black shadow-md transition-all">
                   Save Record
                 </button>
               </div>

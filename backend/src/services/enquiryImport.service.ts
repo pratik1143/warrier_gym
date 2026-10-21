@@ -17,6 +17,7 @@ export interface ImportReport {
   imported: number;
   pending: number;
   closed: number;
+  converted: number;
   duplicatesPrevented: number;
   invalid: number;
   historicalRecordsLinked: number;
@@ -101,6 +102,7 @@ export async function importEnquiriesFromExcel(fileInput: string | Buffer): Prom
     imported: 0,
     pending: 0,
     closed: 0,
+    converted: 0,
     duplicatesPrevented: 0,
     invalid: 0,
     historicalRecordsLinked: 0,
@@ -187,7 +189,13 @@ export async function importEnquiriesFromExcel(fileInput: string | Buffer): Prom
     }
     seenSheet1Phones.add(normPhone);
 
-    const mappedStatus: 'pending' | 'closed' = rawStatus === 'close' || rawStatus === 'closed' ? 'closed' : 'pending';
+    const mappedStatus: 'pending' | 'closed' | 'converted' =
+      rawStatus === 'close' || rawStatus === 'closed'
+        ? 'closed'
+        : rawStatus === 'converted'
+          ? 'converted'
+          : 'pending';
+    const displayStatus = mappedStatus.charAt(0).toUpperCase() + mappedStatus.slice(1);
 
     const existingEnquiry = phoneToEnquiryMap.get(normPhone);
     const enquiryId = existingEnquiry?.id || `enq_imp_${normPhone}`;
@@ -196,7 +204,7 @@ export async function importEnquiriesFromExcel(fileInput: string | Buffer): Prom
       id: `hist_init_${Date.now()}_${i}`,
       type: 'created',
       title: 'Enquiry Imported',
-      description: `Imported from Excel master dataset (Status: ${mappedStatus === 'pending' ? 'Pending' : 'Closed'})`,
+      description: `Imported from Excel master dataset (Status: ${displayStatus})`,
       status: mappedStatus,
       date: cleanFollowUpDate,
       assignedTo: rawRep,
@@ -219,7 +227,7 @@ export async function importEnquiriesFromExcel(fileInput: string | Buffer): Prom
       followUpTime: '11:00',
       assignedTo: rawRep,
       attendedBy: rawRep,
-      status: mappedStatus === 'pending' ? 'Pending' : 'Closed',
+      status: displayStatus,
       priority: mappedStatus === 'pending' ? 'Warm' : 'Cold',
       source: 'Excel Import',
       remarks: `Imported from Excel master sheet. Plan: ${rawDuration}`,
@@ -235,11 +243,9 @@ export async function importEnquiriesFromExcel(fileInput: string | Buffer): Prom
       isNew: !existingEnquiry
     });
 
-    if (mappedStatus === 'pending') {
-      report.pending++;
-    } else {
-      report.closed++;
-    }
+    if (mappedStatus === 'pending') report.pending++;
+    else if (mappedStatus === 'converted') report.converted++;
+    else report.closed++;
     report.imported++;
   }
 

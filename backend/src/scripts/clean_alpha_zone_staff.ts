@@ -53,7 +53,7 @@ async function cleanAlphaZoneStaff() {
   console.log("✅ Manager account preserved (ID: emp_manager_001, Role: MANAGER).");
 
   // 2. Purge Old Employees (excluding Manager)
-  console.log("\nSTEP 2: Purging old Alpha Zone employee records from 'employees' collection...");
+  console.log("\nSTEP 2: Purging old The Warrior Gym employee records from 'employees' collection...");
   const employeesSnap = await db.collection('employees').get();
   let empDeletedCount = 0;
 
@@ -71,7 +71,7 @@ async function cleanAlphaZoneStaff() {
   console.log(`✅ Deleted ${empDeletedCount} old employee records.`);
 
   // 3. Purge Trainers Collection completely
-  console.log("\nSTEP 3: Purging old Alpha Zone trainer records from 'trainers' collection...");
+  console.log("\nSTEP 3: Purging old The Warrior Gym trainer records from 'trainers' collection...");
   const trainersSnap = await db.collection('trainers').get();
   let trnDeletedCount = 0;
 

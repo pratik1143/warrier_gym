@@ -141,7 +141,7 @@ export default function SendWhatsAppModal({
               <select
                 value={selectedTemplateId}
                 onChange={handleTemplateChange}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-[#F97316] font-bold text-slate-700"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-orange-500 font-bold text-slate-700"
               >
                 <option value="">Custom Message (No Template)</option>
                 {templates.map(t => (
@@ -159,7 +159,7 @@ export default function SendWhatsAppModal({
                 value={messageText}
                 onChange={e => setMessageText(e.target.value)}
                 placeholder="Type your message content..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-[#F97316] font-semibold text-slate-700 resize-none"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-orange-500 font-semibold text-slate-700 resize-none"
               />
             </div>
 
@@ -175,7 +175,7 @@ export default function SendWhatsAppModal({
               <button
                 type="submit"
                 disabled={sending}
-                className="px-5 py-2.5 bg-[#EA580C] text-white font-black rounded-lg text-[10px] hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1.5"
+                className="px-5 py-2.5 bg-orange-600 text-white font-black rounded-lg text-[10px] hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1.5"
               >
                 <Send size={12} />
                 {sending ? 'Sending...' : 'Send Immediately'}

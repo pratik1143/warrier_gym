@@ -52,26 +52,134 @@ export interface UnifiedStaff {
   updatedAt?: string;
 }
 
-export const BASELINE_MANAGER: UnifiedStaff = {
-  id: 'emp_manager_001',
-  employeeId: 'TWG-EMP-0001',
-  biometricId: 10001,
-  name: 'Manager',
-  phone: '9876543210',
-  email: 'manager@thewarriorgym.in',
-  address: 'The Warrior Gym Headquarters',
-  branch: 'The Warrior Gym',
-  role: 'MANAGER',
-  specialization: 'General Manager',
-  status: 'Active',
-  todayStatus: 'Present',
-  currentStatus: 'Inside',
-  experience: 5,
-  joiningDate: '2026-01-01',
-  isDeleted: false
-};
-
-export const BASELINE_REAL_TRAINERS: UnifiedStaff[] = [];
+export const BASELINE_REAL_TRAINERS: UnifiedStaff[] = [
+  {
+    id: 'emp_10021',
+    employeeId: 'EMP-10021',
+    biometricId: 10021,
+    name: 'Sourav Arora',
+    phone: '7973649709',
+    email: '',
+    address: '',
+    branch: 'The Warrior Gym',
+    role: 'Trainer',
+    specialization: 'Fitness Trainer',
+    status: 'Active',
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null,
+    experience: 3,
+    rating: 4.8,
+    salary: 0,
+    joiningDate: '2026-01-01',
+    isDeleted: false
+  },
+  {
+    id: 'emp_10012',
+    employeeId: 'EMP-10012',
+    biometricId: 10012,
+    name: 'Deepak',
+    phone: '8196852386',
+    email: '',
+    address: '',
+    branch: 'The Warrior Gym',
+    role: 'Trainer',
+    specialization: 'Personal Trainer',
+    status: 'Active',
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null,
+    experience: 2,
+    rating: 4.7,
+    salary: 0,
+    joiningDate: '2026-01-01',
+    isDeleted: false
+  },
+  {
+    id: 'emp_10009',
+    employeeId: 'EMP-10009',
+    biometricId: 10009,
+    name: 'Kuldeep',
+    phone: '8629841471',
+    email: 'kuldeep86298@gmail.com',
+    address: '',
+    branch: 'The Warrior Gym',
+    role: 'Trainer',
+    specialization: 'Strength & Conditioning',
+    status: 'Active',
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null,
+    experience: 4,
+    rating: 4.9,
+    salary: 0,
+    joiningDate: '2026-01-01',
+    isDeleted: false
+  },
+  {
+    id: 'emp_10008',
+    employeeId: 'EMP-10008',
+    biometricId: 10008,
+    name: 'Arshdeep Singh',
+    phone: '9915866576',
+    email: '',
+    address: '',
+    branch: 'The Warrior Gym',
+    role: 'Trainer',
+    specialization: 'CrossFit Coach',
+    status: 'Active',
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null,
+    experience: 3,
+    rating: 4.6,
+    salary: 0,
+    joiningDate: '2026-01-01',
+    isDeleted: false
+  },
+  {
+    id: 'emp_10005',
+    employeeId: 'EMP-10005',
+    biometricId: 10005,
+    name: 'Achhar Pal',
+    phone: '9592691190',
+    email: '',
+    address: 'kaimbwala chd',
+    branch: 'The Warrior Gym',
+    role: 'Trainer',
+    specialization: 'Bodybuilding & Hypertrophy',
+    status: 'Active',
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null,
+    experience: 5,
+    rating: 4.9,
+    salary: 0,
+    joiningDate: '2026-01-01',
+    isDeleted: false
+  },
+  {
+    id: 'emp_10003',
+    employeeId: 'EMP-10003',
+    biometricId: 10003,
+    name: 'Abc',
+    phone: '7884977777',
+    email: '',
+    address: '',
+    branch: 'The Warrior Gym',
+    role: 'Trainer',
+    specialization: 'Fitness Trainer',
+    status: 'Active',
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null,
+    experience: 1,
+    rating: 4.5,
+    salary: 0,
+    joiningDate: '2026-01-01',
+    isDeleted: false
+  }
+];
 
 class StaffDirectoryService {
   private hasReconciled = false;
@@ -141,17 +249,6 @@ class StaffDirectoryService {
         existingDocKeys.add(key);
       }
 
-      // Ensure baseline Manager account exists in Firestore
-      const mgrKey = this.getStaffKey(BASELINE_MANAGER);
-      if (!existingDocKeys.has(mgrKey)) {
-        const docRef = doc(db, 'employees', BASELINE_MANAGER.id);
-        await setDoc(docRef, {
-          ...BASELINE_MANAGER,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }).catch(() => {});
-      }
-
       // Check baseline real trainers and write any missing records to Firestore
       for (const staff of BASELINE_REAL_TRAINERS) {
         const key = this.getStaffKey(staff);
@@ -165,7 +262,7 @@ class StaffDirectoryService {
         }
       }
     } catch (err) {
-      // silenced — expected without Firebase auth
+      console.warn('[StaffService] Reconciliation sync notice:', err);
     }
   }
 
@@ -179,8 +276,11 @@ class StaffDirectoryService {
 
     const directoryMap = new Map<string, UnifiedStaff>();
 
-    const mgrKey = this.getStaffKey(BASELINE_MANAGER);
-    directoryMap.set(mgrKey, { ...BASELINE_MANAGER });
+    // 1. Seed baseline real trainers first
+    for (const item of BASELINE_REAL_TRAINERS) {
+      const key = this.getStaffKey(item);
+      directoryMap.set(key, { ...item });
+    }
 
     // 2. Fetch from /api/employees & Firestore 'employees' collection
     try {
@@ -225,7 +325,7 @@ class StaffDirectoryService {
         directoryMap.set(key, staffItem);
       });
     } catch (err) {
-      // silenced — falls back to REST API
+      console.warn('[StaffService] Firestore employees fetch failed, checking API:', err);
       try {
         const res = await API.get('/employees');
         if (Array.isArray(res.data)) {
@@ -316,7 +416,7 @@ class StaffDirectoryService {
         }
       });
     } catch (err) {
-      // silenced — expected without Firebase auth
+      console.warn('[StaffService] Firestore trainers fetch warning:', err);
     }
 
     return Array.from(directoryMap.values()).filter(item => !item.isDeleted && !this.isFakeStaff(item));
@@ -329,7 +429,7 @@ class StaffDirectoryService {
     const allStaff = await this.getStaffDirectory();
     return allStaff.filter(staff => {
       const r = String(staff.role || '').trim().toLowerCase();
-      return r.includes('trainer');
+      return r.includes('trainer') || !!staff.specialization;
     });
   }
 

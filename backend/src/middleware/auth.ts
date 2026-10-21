@@ -13,6 +13,9 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
+// Real owner accounts (never lose admin access if their /users profile doc is missing).
+export const KNOWN_OWNER_EMAILS = ['owner@warrier.com', 'owner@thewarriorgym.in'];
+
 const DEMO_FALLBACK_USER = {
   uid: 'demo_owner_001',
   email: 'owner@thewarriorgym.in',
@@ -25,6 +28,9 @@ const DEMO_FALLBACK_USER = {
 export const authenticateToken = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const firestore = getFirestoreDb();
   if (!isFirebaseInitialized || !firestore) {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).json({ error: 'Authentication service is unavailable.' });
+    }
     req.user = DEMO_FALLBACK_USER;
     return next();
   }
@@ -32,10 +38,13 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  // No token → treat as demo/local gym owner (allows dashboard to work without Firebase login)
+  // Demo authentication is only available in local development.
   if (!token || token.startsWith('demo_')) {
-    req.user = DEMO_FALLBACK_USER;
-    return next();
+    if (process.env.NODE_ENV !== 'production') {
+      req.user = DEMO_FALLBACK_USER;
+      return next();
+    }
+    return res.status(401).json({ error: 'Authentication required.' });
   }
 
   try {
@@ -50,7 +59,7 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
           uid: decodedToken.uid,
           email: decodedToken.email,
           name: decodedToken.name || decodedToken.email?.split('@')[0] || 'Gym Member',
-          role: 'member',
+          role: KNOWN_OWNER_EMAILS.includes(String(decodedToken.email || '').toLowerCase()) ? 'gym_owner' : 'member',
           branch: 'Mohali, Punjab',
           gymId: 'gym_001',
           createdAt: new Date().toISOString()
@@ -64,13 +73,22 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
       if (fErr?.message?.includes('PERMISSION_DENIED') || fErr?.message?.includes('disabled')) {
         disableFirestore();
       }
-      req.user = DEMO_FALLBACK_USER;
+      console.error('[Auth] Failed to load the authenticated user profile:', fErr);
+      return res.status(503).json({ error: 'Could not load the authenticated user profile.' });
     }
 
-    next();
-  } catch (error: any) {
-    console.warn('[Auth] Token invalid, falling back to demo user:', error.message);
-    req.user = DEMO_FALLBACK_USER;
     return next();
+  } catch (error: any) {
+    console.warn('[Auth] Token verification failed:', error.message);
+    return res.status(401).json({ error: 'Invalid or expired authentication token.' });
   }
+};
+
+export const authorizeRoles = (...allowedRoles: string[]) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'You do not have permission to perform this action.' });
+    }
+    return next();
+  };
 };

@@ -1,22 +1,53 @@
 import { Request, Response } from 'express';
 import { getFirestoreDb, mockEnquiries, mockMembers, saveMockDb, db } from '../firebase';
 import { importEnquiriesFromExcel } from '../services/enquiryImport.service';
-import { resolveStaleRenewalFollowups } from '../services/followupAutomation.service';
+import { resolveStaleRenewalFollowups, getKolkataDateString } from '../services/followupAutomation.service';
+
+function getTomorrowKolkata(): string {
+  const todayStr = getKolkataDateString();
+  const [y, m, d] = todayStr.split('-').map(Number);
+  if (!y || !m || !d) return todayStr;
+  const nextDate = new Date(Date.UTC(y, m - 1, d + 1));
+  const year = nextDate.getUTCFullYear();
+  const month = String(nextDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(nextDate.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 import {
   createEnquiryBackendSchema,
   updateEnquiryBackendSchema,
   convertEnquiryBackendSchema
 } from '../validations/enquirySchemas';
 
+export const getEnquirySortTime = (e: any): number => {
+  if (e?.createdAt) {
+    const t = typeof e.createdAt === 'object' && e.createdAt.seconds
+      ? e.createdAt.seconds * 1000
+      : new Date(e.createdAt).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (e?.enquiryDate) {
+    const t = new Date(e.enquiryDate).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (e?.date) {
+    const t = new Date(e.date).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  return 0; // safe fallback for historical records without timestamps
+};
+
 export const getEnquiries = async (req: Request, res: Response) => {
   try {
     const firestore = getFirestoreDb();
     if (firestore) {
-      const snap = await firestore.collection('enquiries').orderBy('createdAt', 'desc').get();
+      const snap = await firestore.collection('enquiries').get();
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      list.sort((a, b) => getEnquirySortTime(b) - getEnquirySortTime(a));
       return res.json(list);
     }
-    return res.json(mockEnquiries);
+    const sorted = [...mockEnquiries].sort((a: any, b: any) => getEnquirySortTime(b) - getEnquirySortTime(a));
+    return res.json(sorted);
   } catch (error: any) {
     console.error('Error fetching enquiries:', error);
     res.json(mockEnquiries);
@@ -59,7 +90,12 @@ export const createEnquiry = async (req: Request, res: Response) => {
     const data = req.body;
 
     const createdId = data.id || `enq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const nextDate = (data.nextFollowUpDate || data.nextFollowUp || data.followupDate || '').split('T')[0];
+    const rawDate = data.nextFollowUpDate || data.nextFollowUp || data.followupDate;
+    const nextDate = (rawDate && typeof rawDate === 'string' && rawDate.trim() !== '') ? rawDate.split('T')[0] : getTomorrowKolkata();
+    const followUpTime = data.followUpTime || data.followupTime || '05:00';
+    const rawEnqDate = data.enquiryDate || data.createdAt;
+    const enquiryDate = (rawEnqDate && typeof rawEnqDate === 'string' && rawEnqDate.trim() !== '') ? rawEnqDate.split('T')[0] : getKolkataDateString();
+    const savedRemarks = data.remarks || data.remark || '';
 
     const initialHistory = [{
       id: `hist_${Date.now()}`,
@@ -81,9 +117,10 @@ export const createEnquiry = async (req: Request, res: Response) => {
       email: data.email || '',
       gender: data.gender || 'Male',
       address: data.address || '',
+      enquiryDate: enquiryDate,
       nextFollowUpDate: nextDate,
       nextFollowUp: nextDate,
-      followUpTime: data.followUpTime || data.followupTime || '11:00',
+      followUpTime: followUpTime,
       trialDate: data.trialDate || '',
       status: data.status || 'Pending',
       assignedTo: data.assignedTo || data.attendedBy || 'Reception Desk',
@@ -91,7 +128,8 @@ export const createEnquiry = async (req: Request, res: Response) => {
       source: data.source || 'Walk-in',
       interestedPlan: data.interestedPlan || data.inquiryFor || 'Monthly Access',
       duration: data.duration || data.interestedPlan || '1 month',
-      remarks: data.remarks || '',
+      remarks: savedRemarks,
+      remark: savedRemarks,
       history: initialHistory,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -119,8 +157,8 @@ export const createEnquiry = async (req: Request, res: Response) => {
           notes: newEnquiry.remarks ? `Enquiry remarks: ${newEnquiry.remarks}` : `Lead follow-up for ${newEnquiry.name}`,
           scheduledDate: nextDate,
           dueDate: nextDate,
-          scheduledTime: newEnquiry.followUpTime || '11:00',
-          scheduledTimestamp: new Date(`${nextDate}T${newEnquiry.followUpTime || '11:00'}`).getTime() || Date.now(),
+          scheduledTime: followUpTime,
+          scheduledTimestamp: new Date(`${nextDate}T${followUpTime}:00+05:30`).getTime() || Date.now(),
           status: 'Pending',
           priority: newEnquiry.priority === 'Hot' ? 'High' : 'Medium',
           assignedTo: newEnquiry.assignedTo || 'Reception Desk',

@@ -26,10 +26,11 @@ export function useFollowups() {
 
   useEffect(() => {
     const todayStr = getTodayInIndia();
-    // Run automated generation check once per calendar day on hook mount
+    // Run automated generation check & cleanup once per calendar day on hook mount
     if (autoGenerationTriggeredDate !== todayStr) {
       autoGenerationTriggeredDate = todayStr;
       followupService.generateAutomatedFollowups(todayStr).catch(() => {});
+      followupService.cleanupAutoExpiredFollowups().catch(() => {});
     }
 
     const unsubscribe = followupService.subscribe(
@@ -44,12 +45,31 @@ export function useFollowups() {
     return () => unsubscribe();
   }, []);
 
-  // Filter out any legacy auto trigger tasks and sort strictly date-wise (ascending)
+  // Filter out archived tasks & auto-generated expired membership tasks, sort date-wise
   const followups = useMemo(() => {
     const cleanList = dbFollowups.filter((f) => {
+      if (!f) return false;
+      const statusLower = (f.status || '').toLowerCase();
+      if (statusLower === 'archived' || (f as any).isActive === false) {
+        return false;
+      }
+
       const notesLower = (f.notes || '').toLowerCase();
       const titleLower = (f.title || '').toLowerCase();
       const descLower = (f.description || '').toLowerCase();
+      const reasonLower = (f.reason || '').toLowerCase();
+      const typeLower = (f.type || '').toLowerCase();
+      const sourceLower = (f.source || '').toLowerCase();
+      const key = String(f.automationKey || f.id || '');
+
+      // Exclude auto-generated expired tasks (expired members belong ONLY to Expired module page)
+      const isAuto = sourceLower === 'auto' || sourceLower === 'automatic' || key.startsWith('AUTO_');
+      const isExpiredTask = typeLower === 'expired' || key.startsWith('AUTO_EXPIRED_') || reasonLower.includes('membership expired') || notesLower.includes('membership expired');
+
+      if (isAuto && isExpiredTask) {
+        return false;
+      }
+
       return (
         !notesLower.includes('auto trigger') &&
         !titleLower.includes('auto trigger') &&

@@ -1,35 +1,35 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Edit3, Shield, Activity, Droplets, Calendar,
   Clock, DollarSign, MessageSquare, Phone, Mail, Printer, Download,
   Trash2, Snowflake, Repeat, Sparkles, AlertCircle, Bell, ChevronRight, Camera, User, Dumbbell,
-  MoreVertical, CheckCircle2, MapPin, Heart, Timer, CreditCard, Plus
+  MoreVertical, CheckCircle2, MapPin, Heart, Timer, CreditCard, TrendingUp
 } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, collection, query, where, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, updateDoc, getDocs } from 'firebase/firestore';
 import toast from '@/lib/toast';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { paymentEngine } from '@/lib/engines/paymentEngine';
 import { calculateRealAttendance } from '@/lib/utils';
 import API from '@/services/api';
-import { billingRepository } from '@/services/billingRepository';
 import { useGymStore } from '@/store';
 import MemberAvatar from '../../components/MemberAvatar';
 import SmartPhotoCapture from '../../components/SmartPhotoCapture';
 import RenewalWizardModal from '../components/RenewalWizardModal';
 import TrainerSelectorDropdown from '../components/TrainerSelectorDropdown';
 import PtBillingModal from '../components/PtBillingModal';
-import CreateNewBillModal from '../components/CreateNewBillModal';
+import UpgradeModal from '../components/UpgradeModal';
 
 // Tabs
 import ProfileTab from './components/ProfileTab';
 import BillingTab from './components/BillingTab';
 import CommunicationTab from './components/CommunicationTab';
-import AttendanceTab, { buildAttendanceSessions } from './components/AttendanceTab';
+import AttendanceTab, { buildAttendanceSessions, isLogForMember } from './components/AttendanceTab';
+import './member-detail-mobile.css';
 
 const TABS = [
   'Profile', 'Billing', 'Communication', 'Attendance'
@@ -49,7 +49,7 @@ export default function ClientProfileSystem() {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showRenewalModal, setShowRenewalModal] = useState(false);
   const [showPtModal, setShowPtModal] = useState(false);
-  const [showCreateBillModal, setShowCreateBillModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showQuickMenu, setShowQuickMenu] = useState(false);
   const quickMenuRef = useRef<HTMLDivElement>(null);
 
@@ -68,10 +68,10 @@ export default function ClientProfileSystem() {
   }, [showQuickMenu]);
 
   useEffect(() => {
-    if (searchParams && searchParams.get('renew') === 'true') {
-      setShowRenewalModal(true);
+    if (searchParams && searchParams.get('renew') === 'true' && id) {
+      router.push(`/dashboard/billing/create?mode=renew&id=${encodeURIComponent(id)}`);
     }
-  }, [searchParams]);
+  }, [searchParams, id, router]);
 
   const handleSavePhoto = async (photoUrl: string) => {
     if (!member) return;
@@ -124,22 +124,13 @@ export default function ClientProfileSystem() {
       if (!isMounted) return;
       const rawLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      const memberLogs = rawLogs.filter((log: any) => {
-        if (!log) return false;
-        const lMemberId = String(log.memberId || log.memberCode || log.uid || '').trim();
-        const lBioId = String(log.biometricId || log.deviceUserId || log.bioId || '').trim();
-        const lPhone = log.phone ? String(log.phone).replace(/\D/g, '').slice(-10) : '';
-
-        if (docId && lMemberId && docId === lMemberId) return true;
-        if (memberCode && lMemberId && memberCode === lMemberId) return true;
-        if (bioId && lBioId && bioId === lBioId) return true;
-        if (phone && lPhone && phone === lPhone) return true;
-        return false;
-      });
+      const memberLogs = rawLogs.filter((log: any) => isLogForMember(log, member));
 
       const sessions = buildAttendanceSessions(memberLogs);
       setRealAttendanceCount(sessions.length);
-    }, () => { /* silenced */ });
+    }, (error) => {
+      console.warn("Member attendance count snapshot notice:", error.message);
+    });
 
     return () => {
       isMounted = false;
@@ -148,52 +139,91 @@ export default function ClientProfileSystem() {
   }, [id, member]);
 
   // ── ENGINE DERIVED VALUES (Single Source of Truth) ──────────────
-  const isHold = String(member?.status || '').trim().toUpperCase() === 'HOLD';
-  const effectiveAttendanceCount = isHold ? 0 : (realAttendanceCount || Number(member?.attendanceCount) || 0);
-  const daysLeft       = isHold || !member?.expiryDate ? 0 : membershipEngine.calculateDaysLeft(member.expiryDate);
-  const riskLevel      = isHold ? 'none' : membershipEngine.calculateRenewalRisk(daysLeft);
-  const attendancePct  = isHold || !member ? 0 : calculateRealAttendance(member.joinDate, effectiveAttendanceCount);
-  const healthScore    = isHold ? 0 : membershipEngine.calculateHealthScore(daysLeft, attendancePct);
+  const effectiveAttendanceCount = realAttendanceCount || Number(member?.attendanceCount) || 0;
+  const daysLeft       = member ? membershipEngine.calculateDaysLeft(member.expiryDate) : 0;
+  const riskLevel      = membershipEngine.calculateRenewalRisk(daysLeft);
+  const attendancePct  = member ? calculateRealAttendance(member.joinDate, effectiveAttendanceCount) : 0;
+  const healthScore    = membershipEngine.calculateHealthScore(daysLeft, attendancePct);
 
-  // Payment totals from canonical sources (Single Source of Truth)
-  const canonicalSummary = useMemo(() => {
-    if (isHold) return { billed: 0, paid: 0, pending: 0, status: 'NOT_BILLED' as const };
+  // Payment totals from invoices (Single Source of Truth)
+  const isMemberPaid = member?.paymentStatus === 'paid' || (member?.totalPaid && member?.totalPaid >= member?.totalBilled);
+  const totalInvoiced = memberInvoices.reduce((s, inv) => s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0), 0);
+  const totalPaid = isMemberPaid 
+    ? (totalInvoiced || Number(member?.totalPaid) || Number(member?.price) || Number(member?.amount) || 0)
+    : memberInvoices.reduce((s, inv) => {
+        if (inv.status === 'paid' || inv.paymentStatus === 'paid') {
+          return s + (Number(inv.amount) || 0) + (Number(inv.gst) || 0);
+        }
+        return s + (Number(inv.paid) || Number(inv.amount) || 0);
+      }, 0);
 
-    // 1. Primary: live memberInvoices from payments collection
-    if (memberInvoices && memberInvoices.length > 0) {
-      const summary = paymentEngine.calculateBillingSummary(memberInvoices);
-      const st = paymentEngine.calculatePaymentStatus(summary.totalBilled, summary.totalCollected, false);
-      return { billed: summary.totalBilled, paid: summary.totalCollected, pending: summary.totalPending, status: st };
-    }
+  const rawOutstanding = isMemberPaid ? 0 : paymentEngine.calculateOutstandingAmount(totalInvoiced, totalPaid);
+  const outstanding = Math.max(0, rawOutstanding);
+  const payStatus = isMemberPaid ? 'PAID' : (outstanding <= 0 ? 'PAID' : paymentEngine.calculatePaymentStatus(totalInvoiced, totalPaid));
 
-    // 2. Secondary: member.billingHistory on document
-    if (Array.isArray(member?.billingHistory) && member.billingHistory.length > 0) {
-      const summary = paymentEngine.calculateBillingSummary(member.billingHistory);
-      const st = paymentEngine.calculatePaymentStatus(summary.totalBilled, summary.totalCollected, false);
-      return { billed: summary.totalBilled, paid: summary.totalCollected, pending: summary.totalPending, status: st };
-    }
-
-    // 3. Fallback: stored member financial fields
-    const billed = Number(member?.totalBilled !== undefined ? member.totalBilled : (member?.amount || member?.price || 0));
-    const paid = Number(member?.totalPaid !== undefined ? member.totalPaid : (member?.paid || 0));
-    const pending = Math.max(0, billed - paid);
-    const st = paymentEngine.calculatePaymentStatus(billed, paid, false);
-    return { billed, paid, pending, status: st };
-  }, [memberInvoices, member, isHold]);
-
-  const totalInvoiced = canonicalSummary.billed;
-  const totalPaid = canonicalSummary.paid;
-  const outstanding = canonicalSummary.pending;
-  const payStatus = canonicalSummary.status;
-  const isMemberPaid = payStatus === 'PAID';
-
-  // ── SELF HEAL & FALLBACK member fetch ───────────────────────────
+  // ── SELF HEAL & FALLBACK member fetch (Multi-field Resilient Lookup) ──
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     let isMounted = true;
 
+    const findInStore = (searchId: string) => {
+      const storeMembers = useGymStore.getState().members || [];
+      const target = String(searchId).trim().toLowerCase();
+      const cleanNum = target.replace(/^(az-2026-|az-)/i, '');
+
+      return storeMembers.find((m: any) => {
+        if (!m) return false;
+        const mId = String(m.id || '').toLowerCase();
+        const mUid = String(m.uid || '').toLowerCase();
+        const mDocId = String(m.docId || '').toLowerCase();
+        const mMemberId = String(m.memberId || '').toLowerCase();
+        const mClientId = String(m.clientId || '').toLowerCase();
+        const mCode = String(m.memberCode || '').toLowerCase();
+        const mPhone = String(m.phone || '').replace(/\D/g, '');
+
+        if (mId === target || mUid === target || mDocId === target || mMemberId === target || mClientId === target || mCode === target) {
+          return true;
+        }
+        if (mPhone && target.replace(/\D/g, '') && (mPhone === target.replace(/\D/g, '') || mPhone.endsWith(target.replace(/\D/g, '')))) {
+          return true;
+        }
+        if (cleanNum && cleanNum.length >= 2) {
+          const mCleanMember = mMemberId.replace(/^(az-2026-|az-)/i, '');
+          const mCleanClient = mClientId.replace(/^(az-2026-|az-)/i, '');
+          if (mCleanMember === cleanNum || mCleanClient === cleanNum) return true;
+        }
+        return false;
+      });
+    };
+
     const fetchFallbackMember = async () => {
+      // 1. Check local store
+      const storeMatch = findInStore(id);
+      if (storeMatch && isMounted) {
+        setMember(storeMatch);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Query Firestore by alternative key fields
+      try {
+        const memCol = collection(db, 'members');
+        const qFields = ['memberId', 'clientId', 'uid', 'docId', 'phone', 'memberCode'];
+        for (const field of qFields) {
+          const snap = await getDocs(query(memCol, where(field, '==', id)));
+          if (!snap.empty && isMounted) {
+            const d = snap.docs[0];
+            setMember({ id: d.id, ...d.data() });
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Firestore query lookup notice:', err);
+      }
+
+      // 3. Call API single member endpoint
       try {
         const res = await API.get(`/members/${id}`);
         if (res.data && isMounted) {
@@ -202,13 +232,11 @@ export default function ClientProfileSystem() {
           return;
         }
       } catch (e) {
-        console.warn('API single member fetch failed, checking local store:', e);
+        console.warn('API single member fetch failed:', e);
       }
 
-      const storeMembers = useGymStore.getState().members;
-      const foundInStore = storeMembers.find((m: any) => m.id === id || m.uid === id || m.memberId === id);
       if (isMounted) {
-        setMember(foundInStore || null);
+        setMember(null);
         setLoading(false);
       }
     };
@@ -217,8 +245,7 @@ export default function ClientProfileSystem() {
       if (!isMounted) return;
       if (d.exists()) {
         let m: any = { id: d.id, ...d.data() };
-        const isHoldMemberDoc = String(m?.status || '').trim().toUpperCase() === 'HOLD';
-        if (!isHoldMemberDoc && m.plan && (!m.expiryDate || m.expiryDate === m.joinDate || m.expiryDate === new Date().toISOString().split('T')[0])) {
+        if (m.plan && (!m.expiryDate || m.expiryDate === m.joinDate || m.expiryDate === new Date().toISOString().split('T')[0])) {
           const rawJoin = m.joinDate || m.createdAt;
           const corrected = membershipEngine.calculatePlanExpiryDate(m.plan, rawJoin);
           if (corrected > (m.expiryDate || '')) {
@@ -249,24 +276,29 @@ export default function ClientProfileSystem() {
     if (!id) return;
     let isMounted = true;
 
-    const targetMember = member || { id };
-    const unsub = billingRepository.subscribeMemberBilling(
-      targetMember,
-      (list) => {
-        if (isMounted) {
-          setMemberInvoices(list);
-        }
-      },
-      (err) => {
-        console.warn('Member invoices subscription notice:', err?.message || err);
+    const fetchFallbackInvoices = async () => {
+      try {
+        const res = await API.get(`/billing?memberId=${id}`);
+        const list = res.data || [];
+        if (isMounted) setMemberInvoices(list);
+      } catch (e) {
+        console.warn('API fallback invoices fetch failed:', e);
       }
-    );
+    };
+
+    const q = query(collection(db, 'payments'), where('memberId', '==', id));
+    const unsub = onSnapshot(q, (snap) => {
+      if (isMounted) setMemberInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.warn("Member invoices snapshot error:", error.message);
+      if (isMounted) fetchFallbackInvoices();
+    });
 
     return () => {
       isMounted = false;
       unsub();
     };
-  }, [id, member]);
+  }, [id]);
 
   if (loading) {
     return (
@@ -293,7 +325,7 @@ export default function ClientProfileSystem() {
         </p>
         <button
           onClick={() => router.push('/dashboard/members')}
-          className="px-6 py-3 bg-[#0066FF] text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-all flex items-center gap-2 cursor-pointer shadow-md"
+          className="px-6 py-3 bg-[#EA580C] text-white rounded-xl text-xs font-bold hover:bg-orange-700 transition-all flex items-center gap-2 cursor-pointer shadow-md"
         >
           <ArrowLeft size={16} /> Return to Members
         </button>
@@ -302,46 +334,46 @@ export default function ClientProfileSystem() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 sm:p-6 font-sans pb-32">
+    <div className="member-detail-page min-h-screen bg-[#F8FAFC] p-4 sm:p-6 font-sans pb-32">
       {/* ══ PREMIUM MEMBER COMMAND CENTER HERO CARD ════════════════════════ */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
-        className="bg-white rounded-[22px] border border-slate-200/90 shadow-[0_4px_24px_rgba(234,88,12,0.05)] mb-5 overflow-hidden relative"
+        className="member-detail-hero bg-white rounded-[22px] border border-slate-200/90 shadow-[0_4px_24px_rgba(234, 88, 12,0.05)] mb-5 overflow-hidden relative"
       >
         {/* Subtle top brand accent stripe */}
-        <div className="h-1 w-full bg-gradient-to-r from-[#0066FF] via-[#38bdf8] to-[#10b981]" />
+        <div className="h-1 w-full bg-gradient-to-r from-[#EA580C] via-[#38bdf8] to-[#10b981]" />
 
-        <div className="p-4 sm:p-5 lg:p-6 space-y-4">
+        <div className="member-detail-hero-content p-4 sm:p-5 lg:p-6 space-y-4">
           
           {/* ── TOP BAR: BACK NAVIGATION & MEMBER ID ── */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="member-detail-topbar flex items-center justify-between gap-3">
             <button
               onClick={() => router.push('/dashboard/members')}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-[#0066FF] bg-transparent border-none cursor-pointer transition-colors group"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-[#EA580C] bg-transparent border-none cursor-pointer transition-colors group"
             >
               <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
               Back to Members
             </button>
 
-            <span className="text-[11px] font-mono font-black text-indigo-600 bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded-lg">
+            <span className="text-[11px] font-mono font-black text-orange-600 bg-orange-50 border border-orange-200/70 px-2 py-0.5 rounded-lg">
               #{member.clientId || member.memberId || member.id}
             </span>
           </div>
 
           {/* ── MAIN HERO BODY (IDENTITY + MEMBERSHIP CARD) ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+          <div className="member-detail-primary grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
             
             {/* ── ZONE 1: IDENTITY (Span 7) ── */}
-            <div className="lg:col-span-7 flex flex-col sm:flex-row items-start sm:items-center gap-4.5 min-w-0">
+            <div className="member-detail-identity lg:col-span-7 flex flex-col sm:flex-row items-start sm:items-center gap-4.5 min-w-0">
               {/* Photo Avatar */}
               <div
                 onClick={() => setShowPhotoModal(true)}
                 className="relative shrink-0 cursor-pointer group"
                 title="Click to update profile photo"
               >
-                <div className="w-[88px] h-[88px] sm:w-[100px] sm:h-[100px] rounded-[20px] overflow-hidden border-2 border-white shadow-[0_4px_16px_rgba(15,23,42,0.12)] bg-slate-100 ring-2 ring-slate-100 group-hover:ring-[#0066FF] transition-all">
+                <div className="w-[88px] h-[88px] sm:w-[100px] sm:h-[100px] rounded-[20px] overflow-hidden border-2 border-white shadow-[0_4px_16px_rgba(15,23,42,0.12)] bg-slate-100 ring-2 ring-slate-100 group-hover:ring-[#EA580C] transition-all">
                   <MemberAvatar member={member} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" size={100} />
                 </div>
                 <div className="absolute inset-0 rounded-[20px] bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[1px]">
@@ -349,7 +381,7 @@ export default function ClientProfileSystem() {
                 </div>
                 {/* Active status indicator dot with soft glow */}
                 <span className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center shadow-xs ${
-                  isHold ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : daysLeft > 7 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : daysLeft > 0 ? 'bg-amber-500' : 'bg-rose-500'
+                  daysLeft > 7 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : daysLeft > 0 ? 'bg-amber-500' : 'bg-rose-500'
                 }`} />
               </div>
 
@@ -357,292 +389,197 @@ export default function ClientProfileSystem() {
               <div className="flex-1 min-w-0 space-y-1.5">
                 {/* Name + Status Badge */}
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight truncate">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight break-words [overflow-wrap:anywhere]">
                     {member.name || 'Member'}
                   </h1>
-                  {isHold ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-black border bg-amber-50 text-amber-800 border-amber-300">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                      HOLD
-                    </span>
-                  ) : (
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                    member.isFrozen || member.status === 'frozen'
+                      ? 'bg-sky-50 text-sky-700 border-sky-200'
+                      : daysLeft > 7
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : daysLeft > 0
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
                       member.isFrozen || member.status === 'frozen'
-                        ? 'bg-sky-50 text-sky-700 border-sky-200'
+                        ? 'bg-sky-500'
                         : daysLeft > 7
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          ? 'bg-emerald-500 animate-pulse'
                           : daysLeft > 0
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                    }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${
-                        member.isFrozen || member.status === 'frozen'
-                          ? 'bg-sky-500'
-                          : daysLeft > 7
-                            ? 'bg-emerald-500 animate-pulse'
-                            : daysLeft > 0
-                              ? 'bg-amber-500'
-                              : 'bg-rose-500'
-                      }`} />
-                      {member.isFrozen || member.status === 'frozen'
-                        ? 'Frozen'
-                        : daysLeft > 7
-                          ? 'Active'
-                          : daysLeft > 0
-                            ? 'Expiring Soon'
-                            : 'Expired'}
+                            ? 'bg-amber-500'
+                            : 'bg-rose-500'
+                    }`} />
+                    {member.isFrozen || member.status === 'frozen'
+                      ? 'Frozen'
+                      : daysLeft > 7
+                        ? 'Active'
+                        : daysLeft > 0
+                          ? 'Expiring Soon'
+                          : 'Expired'}
+                  </span>
+                </div>
+
+                {/* Secondary Metadata: Phone · Location · Email */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-semibold text-slate-600">
+                  {member.phone && (
+                    <span className="inline-flex items-center gap-1 text-slate-700">
+                      <Phone size={12} className="text-slate-400" />
+                      {member.phone}
                     </span>
                   )}
-
-                  {member.photoSource === 'HIKVISION' && (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-50 text-[#EA580C] border border-orange-200">
-                      <Camera size={11} />
-                      Photo source: <strong>Hikvision</strong>
-                      {member.photoSyncedAt && (
-                        <span className="text-slate-400 font-normal">
-                          · Synced: {new Date(member.photoSyncedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      )}
-                    </span>
+                  {member.phone && <span className="text-slate-300">·</span>}
+                  <span className="inline-flex items-center gap-1 min-w-0 text-slate-600 break-words">
+                    <MapPin size={12} className="text-slate-400" />
+                    {member.branch || 'Mohali, Punjab'}
+                  </span>
+                  {member.email && (
+                    <>
+                      <span className="hidden sm:inline text-slate-300">·</span>
+                      <span className="min-w-0 text-slate-500 break-all">{member.email}</span>
+                    </>
                   )}
                 </div>
 
-                {/* Secondary Metadata */}
-                {isHold ? (
-                  <div className="flex items-center gap-3 text-xs font-bold text-slate-600 flex-wrap">
-                    <span className="inline-flex items-center gap-1 text-slate-800 font-mono">
-                      Biometric ID: {member.biometricId || member.biometricUserId || member.deviceUserId || '—'}
-                    </span>
-                    <span className="text-slate-300">·</span>
-                    <span className="inline-flex items-center gap-1">
-                      Hikvision Mapping:{' '}
-                      {member.hikvisionMapped ? (
-                        <span className="text-emerald-700 font-bold flex items-center gap-0.5">✓ Mapped</span>
-                      ) : (
-                        <span className="text-slate-500 font-medium">Not Mapped</span>
-                      )}
-                    </span>
-                    {member.phone && (
-                      <>
-                        <span className="text-slate-300">·</span>
-                        <span className="inline-flex items-center gap-1 text-slate-700">
-                          <Phone size={12} className="text-slate-400" />
-                          {member.phone}
-                        </span>
-                      </>
-                    )}
-                    {member.email && (
-                      <>
-                        <span className="text-slate-300">·</span>
-                        <span className="text-slate-500 truncate max-w-[180px]">{member.email}</span>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 flex-wrap">
-                    {member.phone && (
-                      <span className="inline-flex items-center gap-1 text-slate-700">
-                        <Phone size={12} className="text-slate-400" />
-                        {member.phone}
-                      </span>
-                    )}
-                    {member.phone && <span className="text-slate-300">·</span>}
-                    <span className="inline-flex items-center gap-1 text-slate-600">
-                      <MapPin size={12} className="text-slate-400" />
-                      {member.branch || 'Mohali, Punjab'}
-                    </span>
-                    {member.email && (
-                      <>
-                        <span className="text-slate-300">·</span>
-                        <span className="text-slate-500 truncate max-w-[180px]">{member.email}</span>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Assigned Trainer Dropdown (Only for non-hold members) */}
-                {!isHold && (
-                  <div className="pt-0.5">
-                    <TrainerSelectorDropdown
-                      member={member}
-                      onTrainerUpdated={({ trainerId, trainerName, trainerRole, trainerAvatar }) => {
-                        setMember((prev: any) => ({ ...prev, trainerId, trainerName, trainer: trainerName, trainerRole, trainerAvatar }));
-                      }}
-                    />
-                  </div>
-                )}
+                {/* Assigned Trainer Dropdown */}
+                <div className="pt-0.5">
+                  <TrainerSelectorDropdown
+                    member={member}
+                    onTrainerUpdated={({ trainerId, trainerName, trainerRole, trainerAvatar }) => {
+                      setMember((prev: any) => ({ ...prev, trainerId, trainerName, trainer: trainerName, trainerRole, trainerAvatar }));
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* ── ZONE 2: MEMBERSHIP CARD BLOCK (Span 5) ── */}
-            {isHold ? (
-              <div className="lg:col-span-5 bg-gradient-to-br from-amber-50/90 to-orange-50/50 border border-amber-200/90 rounded-2xl p-5 flex flex-col justify-between gap-3 shadow-xs">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-900/70">Membership</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-100/80 text-amber-800 border border-amber-300/80">
-                      Awaiting Billing
-                    </span>
-                  </div>
-                  <h3 className="text-base font-black text-slate-900 mt-2">No active membership</h3>
-                  <p className="text-xs text-slate-600 mt-1">This member is waiting for membership billing.</p>
-                </div>
-                <button
-                  onClick={() => setShowCreateBillModal(true)}
-                  className="w-full py-2.5 px-4 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-sm border-none cursor-pointer active:scale-[0.98]"
-                >
-                  <Plus size={14} /> + CREATE BILL
-                </button>
-              </div>
-            ) : (
-              <div className="lg:col-span-5 bg-slate-50/90 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between gap-2.5">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Membership</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Expires</span>
-                  </div>
-
-                  <div className="flex items-baseline justify-between gap-2 mt-0.5">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-base sm:text-lg font-black text-slate-900 tracking-tight">{member.plan || 'Membership'}</span>
-                      {(member.amount || member.price || member.totalBilled) && (
-                        <span className="text-sm font-extrabold text-[#0066FF]">
-                          ₹{Number(member.amount || member.price || member.totalBilled || 0).toLocaleString('en-IN')}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs sm:text-sm font-bold text-slate-800 shrink-0">
-                      {member.expiryDate
-                        ? new Date(member.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-                        : '—'}
-                    </span>
-                  </div>
+            <div className="member-detail-membership lg:col-span-5 bg-gradient-to-br from-slate-50 to-orange-50/60 border border-orange-100/80 rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Membership</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Expires</span>
                 </div>
 
-                {/* Dynamic Progress Bar */}
-                {(() => {
-                  const totalDays = (() => {
-                    const plan = String(member.plan || '').toLowerCase();
-                    if (plan.includes('annual') || plan.includes('yearly') || plan.includes('12')) return 365;
-                    if (plan.includes('6') || plan.includes('semi')) return 180;
-                    if (plan.includes('3') || plan.includes('quarter')) return 90;
-                    if (plan.includes('2')) return 60;
-                    return 30;
-                  })();
-                  const pct = totalDays > 0 ? Math.max(0, Math.min(100, (daysLeft / totalDays) * 100)) : 0;
-                  const barColor = daysLeft > 14 ? '#10b981' : daysLeft > 7 ? '#f59e0b' : '#ef4444';
-                  return (
-                    <div className="space-y-1.5">
-                      <div className="h-2 bg-slate-200/80 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${pct}%`, backgroundColor: barColor }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-[11px] font-bold">
-                        <span className={daysLeft > 0 ? 'text-slate-600' : 'text-rose-600'}>
-                          {daysLeft > 0 ? `${daysLeft} days remaining` : 'Membership Expired'}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          payStatus === 'PAID'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}>
-                          {payStatus === 'PAID' ? '✓ Fully Paid' : `₹${outstanding.toLocaleString('en-IN')} Due`}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 mt-1">
+                  <div className="flex min-w-0 items-center gap-x-2 gap-y-1 flex-wrap">
+                    <span className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug break-words">{member.plan || 'Standard Plan'}</span>
+                    {(member.amount || member.price || member.totalBilled) && (
+                      <span className="text-sm font-extrabold text-[#EA580C]">
+                        ₹{Number(member.amount || member.price || member.totalBilled || 0).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => router.push(`/dashboard/billing/create?mode=upgrade&id=${id}`)}
+                      className="ml-1 px-2.5 py-0.5 bg-[#EA580C] hover:bg-orange-700 text-white rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-all shadow-2xs border-none cursor-pointer"
+                      title="Upgrade Package"
+                    >
+                      <TrendingUp size={11} /> Upgrade
+                    </button>
+                  </div>
+                  <span className="text-xs sm:text-sm font-bold text-slate-800 text-right whitespace-nowrap">
+                    {member.expiryDate
+                      ? new Date(member.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : '—'}
+                  </span>
+                </div>
               </div>
-            )}
+
+              {/* Dynamic Progress Bar */}
+              {(() => {
+                const totalDays = (() => {
+                  const plan = String(member.plan || '').toLowerCase();
+                  if (plan.includes('annual') || plan.includes('yearly') || plan.includes('12')) return 365;
+                  if (plan.includes('6') || plan.includes('semi')) return 180;
+                  if (plan.includes('3') || plan.includes('quarter')) return 90;
+                  if (plan.includes('2')) return 60;
+                  return 30;
+                })();
+                const pct = totalDays > 0 ? Math.max(0, Math.min(100, (daysLeft / totalDays) * 100)) : 0;
+                const barColor = daysLeft > 14 ? '#10b981' : daysLeft > 7 ? '#f59e0b' : '#ef4444';
+                return (
+                  <div className="space-y-1.5">
+                    <div className="h-2 bg-slate-200/80 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pct}%`, backgroundColor: barColor }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className={daysLeft > 0 ? 'text-slate-600' : 'text-rose-600'}>
+                        {daysLeft > 0 ? `${daysLeft} days remaining` : 'Membership Expired'}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        payStatus === 'PAID'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        {payStatus === 'PAID' ? '✓ Fully Paid' : `₹${outstanding.toLocaleString('en-IN')} Due`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
 
-          {/* ── ROW 2: METRICS STRIP + ACTION BUTTONS ── */}
-          <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3.5 pt-2 border-t border-slate-100">
-            
-            {/* 4-Metric Compact Strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-50/80 border border-slate-200/80 rounded-2xl p-1 divide-y sm:divide-y-0 sm:divide-x divide-slate-200/70 flex-1">
-              {(isHold ? [
-                {
-                  label: 'STATUS',
-                  value: 'HOLD',
-                  color: '#d97706',
-                  icon: '🟠',
-                },
-                {
-                  label: 'BIOMETRIC ID',
-                  value: member.biometricId || member.biometricUserId || member.deviceUserId || '—',
-                  color: '#0f172a',
-                  icon: '🆔',
-                },
-                {
-                  label: 'HIKVISION',
-                  value: member.hikvisionMapped ? 'Connected' : 'Not Mapped',
-                  color: member.hikvisionMapped ? '#10b981' : '#64748b',
-                  icon: '📡',
-                },
-                {
-                  label: 'BILLING',
-                  value: 'No Invoices',
-                  color: '#d97706',
-                  icon: '💳',
-                },
-              ] : [
+          {/* ── ROW 2: FULL-WIDTH METRICS + ACTIONS ── */}
+          <div className="member-detail-actions-block space-y-3.5 pt-4 border-t border-slate-100">
+            <div className="member-detail-metrics grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {[
                 {
                   label: 'HEALTH SCORE',
                   value: `${Math.max(0, 100 - healthScore)}%`,
                   color: healthScore < 40 ? '#10b981' : healthScore < 70 ? '#f59e0b' : '#ef4444',
-                  icon: '❤️',
+                  icon: Heart,
                 },
                 {
                   label: 'ATTENDANCE',
                   value: `${attendancePct}%`,
                   color: attendancePct > 60 ? '#10b981' : attendancePct > 30 ? '#f59e0b' : '#64748b',
-                  icon: '📅',
+                  icon: Calendar,
                 },
                 {
                   label: 'DAYS LEFT',
                   value: daysLeft > 0 ? String(daysLeft) : '0',
-                  color: daysLeft > 14 ? '#0066FF' : daysLeft > 0 ? '#f59e0b' : '#ef4444',
-                  icon: '⏱',
+                  color: daysLeft > 14 ? '#EA580C' : daysLeft > 0 ? '#f59e0b' : '#ef4444',
+                  icon: Timer,
                 },
                 {
                   label: 'PAYMENT',
-                  value: payStatus === 'PAID' ? 'PAID' : ((payStatus as string) === 'NO INVOICES' || payStatus === 'NOT_BILLED' ? 'NO INVOICE' : 'DUE'),
+                  value: payStatus === 'PAID' ? 'PAID' : 'DUE',
                   color: payStatus === 'PAID' ? '#10b981' : '#f59e0b',
-                  icon: '💳',
+                  icon: CreditCard,
                 },
-              ]).map(m => (
-                <div key={m.label} className="px-3.5 py-2 flex items-center gap-2.5">
-                  <span className="text-base leading-none select-none">{m.icon}</span>
+              ].map(m => (
+                <div key={m.label} className="min-w-0 rounded-2xl border border-orange-100/80 bg-gradient-to-br from-white to-orange-50/50 px-3 py-3 shadow-[0_3px_12px_rgba(15,67,125,0.04)] flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-100 shadow-sm" style={{ color: m.color }}>
+                    <m.icon size={18} strokeWidth={2.4} />
+                  </span>
                   <div className="min-w-0">
-                    <div className="text-[9.5px] font-black uppercase tracking-wider text-slate-400 leading-tight truncate">{m.label}</div>
-                    <div className="text-sm sm:text-base font-black leading-tight mt-0.5 truncate" style={{ color: m.color }}>{m.value}</div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500 leading-tight whitespace-normal">{m.label}</div>
+                    <div className="text-lg sm:text-xl font-black leading-tight mt-1 break-words" style={{ color: m.color }}>{m.value}</div>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Action Buttons Group */}
-            <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
-              {isHold ? (
-                <button
-                  onClick={() => setShowCreateBillModal(true)}
-                  className="flex-1 sm:flex-none h-11 px-5 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer shadow-sm hover:shadow-[0_4px_12px_rgba(234,88,12,0.3)] active:scale-[0.98] border-none"
-                  title="Create Membership & Bill"
-                >
-                  <Plus size={15} /> + Create Membership & Bill
-                </button>
-              ) : (
-                <button
-                  onClick={() => setShowPtModal(true)}
-                  className="flex-1 sm:flex-none h-11 px-4 bg-[#0066FF] hover:bg-orange-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black transition-all cursor-pointer shadow-xs hover:shadow-[0_4px_12px_rgba(0,102,255,0.3)] active:scale-[0.98] border-none"
-                  title="Add Personal Training Bill"
-                >
-                  <Dumbbell size={14} /> + Add PT Bill
-                </button>
-              )}
+            <div className="member-detail-actions grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2.5">
+              <button
+                onClick={() => router.push(`/dashboard/billing/create?mode=upgrade&id=${id}`)}
+                className="w-full min-w-0 h-11 px-3 sm:px-4 bg-gradient-to-r from-[#EA580C] to-[#C2410C] hover:from-[#C2410C] hover:to-[#9A3412] text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black whitespace-nowrap transition-all cursor-pointer shadow-xs active:scale-[0.98] border-none"
+                title="Upgrade Membership Package"
+              >
+                <TrendingUp size={14} /> Upgrade
+              </button>
+
+              <button
+                onClick={() => router.push(`/dashboard/billing/create?mode=pt&id=${id}`)}
+                className="w-full min-w-0 h-11 px-3 sm:px-4 bg-[#EA580C] hover:bg-orange-700 text-white rounded-xl flex items-center justify-center gap-1.5 text-xs font-black whitespace-nowrap transition-all cursor-pointer shadow-xs active:scale-[0.98] border-none"
+                title="Add Personal Training Bill"
+              >
+                <Dumbbell size={14} /> + Add PT Bill
+              </button>
 
               <button
                 onClick={() => {
@@ -651,7 +588,7 @@ export default function ClientProfileSystem() {
                   if (cleanPhone) window.open(`https://wa.me/${cleanPhone}`, '_blank');
                   else toast.error('No valid phone number for WhatsApp');
                 }}
-                className="flex-1 sm:flex-none h-11 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
+                className="w-full min-w-0 h-11 px-3 sm:px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
                 title="Send WhatsApp Message"
               >
                 <MessageSquare size={14} /> WhatsApp
@@ -662,53 +599,48 @@ export default function ClientProfileSystem() {
                   if (member.phone) window.location.href = `tel:${member.phone}`;
                   else toast.error('No phone number recorded');
                 }}
-                className="flex-1 sm:flex-none h-11 px-4 bg-[#FFF7ED] hover:bg-orange-100 text-[#0066FF] border border-[#FED7AA] rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
+                className="w-full min-w-0 h-11 px-3 sm:px-4 bg-orange-50 hover:bg-orange-100 text-[#EA580C] border border-orange-200 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
                 title="Call Member"
               >
                 <Phone size={14} /> Call
               </button>
 
               {/* Quick Action Dropdown Menu (⋮) */}
-              <div className="relative" ref={quickMenuRef}>
+              <div className="relative w-full md:w-auto" ref={quickMenuRef}>
                 <button
                   onClick={() => setShowQuickMenu(!showQuickMenu)}
-                  className="h-11 w-11 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
+                  className="h-11 w-full md:w-11 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl flex items-center justify-center transition-all cursor-pointer shadow-2xs active:scale-[0.98]"
                   title="More Options"
                 >
                   <MoreVertical size={16} />
                 </button>
 
                 {showQuickMenu && (
-                  <div className="absolute right-0 bottom-full mb-2 sm:bottom-auto sm:top-full sm:mt-2 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95">
+                  <div className="absolute right-0 bottom-full mb-2 sm:bottom-auto sm:top-full sm:mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl p-1.5 z-50 animate-in fade-in zoom-in-95">
                     <button
                       onClick={() => { setShowQuickMenu(false); setShowPhotoModal(true); }}
                       className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
                     >
                       <Camera size={13} className="text-slate-400" /> Change Photo
                     </button>
-                    {isHold ? (
-                      <button
-                        onClick={() => { setShowQuickMenu(false); setShowCreateBillModal(true); }}
-                        className="w-full px-3 py-2 text-left hover:bg-orange-50 rounded-xl flex items-center gap-2 text-xs font-bold text-[#EA580C] transition-colors border-none bg-transparent cursor-pointer"
-                      >
-                        <Plus size={13} /> Create Membership & Bill
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => { setShowQuickMenu(false); setShowRenewalModal(true); }}
-                          className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
-                        >
-                          <Repeat size={13} className="text-[#EA580C]" /> Renew Membership
-                        </button>
-                        <button
-                          onClick={() => { setShowQuickMenu(false); setShowPtModal(true); }}
-                          className="w-full px-3 py-2 text-left hover:bg-slate-50 rounded-xl flex items-center gap-2 text-xs font-bold text-slate-700 transition-colors border-none bg-transparent cursor-pointer"
-                        >
-                          <Dumbbell size={13} className="text-indigo-600" /> Add PT Bill
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => { setShowQuickMenu(false); router.push(`/dashboard/billing/create?mode=upgrade&id=${id}`); }}
+                      className="w-full px-3 py-2 text-left hover:bg-orange-50 text-[#EA580C] rounded-xl flex items-center gap-2 text-xs font-bold transition-colors border-none bg-transparent cursor-pointer"
+                    >
+                      <TrendingUp size={13} className="text-[#EA580C]" /> Upgrade Package
+                    </button>
+                    <button
+                      onClick={() => { setShowQuickMenu(false); router.push(`/dashboard/billing/create?mode=renew&id=${encodeURIComponent(id)}`); }}
+                      className="w-full px-3 py-2 text-left hover:bg-orange-50 text-orange-700 rounded-xl flex items-center gap-2 text-xs font-bold transition-colors border-none bg-transparent cursor-pointer"
+                    >
+                      <Repeat size={13} className="text-orange-600" /> Renew Membership
+                    </button>
+                    <button
+                      onClick={() => { setShowQuickMenu(false); router.push(`/dashboard/billing/create?mode=pt&id=${id}`); }}
+                      className="w-full px-3 py-2 text-left hover:bg-orange-50 text-orange-700 rounded-xl flex items-center gap-2 text-xs font-bold transition-colors border-none bg-transparent cursor-pointer"
+                    >
+                      <Dumbbell size={13} className="text-[#EA580C]" /> Add PT Bill
+                    </button>
                     <div className="border-t border-slate-100 my-1" />
                     <button
                       onClick={() => { setShowQuickMenu(false); setActiveTab('Billing'); }}
@@ -738,14 +670,14 @@ export default function ClientProfileSystem() {
       {/* ══ END HERO CARD ══════════════════════════════════════════════════ */}
 
       {/* 2. PROFILE NAVIGATION (Segmented Tabs) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-5 scrollbar-hide">
+      <div className="member-detail-tabs flex items-center gap-2 overflow-x-auto pb-5 scrollbar-hide">
         {TABS.map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap cursor-pointer border ${
               activeTab === tab
-                ? 'bg-[#FFF7ED] text-[#0066FF] border-[#FED7AA] shadow-2xs'
+                ? 'bg-orange-50 text-[#EA580C] border-orange-200 shadow-2xs'
                 : 'bg-white text-slate-600 border-slate-200/80 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
@@ -758,8 +690,8 @@ export default function ClientProfileSystem() {
       <div className="w-full">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-            {activeTab === 'Profile' && <ProfileTab member={member} onOpenCreateBill={() => setShowCreateBillModal(true)} />}
-            {activeTab === 'Billing' && <BillingTab member={member} onOpenCreateBill={() => setShowCreateBillModal(true)} />}
+            {activeTab === 'Profile' && <ProfileTab member={member} onOpenRenewModal={() => setShowRenewalModal(true)} />}
+            {activeTab === 'Billing' && <BillingTab member={member} />}
             {activeTab === 'Communication' && <CommunicationTab member={member} />}
             {activeTab === 'Attendance' && <AttendanceTab member={member} />}
           </motion.div>
@@ -778,7 +710,7 @@ export default function ClientProfileSystem() {
             >
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <Camera size={20} className="text-[#EA580C]" />
+                  <Camera size={20} className="text-orange-600" />
                   <h3 className="font-extrabold text-slate-900 text-lg">Upload Member Profile Photo</h3>
                 </div>
                 <button
@@ -821,6 +753,18 @@ export default function ClientProfileSystem() {
         isOpen={showPtModal}
         member={member}
         onClose={() => setShowPtModal(false)}
+        onSuccess={(updatedMem: any) => {
+          if (updatedMem) setMember({ ...updatedMem });
+          useGymStore.getState().fetchMembers();
+          useGymStore.getState().fetchPayments();
+        }}
+      />
+
+      {/* ── UPGRADE MEMBERSHIP MODAL ── */}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        member={member}
+        onClose={() => setShowUpgradeModal(false)}
         onSuccess={(updatedMem: any) => {
           if (updatedMem) setMember({ ...updatedMem });
           useGymStore.getState().fetchMembers();

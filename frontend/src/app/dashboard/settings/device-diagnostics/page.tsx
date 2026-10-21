@@ -119,7 +119,7 @@ export default function DeviceDiagnosticsPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-[#0052FF] border-t-transparent rounded-full animate-spin" />
+          <div className="w-12 h-12 border-4 border-[#EA580C] border-t-transparent rounded-full animate-spin" />
           <p className="text-sm font-semibold text-zinc-400">Loading Device Diagnostics Panel...</p>
         </div>
       </div>
@@ -149,7 +149,7 @@ export default function DeviceDiagnosticsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black text-white tracking-tight font-display flex items-center gap-2">
-              <Cpu className="text-[#EA580C] animate-pulse" size={30} /> Device Diagnostics
+              <Cpu className="text-orange-600 animate-pulse" size={30} /> Device Diagnostics
             </h1>
             <p className="text-xs text-zinc-400 mt-1">Verify hardware socket handshakes, roster downloads, database audits, and real-time attendance streams.</p>
           </div>
@@ -179,7 +179,7 @@ export default function DeviceDiagnosticsPage() {
             </div>
             <div className="flex justify-between border-b border-zinc-900 pb-1.5">
               <span className="text-zinc-500">Port</span>
-              <span className="text-white font-bold">{controlData.port || 4370}</span>
+              <span className="text-white font-bold">{controlData.port || 443}</span>
             </div>
             <div className="flex justify-between border-b border-zinc-900 pb-1.5">
               <span className="text-zinc-500">Name</span>
@@ -354,7 +354,7 @@ export default function DeviceDiagnosticsPage() {
               <div>
                 <div className="text-[9px] font-bold text-zinc-500 uppercase">Last Attendance Time</div>
                 <div className="text-zinc-300 font-bold mt-0.5 flex items-center gap-1.5">
-                  <Clock size={11} className="text-[#F97316]" />
+                  <Clock size={11} className="text-orange-500" />
                   {controlData.lastPunch || 'Not Available'}
                 </div>
               </div>
@@ -376,7 +376,7 @@ export default function DeviceDiagnosticsPage() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-zinc-400 font-medium animate-pulse">Importing users...</span>
-                  <span className="text-[#EA580C] font-bold">{controlData.importProgress ?? 0}%</span>
+                  <span className="text-orange-600 font-bold">{controlData.importProgress ?? 0}%</span>
                 </div>
                 {/* Progress bar */}
                 <div className="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden">

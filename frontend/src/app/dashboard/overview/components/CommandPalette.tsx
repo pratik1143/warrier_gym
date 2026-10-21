@@ -33,11 +33,11 @@ export default function CommandPalette() {
 
   const quickActions = [
     { name: "New Member", icon: UserPlus, color: "text-emerald-500", bg: "bg-emerald-50", url: "/dashboard/members?action=new" },
-    { name: "New Employee", icon: Briefcase, color: "text-indigo-500", bg: "bg-indigo-50", url: "/dashboard/employees" },
+    { name: "New Employee", icon: Briefcase, color: "text-orange-500", bg: "bg-orange-50", url: "/dashboard/employees" },
     { name: "Renew Membership", icon: RefreshCcw, color: "text-purple-500", bg: "bg-purple-50", url: "/dashboard/members?action=renew" },
     { name: "Add Expense", icon: IndianRupee, color: "text-rose-500", bg: "bg-rose-50", url: "/dashboard/analytics" },
     { name: "Schedule Followup", icon: Phone, color: "text-amber-500", bg: "bg-amber-50", url: "/dashboard/follow-up" },
-    { name: "Import CSV", icon: FileText, color: "text-[#F97316]", bg: "bg-[#FFF7ED]", url: "/dashboard/settings/member-migration" }
+    { name: "Import CSV", icon: FileText, color: "text-orange-500", bg: "bg-orange-50", url: "/dashboard/settings/member-migration" }
   ];
 
   return (

@@ -1,31 +1,15 @@
 import { Request, Response } from 'express';
 import { db, admin, isFirebaseInitialized, getFirestoreDb, disableFirestore } from '../firebase';
 import { simulateManualTap } from '../services/deviceSync.service';
-import { WarriorStorageService } from '../services/storage.service';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-
-// The gym PC and the cloud host can have slightly different system clocks.
-// Prefer Firestore's server timestamp; retain a generous ISO timestamp fallback
-// for agents that have not yet been updated.
-const BIOMETRIC_AGENT_MAX_HEARTBEAT_AGE_MS = 60_000;
-const BIOMETRIC_AGENT_MAX_CLOCK_SKEW_MS = 5 * 60_000;
-
-const getHeartbeatDate = (heartbeat: any): Date => {
-  if (heartbeat?.toDate) return heartbeat.toDate();
-  if (heartbeat?.seconds) return new Date(heartbeat.seconds * 1000);
-  return new Date(heartbeat || 0);
-};
-
-const isBiometricAgentOnline = (device: any): boolean => {
-  if (device?.status !== 'connected') return false;
-  const heartbeatDate = getHeartbeatDate(device?.lastHeartbeatServer || device?.lastHeartbeat);
-  const ageMs = Date.now() - heartbeatDate.getTime();
-  return Number.isFinite(ageMs)
-    && ageMs < BIOMETRIC_AGENT_MAX_HEARTBEAT_AGE_MS
-    && ageMs > -BIOMETRIC_AGENT_MAX_CLOCK_SKEW_MS;
-};
+import { getKolkataDateString } from '../services/followupAutomation.service';
+import { WarriorStorageService } from '../services/storage.service';
+import { getNextAvailableBiometricId, isValidDeviceBiometricId } from '../services/biometricId.service';
+import {
+  HIKVISION_DEVICE_ID, isHikvisionProvider, isBiometricAgentOnline, isHikvisionAgentOnline, queueHikvisionMemberSync,
+} from '../services/biometricQueue.service';
 
 /**
  * Get all devices, including calculated summary stats for the dashboard.
@@ -363,56 +347,208 @@ export const getTesterStatus = async (req: Request, res: Response) => {
 // SMART BIOMETRIC ENROLLMENT API
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import net from 'net';
+
+function checkDeviceSocket(ip: string, port: number, timeoutMs = 2500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let connected = false;
+    socket.setTimeout(timeoutMs);
+
+    socket.on('connect', () => {
+      connected = true;
+      socket.destroy();
+    });
+
+    socket.on('timeout', () => {
+      socket.destroy();
+    });
+
+    socket.on('error', () => {
+      socket.destroy();
+    });
+
+    socket.on('close', () => {
+      resolve(connected);
+    });
+
+    socket.connect(port, ip);
+  });
+}
+
 /**
- * Queue fingerprint enrollment for a member.
- * Creates a document in biometric_enrollment with status=pending.
- * Python device service watches this collection and executes the command.
+ * Queue fingerprint enrollment for a member or employee.
+ * Checks socket connectivity to hardware scanner before attempting enrollment.
  */
 export const startEnrollFingerprint = async (req: Request, res: Response) => {
   try {
-    const { memberId, memberName, biometricId, fingerIndex } = req.body;
-    const bioId = Number(biometricId) || Number(memberId) || 1;
-    const nameStr = memberName || 'Member';
-    const docId = `enroll_${memberId || 'm'}_${Date.now()}`;
+    if (isHikvisionProvider()) return startHikvisionEnrollment(req, res);
+    const { memberId, employeeId, isEmployee, biometricId, fingerIndex, enrollmentSessionId, retryCrmSync } = req.body;
+    const targetId = String((isEmployee ? employeeId : memberId) || '');
+    if (!targetId) return res.status(400).json({ success: false, error: 'A CRM member or employee record must be selected.' });
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Firebase is unavailable; no enrollment was started.' });
 
-    // Execute direct ZK socket enrollment command to physical ESSL K90 Pro hardware
-    const scriptPath = path.resolve(process.cwd(), 'device-service/enroll_hardware.py');
-    exec(`python "${scriptPath}" ${bioId} "${nameStr}"`, (err, stdout, stderr) => {
-      if (err) {
-        console.warn('[Biometric Enrollment] Hardware socket error:', err.message);
-      } else {
-        console.log('[Biometric Enrollment] Hardware socket output:', stdout);
-      }
-    });
-
-    if (isFirebaseInitialized && admin) {
-      try {
-        const firestore = admin.firestore();
-        await firestore.collection('biometric_enrollment').doc(docId).set({
-          docId,
-          command: 'enroll_fingerprint',
-          status: 'pending',
-          memberId: memberId || 'TWG-2026-0001',
-          memberName: nameStr,
-          biometricId: bioId,
-          fingerIndex: Number(fingerIndex) || 0,
-          scan: 0,
-          totalScans: 3,
-          message: 'Enrollment queued. Machine scanner active...',
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-      } catch (e) {}
+    const targetCollection = isEmployee ? 'employees' : 'members';
+    const targetRef = firestore.collection(targetCollection).doc(targetId);
+    const targetSnap = await targetRef.get();
+    if (!targetSnap.exists) return res.status(404).json({ success: false, error: `Selected ${isEmployee ? 'employee' : 'member'} was not found in CRM.` });
+    const target = targetSnap.data() || {};
+    const storedBioId = String(target.biometricId ?? target.deviceUserId ?? '').trim();
+    if (!/^\d{1,5}$/.test(storedBioId) || Number(storedBioId) < 1 || Number(storedBioId) > 65535) {
+      return res.status(409).json({ success: false, error: 'This CRM record has no valid permanent numeric biometric ID (device range 1–65535). Assign its ID in CRM before enrolling.' });
+    }
+    if (biometricId && String(biometricId).trim() !== storedBioId) {
+      return res.status(409).json({ success: false, error: 'The selected biometric ID does not match the permanent CRM ID. Refresh the roster and try again.' });
     }
 
-    res.json({
-      success: true,
-      enrollmentDocId: docId,
-      biometricId: bioId,
-      message: `Fingerprint enrollment command sent to ESSL K90 Pro for User ID #${bioId}`
+    const bioId = storedBioId;
+    const nameStr = String(target.name || '').trim();
+    if (!nameStr) return res.status(409).json({ success: false, error: 'The selected CRM record has no name.' });
+    const deviceIp = process.env.EASYBIO_DEVICE_IP || '192.168.18.11';
+    const devicePort = Number(process.env.EASYBIO_DEVICE_PORT || 4370);
+    const isOnline = await checkDeviceSocket(deviceIp, devicePort, 2500);
+    if (!isOnline) return res.status(503).json({ success: false, status: 'DEVICE_OFFLINE', error: `Biometric device is unreachable at ${deviceIp}:${devicePort}.` });
+
+    const deviceId = process.env.EASYBIO_DEVICE_ID || 'dev_k90_main';
+    const otherCollection = isEmployee ? 'members' : 'employees';
+    const [byNumber, byString] = await Promise.all([
+      firestore.collection(otherCollection).where('biometricId', '==', Number(bioId)).get(),
+      firestore.collection(otherCollection).where('biometricId', '==', bioId).get()
+    ]);
+    if (!byNumber.empty || !byString.empty) {
+      return res.status(409).json({
+        success: false, status: 'ID_COLLISION',
+        error: 'This biometric ID is already assigned to a record in the other CRM collection. Resolve the member/employee ID collision before enrolling.'
+      });
+    }
+
+    const heartbeatSnap = await firestore.collection('device_testing').doc('control').get();
+    const heartbeat = heartbeatSnap.exists ? (heartbeatSnap.data() || {}) : {};
+    const heartbeatAt = Date.parse(heartbeat.lastHeartbeat || '');
+    const deviceSnap = await firestore.collection('devices').doc(deviceId).get();
+    const device = deviceSnap.exists ? (deviceSnap.data() || {}) : {};
+    const serviceOnline = heartbeat.pythonConnected === true
+      && heartbeat.esslConnected === true
+      && Number.isFinite(heartbeatAt)
+      && Date.now() - heartbeatAt < 120000
+      && String(heartbeat.deviceIp || '') === deviceIp
+      && Number(heartbeat.devicePort) === devicePort
+      && device.status === 'connected';
+    if (!serviceOnline) {
+      return res.status(503).json({
+        success: false, status: 'DEVICE_SERVICE_OFFLINE',
+        error: 'The local EasyBio device service is not reporting a fresh connection to the configured terminal.'
+      });
+    }
+
+    const enrollmentRef = firestore.collection('biometric_enrollment').doc();
+    const docId = enrollmentRef.id;
+    const sessionId = String(enrollmentSessionId || ('sess_' + bioId + '_' + Date.now()));
+    const index = Number.isInteger(Number(fingerIndex)) ? Number(fingerIndex) : 0;
+    const nowIso = new Date().toISOString();
+    console.log('[ENROLLMENT] Selected ' + (isEmployee ? 'employee' : 'member') + ' ' + targetId + ', device ID ' + bioId);
+    await enrollmentRef.set({
+      command: 'enroll_fingerprint',
+      status: 'pending',
+      memberId: targetId,
+      memberName: nameStr,
+      biometricId: Number(bioId),
+      fingerIndex: index,
+      targetCollection,
+      targetType: isEmployee ? 'EMPLOYEE' : 'MEMBER',
+      isEmployee: Boolean(isEmployee),
+      deviceId,
+      sessionId,
+      retryCrmSync: Boolean(retryCrmSync),
+      createdAt: nowIso,
+      updatedAt: nowIso
+    });
+
+    const completion = await new Promise<{ status: string; message?: string; data?: any }>((resolve) => {
+      let settled = false;
+      let unsubscribe: (() => void) | undefined;
+      const finish = (value: { status: string; message?: string; data?: any }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (unsubscribe) unsubscribe();
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish({
+        status: 'timeout',
+        message: 'No completed enrollment result arrived from the local EasyBio service.'
+      }), 300000);
+      res.setTimeout(0);
+      unsubscribe = enrollmentRef.onSnapshot((snapshot) => {
+        const data = snapshot.data();
+        if (!data) return;
+        if (['success', 'failed', 'crm_sync_pending'].includes(String(data.status))) {
+          finish({ status: String(data.status), message: data.message || data.error, data });
+        }
+      }, (error) => finish({ status: 'failed', message: 'Enrollment result could not be read: ' + error.message }));
+    });
+
+    console.log('[DEVICE] Enrollment operation ' + docId + ' completed with status ' + completion.status);
+    if (completion.status === 'crm_sync_pending') {
+      return res.status(503).json({
+        success: false, deviceEnrolled: true, retryable: true,
+        status: 'CRM_SYNC_PENDING', targetId, isEmployee: Boolean(isEmployee),
+        biometricId: bioId,
+        error: completion.message || 'Device enrollment succeeded, but CRM mapping needs a retry.'
+      });
+    }
+    if (completion.status === 'timeout') {
+      return res.status(504).json({
+        success: false, status: 'ENROLLMENT_RESULT_TIMEOUT', enrollmentDocId: docId,
+        error: completion.message
+      });
+    }
+    if (completion.status !== 'success' || completion.data?.templateVerified !== true) {
+      return res.status(422).json({
+        success: false, status: completion.data?.status || 'ENROLLMENT_FAILED',
+        enrollmentDocId: docId,
+        error: completion.message || 'Device did not confirm the requested fingerprint template.'
+      });
+    }
+
+    const [mappedTarget, mappedDeviceUser] = await Promise.all([
+      targetRef.get(),
+      firestore.collection('deviceUsers').doc('dev_' + deviceId + '_usr_' + bioId).get()
+    ]);
+    const crmMapping = mappedTarget.data() || {};
+    const deviceMapping = mappedDeviceUser.data() || {};
+    const mappingVerified = mappedTarget.exists
+      && String(crmMapping.biometricId) === bioId
+      && String(crmMapping.deviceUserId) === bioId
+      && String(crmMapping.fingerprintStatus || '').toUpperCase() === 'ENROLLED'
+      && crmMapping.fingerprintEnrolled === true
+      && String(deviceMapping.userId) === bioId
+      && Number(deviceMapping.fingerprintsCount || 0) > 0;
+    if (!mappingVerified) {
+      return res.status(503).json({
+        success: false, deviceEnrolled: true, retryable: true,
+        status: 'CRM_SYNC_PENDING', targetId, isEmployee: Boolean(isEmployee),
+        biometricId: bioId,
+        error: 'The device template was confirmed, but the CRM and device-user mapping read-back did not match.'
+      });
+    }
+
+    const completedAt = new Date().toISOString();
+    await firestore.collection('biometric_audit_logs').doc('log_' + Date.now()).set({
+      sessionId, targetId, targetType: isEmployee ? 'EMPLOYEE' : 'MEMBER',
+      memberName: nameStr, biometricId: bioId, action: 'FINGERPRINT_ENROLLMENT',
+      status: 'SUCCESS', deviceId, timestamp: completedAt
+    }).catch((auditError: any) => console.warn('[ENROLLMENT] Audit write failed: ' + auditError.message));
+
+    console.log('[CRM] SUCCESS: mapped ' + targetCollection + '/' + targetId + ' to device user ' + bioId);
+    return res.json({
+      success: true, enrollmentDocId: docId, sessionId, biometricId: bioId,
+      status: 'ENROLLED', verified: true,
+      message: 'Device fingerprint template verified and CRM mapping read back for ID #' + bioId + ' (' + nameStr + ').'
     });
   } catch (error: any) {
-    res.json({ success: true, message: 'Enrollment initiated' });
+    return res.status(500).json({ success: false, error: error.message || 'Fingerprint enrollment error' });
   }
 };
 
@@ -421,7 +557,7 @@ export const startEnrollFingerprint = async (req: Request, res: Response) => {
  */
 export const deleteEnrollment = async (req: Request, res: Response) => {
   try {
-    const { memberId, memberName, biometricId } = req.body;
+    const { memberId, memberName, biometricId, isEmployee } = req.body;
     if (!memberId || !biometricId) {
       return res.status(400).json({ error: 'memberId and biometricId are required' });
     }
@@ -439,6 +575,8 @@ export const deleteEnrollment = async (req: Request, res: Response) => {
       status: 'pending',
       memberId,
       memberName: memberName || 'Member',
+      isEmployee: isEmployee === true,
+      targetCollection: isEmployee === true ? 'employees' : 'members',
       biometricId: Number(biometricId),
       message: 'Deletion queued...',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -451,14 +589,104 @@ export const deleteEnrollment = async (req: Request, res: Response) => {
   }
 };
 
+/** Enable/disable one terminal account without touching its fingerprint templates. */
+export const setBiometricAccess = async (req: Request, res: Response) => {
+  try {
+    const memberId = String(req.body.memberId || '').trim();
+    const isEmployee = req.body.isEmployee === true;
+    const enabled = req.body.enabled === true;
+    const biometricId = String(req.body.biometricId || '').trim();
+    if (!memberId || !/^\d{1,5}$/.test(biometricId) || Number(biometricId) < 1 || Number(biometricId) > 65535) {
+      return res.status(400).json({ success: false, error: 'A CRM record and valid numeric biometric ID are required.' });
+    }
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Firebase is unavailable.' });
+
+    const collection = isEmployee ? 'employees' : 'members';
+    const recordRef = firestore.collection(collection).doc(memberId);
+    const recordSnap = await recordRef.get();
+    if (!recordSnap.exists) return res.status(404).json({ success: false, error: `${isEmployee ? 'Employee' : 'Member'} not found.` });
+    const record = recordSnap.data() || {};
+    const storedId = String(record.biometricId ?? record.deviceUserId ?? '').trim();
+    if (storedId !== biometricId) return res.status(409).json({ success: false, error: 'The biometric ID does not match this CRM record.' });
+
+    if (enabled) {
+      const today = getKolkataDateString();
+      const expiry = String(record.expiryDate || record.membershipExpiryDate || '').slice(0, 10);
+      const start = String(record.startDate || record.joinDate || '').slice(0, 10);
+      const statuses = [record.status, record.membershipStatus].map(value => String(value || '').toLowerCase());
+      if (record.biometricBlocked === true) {
+        // Explicit unblock is allowed, but membership restrictions still apply.
+      }
+      if (statuses.some(status => ['expired', 'frozen', 'blocked', 'blacklisted', 'inactive'].includes(status)) || (expiry && expiry < today) || (start && start > today)) {
+        return res.status(409).json({ success: false, error: 'Membership is not currently eligible for gate access. Renew or activate it first.' });
+      }
+    }
+
+    const now = new Date().toISOString();
+    const commandId = `access_${isEmployee ? 'emp' : 'mem'}_${memberId}_${Date.now()}`;
+    await recordRef.set({
+      // Keep CRM access closed until the terminal confirms the requested state.
+      // In particular, an unblock timeout must never grant software-side entry.
+      biometricBlocked: true,
+      biometricBlockPending: true,
+      biometricBlockAction: enabled ? 'unblock' : 'block',
+      biometricBlockCommandId: commandId,
+      biometricBlockedAt: record.biometricBlockedAt || now,
+      biometricBlockReason: enabled ? (record.biometricBlockReason || 'Unblock pending terminal confirmation') : 'Manually blocked from Gate Control',
+    }, { merge: true });
+
+    await firestore.collection('biometric_enrollment').doc(commandId).set({
+      docId: commandId,
+      command: 'set_user_access',
+      status: 'pending',
+      memberId,
+      memberName: String(record.name || ''),
+      biometricId: Number(biometricId),
+      isEmployee,
+      targetCollection: collection,
+      enabled,
+      message: enabled ? 'Enabling existing terminal fingerprint access...' : 'Disabling terminal access; stored fingerprints will be kept...',
+      createdAt: admin!.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin!.firestore.FieldValue.serverTimestamp(),
+    });
+    return res.json({ success: true, enrollmentDocId: commandId, enabled, message: enabled ? 'Access enable queued.' : 'Access disable queued.' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message || 'Could not queue biometric access change.' });
+  }
+};
+
+export const getEnrollmentCommandStatus = async (req: Request, res: Response) => {
+  try {
+    if (!isFirebaseInitialized || !admin) return res.status(503).json({ error: 'Firebase not initialized' });
+    const commandId = String(req.params.commandId || '').trim();
+    if (!commandId || commandId.length > 200 || commandId.includes('/')) {
+      return res.status(400).json({ error: 'Invalid biometric command ID' });
+    }
+    const snapshot = await admin.firestore().collection('biometric_enrollment').doc(commandId).get();
+    if (!snapshot.exists) return res.status(404).json({ error: 'Biometric command not found' });
+    const command = snapshot.data() || {};
+    res.json({ success: true, commandId, status: command.status || 'unknown', message: command.message || '' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 /**
  * Sync member info to device user slot.
  */
 export const syncMemberToDevice = async (req: Request, res: Response) => {
   try {
-    const { memberId, memberName, biometricId } = req.body;
+    const { memberId, memberName, biometricId, isEmployee } = req.body;
     if (!memberId || !biometricId) {
       return res.status(400).json({ error: 'memberId and biometricId are required' });
+    }
+    if (isHikvisionProvider()) {
+      const queued = await queueHikvisionMemberSync({
+        collection: isEmployee === true ? 'employees' : 'members',
+        recordId: String(memberId), biometricId, name: String(memberName || 'Member'), source: 'crm_manual_sync',
+      });
+      return res.json({ success: queued.queued || /already in progress/.test(queued.reason || ''), enrollmentDocId: queued.commandId, message: queued.queued ? 'Hikvision sync queued' : (queued.reason || 'Not queued') });
     }
 
     if (!isFirebaseInitialized || !admin) {
@@ -535,7 +763,7 @@ export const getPythonStatus = async (req: Request, res: Response) => {
             diffSeconds = Math.round((Date.now() - new Date(hb).getTime()) / 1000);
             if (diffSeconds < 20) {
               pythonConnected = data?.pythonConnected ?? true;
-              esslConnected = data?.esslConnected ?? false;
+              esslConnected = isHikvisionProvider() ? Boolean(data?.hikvisionOnline) : (data?.esslConnected ?? false);
               attendanceListenerRunning = data?.attendanceListenerRunning ?? false;
               gateEnabled = data?.gateControlEnabled ?? esslConnected;
               internetConnected = data?.internetConnected ?? true;
@@ -565,8 +793,8 @@ export const getPythonStatus = async (req: Request, res: Response) => {
       latencyMs,
       diffSeconds,
       version: '2.4.0',
-      deviceName: 'ESSL K90 Pro',
-      deviceIp: '192.168.18.11'
+      deviceName: isHikvisionProvider() ? 'Hikvision DS-K1T320EFWX' : 'ESSL K90 Pro',
+      deviceIp: isHikvisionProvider() ? (process.env.HIKVISION_HOST || '192.168.1.45') : '192.168.18.11'
     });
   } catch (error: any) {
     res.json({
@@ -582,8 +810,8 @@ export const getPythonStatus = async (req: Request, res: Response) => {
       latencyMs: 999,
       diffSeconds: 999,
       version: '2.4.0',
-      deviceName: 'ESSL K90 Pro',
-      deviceIp: '192.168.18.11'
+      deviceName: isHikvisionProvider() ? 'Hikvision DS-K1T320EFWX' : 'ESSL K90 Pro',
+      deviceIp: isHikvisionProvider() ? (process.env.HIKVISION_HOST || '192.168.1.45') : '192.168.18.11'
     });
   }
 };
@@ -625,99 +853,349 @@ export const getLatestPunch = async (req: Request, res: Response) => {
  */
 export const autoMapAllBiometrics = async (req: Request, res: Response) => {
   try {
-    const scriptPath = path.resolve(process.cwd(), 'device-service/auto_map_device_users.py');
-
-    exec(`python "${scriptPath}"`, { cwd: path.resolve(process.cwd(), 'device-service'), maxBuffer: 10 * 1024 * 1024 }, async (err, stdout, stderr) => {
-      let deviceUsers: any[] = [];
-      if (!err && stdout) {
-        try {
-          const parsed = JSON.parse(stdout);
-          if (parsed.success && Array.isArray(parsed.users)) {
-            deviceUsers = parsed.users;
-          }
-        } catch (e) {}
-      }
-
-      const members = await db.getMembers();
-      let newlyMapped = 0;
-      let alreadyMapped = 0;
-      const missingMembers: any[] = [];
-
-      for (const m of members) {
-        let targetBioId: string | null = null;
-
-        // 1. Extract numeric ID from direct member fields (clientId, customId, biometricId, memberId, id)
-        const candidates = [m.clientId, m.customId, m.biometricId, m.deviceUserId, m.memberId, m.id];
-        for (const c of candidates) {
-          if (!c) continue;
-          const strC = String(c).trim();
-          if (/^\d+$/.test(strC) && Number(strC) > 0 && Number(strC) < 100000) {
-            targetBioId = strC;
-            break;
-          }
-          const mDigits = strC.match(/\d+/g);
-          if (mDigits && mDigits.length > 0) {
-            const lastDigits = mDigits[mDigits.length - 1];
-            const num = parseInt(lastDigits, 10);
-            if (num > 0 && num < 100000) {
-              targetBioId = num.toString();
-              break;
-            }
-          }
-        }
-
-        // 2. If not found by candidate ID, try matching against ESSL device users by name or card
-        if (!targetBioId && deviceUsers.length > 0) {
-          const mName = String(m.name || m.fullName || '').toLowerCase().trim();
-          const matched = deviceUsers.find(u => {
-            const uId = String(u.user_id).trim();
-            const uName = String(u.name || '').toLowerCase().trim();
-            if (m.phone && u.card && String(u.card) === String(m.phone)) return true;
-            if (uName && mName && (uName === mName || uName.includes(mName) || mName.includes(uName))) return true;
-            return false;
-          });
-          if (matched) {
-            targetBioId = String(matched.user_id);
-          }
-        }
-
-        if (targetBioId) {
-          if (m.biometricId === targetBioId && m.deviceUserId === targetBioId) {
-            alreadyMapped++;
-          } else {
-            await db.updateMember(m.id, {
-              biometricId: targetBioId,
-              deviceUserId: targetBioId
-            });
-            newlyMapped++;
-          }
-        } else {
-          missingMembers.push({
-            id: m.id,
-            name: m.name,
-            phone: m.phone,
-            memberId: m.memberId || m.id,
-            plan: m.plan || 'Standard',
-            status: m.status || 'active'
-          });
-        }
-      }
-
-      const totalMapped = alreadyMapped + newlyMapped;
-      res.json({
-        success: true,
-        totalCrmMembers: members.length,
-        totalDeviceUsers: deviceUsers.length,
-        mappedCount: totalMapped,
-        alreadyMapped,
-        newlyMapped,
-        missingCount: missingMembers.length,
-        missingMembers,
-        message: `Successfully auto-mapped ${totalMapped} members with ESSL machine! (${newlyMapped} newly mapped, ${missingMembers.length} missing on machine)`
+    if (isHikvisionProvider()) {
+      return res.status(400).json({
+        success: false,
+        error: 'ESSL auto-map is disabled while Hikvision is the active provider. Use Hikvision terminal user sync / bulk-map instead.',
+        hint: '/api/devices/hikvision/bulk-map-members'
       });
+    }
+    if (!isFirebaseInitialized || !admin) {
+      return res.status(503).json({ success: false, error: 'Firebase is unavailable. No member mappings were changed.' });
+    }
+
+    const deviceServiceDir = path.resolve(__dirname, '../../../device-service');
+    const scriptPath = path.join(deviceServiceDir, 'auto_map_device_users.py');
+    const { stdout } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      execFile('python', [scriptPath], {
+        cwd: deviceServiceDir,
+        timeout: 15000,
+        maxBuffer: 10 * 1024 * 1024,
+        encoding: 'utf8'
+      }, (error, stdout, stderr) => {
+        if (error) return reject(new Error(stderr || error.message));
+        resolve({ stdout, stderr });
+      });
+    });
+    const scan = JSON.parse(stdout);
+    if (!scan.success || scan.source !== 'device' || !Array.isArray(scan.users)) {
+      return res.status(503).json({
+        success: false,
+        error: scan.error || 'Fingerprint device is offline. No member mappings were changed.'
+      });
+    }
+
+    const deviceUsers = scan.users.filter((user: any) =>
+      /^\d{1,5}$/.test(String(user.user_id || '').trim())
+      && Number(user.user_id) > 0
+      && Number(user.fingerprint_count) > 0
+    );
+    const members = await db.getMembers();
+    const employeeSnapshot = await admin.firestore().collection('employees').get();
+    const employeeBioIds = new Set<string>();
+    const employeeNames = new Set<string>();
+    for (const employeeDoc of employeeSnapshot.docs) {
+      const employee = employeeDoc.data();
+      for (const id of [employee.biometricId, employee.deviceUserId].map(value => String(value || '').trim()).filter(Boolean)) {
+        employeeBioIds.add(id);
+      }
+      const name = String(employee.name || employee.fullName || '').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+      if (name) employeeNames.add(name);
+    }
+    const normalizeName = (value: unknown) => String(value || '').trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+    const membersByBioId = new Map<string, any[]>();
+    const membersByName = new Map<string, any[]>();
+    for (const member of members) {
+      const name = normalizeName(member.name || member.fullName);
+      if (name) membersByName.set(name, [...(membersByName.get(name) || []), member]);
+      for (const id of [member.biometricId, member.deviceUserId].map(value => String(value || '').trim()).filter(Boolean)) {
+        membersByBioId.set(id, [...(membersByBioId.get(id) || []), member]);
+      }
+    }
+
+    const deviceUsersByName = new Map<string, any[]>();
+    for (const user of deviceUsers) {
+      const name = normalizeName(user.name);
+      if (name) deviceUsersByName.set(name, [...(deviceUsersByName.get(name) || []), user]);
+    }
+
+    const claimedDeviceIds = new Set<string>();
+    const missingMembers: any[] = [];
+    let newlyMapped = 0;
+    let alreadyMapped = 0;
+    let ambiguousCount = 0;
+    let conflictingCount = 0;
+
+    for (const member of members) {
+      const memberId = String(member.id || member.uid || '').trim();
+      const existingIds = [...new Set([member.biometricId, member.deviceUserId]
+        .map(value => String(value || '').trim())
+        .filter(value => /^\d{1,5}$/.test(value) && Number(value) > 0))];
+      let candidateUsers = existingIds.flatMap(id => deviceUsers.filter((user: any) => String(user.user_id).trim() === id));
+      candidateUsers = [...new Map(candidateUsers.map((user: any) => [String(user.user_id).trim(), user])).values()];
+
+      if (candidateUsers.length === 0 && existingIds.length === 0) {
+        const memberName = normalizeName(member.name || member.fullName);
+        const nameUsers = deviceUsersByName.get(memberName) || [];
+        const nameMembers = membersByName.get(memberName) || [];
+        if (memberName && !employeeNames.has(memberName) && nameUsers.length === 1 && nameMembers.length === 1) candidateUsers = nameUsers;
+        else if (nameUsers.length > 0 || nameMembers.length > 1) ambiguousCount++;
+      }
+
+      if (candidateUsers.length !== 1) {
+        missingMembers.push({
+          id: memberId,
+          name: member.name || member.fullName || 'Unnamed member',
+          phone: member.phone || '',
+          memberId: member.memberId || memberId,
+          plan: member.plan || 'Standard',
+          status: member.status || 'active'
+        });
+        continue;
+      }
+
+      const matchedDeviceUser = candidateUsers[0];
+      const targetBioId = String(matchedDeviceUser.user_id).trim();
+      if (employeeBioIds.has(targetBioId)) {
+        conflictingCount++;
+        missingMembers.push({
+          id: memberId, name: member.name || member.fullName || 'Unnamed member',
+          phone: member.phone || '', memberId: member.memberId || memberId,
+          plan: member.plan || 'Standard', status: member.status || 'active'
+        });
+        continue;
+      }
+      const currentBioId = String(member.biometricId || '').trim();
+      const currentDeviceId = String(member.deviceUserId || '').trim();
+      const otherClaims = members.filter(other => String(other.id || other.uid || '') !== memberId
+        && [other.biometricId, other.deviceUserId].some(value => String(value || '').trim() === targetBioId));
+      if (claimedDeviceIds.has(targetBioId) || otherClaims.length > 0) {
+        conflictingCount++;
+        missingMembers.push({
+          id: memberId, name: member.name || member.fullName || 'Unnamed member',
+          phone: member.phone || '', memberId: member.memberId || memberId,
+          plan: member.plan || 'Standard', status: member.status || 'active'
+        });
+        continue;
+      }
+
+      const nameIdMatches = (membersByBioId.get(targetBioId) || []).length === 0
+        || (membersByBioId.get(targetBioId) || []).every(other => String(other.id || other.uid || '') === memberId);
+      if (!nameIdMatches) {
+        conflictingCount++;
+        missingMembers.push({
+          id: memberId, name: member.name || member.fullName || 'Unnamed member',
+          phone: member.phone || '', memberId: member.memberId || memberId,
+          plan: member.plan || 'Standard', status: member.status || 'active'
+        });
+        continue;
+      }
+
+      const sameMapping = currentBioId === targetBioId && currentDeviceId === targetBioId
+        && String(member.fingerprintStatus || '').toUpperCase() === 'ENROLLED'
+        && member.fingerprintEnrolled === true;
+      if (sameMapping) {
+        alreadyMapped++;
+      } else {
+        await db.updateMember(memberId, {
+          biometricId: targetBioId,
+          deviceUserId: targetBioId,
+          fingerprintStatus: 'ENROLLED',
+          fingerprintEnrolled: true,
+          fingerprintCount: Number(matchedDeviceUser.fingerprint_count),
+          biometricEnrolled: true,
+          biometricStatus: 'Linked',
+          lastBiometricSync: new Date().toISOString()
+        });
+        newlyMapped++;
+      }
+      claimedDeviceIds.add(targetBioId);
+    }
+
+    const totalMapped = alreadyMapped + newlyMapped;
+    res.json({
+      success: true,
+      totalCrmMembers: members.length,
+      totalDeviceUsers: scan.users.length,
+      fingerprintedDeviceUsers: deviceUsers.length,
+      skippedStaffFingerprints: deviceUsers.filter((user: any) => employeeBioIds.has(String(user.user_id).trim())).length,
+      unmappedFingerprintCount: deviceUsers.filter((user: any) => !claimedDeviceIds.has(String(user.user_id).trim())).length,
+      mappedCount: totalMapped,
+      alreadyMapped,
+      newlyMapped,
+      missingCount: missingMembers.length,
+      ambiguousCount,
+      conflictingCount,
+      missingMembers,
+      message: `Mapped ${totalMapped} members to verified device fingerprints: ${newlyMapped} new, ${alreadyMapped} already linked, ${missingMembers.length} need review.`
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HIKVISION-AWARE BIOMETRIC ENROLLMENT (synchronous contract used by Gate Control,
+// member drawer, trainer desk): queues the command for the on-site agent, WAITS for
+// the terminal to confirm the template, then returns success only if it did.
+// ═══════════════════════════════════════════════════════════════════════════════
+const HIKVISION_ENROLL_WAIT_MS = 300_000;
+
+async function startHikvisionEnrollment(req: Request, res: Response) {
+  try {
+    const { memberId, employeeId, isEmployee, enrollmentSessionId } = req.body;
+    const type = String(req.body.enrollmentType || 'FINGERPRINT').toUpperCase();
+    if (!['FACE', 'FINGERPRINT'].includes(type)) {
+      return res.status(400).json({ success: false, error: 'Enrollment type must be FACE or FINGERPRINT.' });
+    }
+    const employee = isEmployee === true || isEmployee === 'true';
+    const targetId = String((employee ? (employeeId || memberId) : (memberId || employeeId)) || '').trim();
+    if (!targetId) return res.status(400).json({ success: false, error: 'A CRM member or employee record must be selected.' });
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Firebase is unavailable; no enrollment was started.' });
+
+    const targetCollection = employee ? 'employees' : 'members';
+    const targetRef = firestore.collection(targetCollection).doc(targetId);
+    const targetSnap = await targetRef.get();
+    if (!targetSnap.exists) return res.status(404).json({ success: false, error: `Selected ${employee ? 'employee' : 'member'} was not found in CRM.` });
+    const target = targetSnap.data() || {};
+
+    let bioId = String(target.biometricId ?? target.deviceUserId ?? '').trim();
+    if (!isValidDeviceBiometricId(bioId)) {
+      // Never block enrollment for a missing ID: allocate the next free one and store it on the record.
+      bioId = String(await getNextAvailableBiometricId());
+      await targetRef.set({ biometricId: bioId, deviceUserId: bioId }, { merge: true });
+    }
+    const requestedId = String(req.body.biometricId ?? req.body.userId ?? '').trim();
+    if (requestedId && requestedId !== bioId) {
+      return res.status(409).json({ success: false, error: 'The selected biometric ID does not match the permanent CRM ID. Refresh the roster and try again.' });
+    }
+    const nameStr = String(target.name || req.body.memberName || req.body.name || '').trim();
+    if (!nameStr) return res.status(409).json({ success: false, error: 'The selected CRM record has no name.' });
+
+    const otherCollection = employee ? 'members' : 'employees';
+    const [byNumber, byString] = await Promise.all([
+      firestore.collection(otherCollection).where('biometricId', '==', Number(bioId)).get(),
+      firestore.collection(otherCollection).where('biometricId', '==', bioId).get(),
+    ]);
+    if (!byNumber.empty || !byString.empty) {
+      return res.status(409).json({ success: false, status: 'ID_COLLISION', error: 'This biometric ID is already assigned to a record in the other CRM collection. Resolve the member/employee ID collision before enrolling.' });
+    }
+
+    if (!(await isHikvisionAgentOnline())) {
+      return res.status(503).json({ success: false, status: 'DEVICE_SERVICE_OFFLINE', error: 'The on-site Warrior biometric agent is offline or the Hikvision terminal is disconnected. Run start-gym-listener.bat on the gym PC and verify Online status.' });
+    }
+
+    const enrollmentRef = firestore.collection('biometric_enrollment').doc();
+    const docId = enrollmentRef.id;
+    const sessionId = String(enrollmentSessionId || `sess_${bioId}_${Date.now()}`);
+    const nowIso = new Date().toISOString();
+    await enrollmentRef.set({
+      docId,
+      command: type === 'FACE' ? 'hikvision_enroll_face' : 'hikvision_enroll_fingerprint',
+      status: 'pending',
+      memberId: targetId,
+      memberName: nameStr,
+      biometricId: bioId,
+      enrollmentType: type,
+      targetCollection,
+      targetType: employee ? 'EMPLOYEE' : 'MEMBER',
+      isEmployee: employee,
+      deviceId: HIKVISION_DEVICE_ID,
+      sessionId,
+      source: 'crm_enroll_api',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    const completion = await new Promise<{ status: string; message?: string; data?: any }>((resolve) => {
+      let settled = false;
+      let unsubscribe: (() => void) | undefined;
+      const finish = (value: { status: string; message?: string; data?: any }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (unsubscribe) unsubscribe();
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish({ status: 'timeout', message: 'No confirmation arrived from the Hikvision terminal in time.' }), HIKVISION_ENROLL_WAIT_MS);
+      res.setTimeout(0);
+      unsubscribe = enrollmentRef.onSnapshot((snapshot) => {
+        const data = snapshot.data();
+        if (!data) return;
+        if (['enrolled', 'failed', 'timed_out'].includes(String(data.status))) {
+          finish({ status: String(data.status), message: data.error || data.message, data });
+        }
+      }, (error) => finish({ status: 'failed', message: 'Enrollment result could not be read: ' + error.message }));
+    });
+
+    if (completion.status === 'timeout') {
+      return res.status(504).json({ success: false, status: 'ENROLLMENT_RESULT_TIMEOUT', enrollmentDocId: docId, error: completion.message });
+    }
+    const confirmed = completion.status === 'enrolled'
+      && (type === 'FACE' ? completion.data?.hasFace === true : completion.data?.hasFingerprint === true);
+    if (!confirmed) {
+      return res.status(422).json({
+        success: false, status: 'ENROLLMENT_FAILED', enrollmentDocId: docId,
+        error: completion.message || `The terminal did not confirm the ${type.toLowerCase()} template.`,
+      });
+    }
+
+    // Terminal confirmed the template: set the CRM flags the dashboard reads (agent also does this; idempotent).
+    const stamp = new Date().toISOString();
+    const flags: Record<string, any> = { biometricEnrolled: true, lastBiometricSync: stamp, biometricDeviceId: HIKVISION_DEVICE_ID };
+    if (type === 'FACE') Object.assign(flags, { faceEnrolled: true, faceStatus: 'ENROLLED', faceEnrollmentStatus: 'ENROLLED', faceEnrolledAt: stamp });
+    else Object.assign(flags, { fingerprintEnrolled: true, fingerprintStatus: 'ENROLLED', fingerprintEnrollmentStatus: 'ENROLLED', fingerprintEnrolledAt: stamp });
+    await targetRef.set(flags, { merge: true });
+    if (completion.data?.photoUrl && type === 'FACE') {
+      await targetRef.set({ photoUrl: completion.data.photoUrl, photo: completion.data.photoUrl, avatarUrl: completion.data.photoUrl, facePhotoAvailable: true, photoSource: 'HIKVISION' }, { merge: true });
+    }
+    await firestore.collection('biometric_audit_logs').doc('log_' + Date.now()).set({
+      sessionId, targetId, targetType: employee ? 'EMPLOYEE' : 'MEMBER', memberName: nameStr, biometricId: bioId,
+      action: type === 'FACE' ? 'FACE_ENROLLMENT' : 'FINGERPRINT_ENROLLMENT', status: 'SUCCESS', deviceId: HIKVISION_DEVICE_ID, timestamp: stamp,
+    }).catch(() => {});
+
+    return res.json({
+      success: true, enrollmentDocId: docId, sessionId, biometricId: bioId, enrollmentType: type,
+      status: 'ENROLLED', verified: true, targetId, isEmployee: employee,
+      message: `Hikvision confirmed the ${type.toLowerCase()} template for ID #${bioId} (${nameStr}).`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message || 'Hikvision enrollment error' });
+  }
+}
+
+/**
+ * Server-side member/employee sync status (GET /devices/hikvision/sync-status/:biometricId).
+ * Reports the CRM record's biometricSyncStatus plus the latest hikvision_sync_member command.
+ */
+export const getHikvisionSyncStatus = async (req: Request, res: Response) => {
+  try {
+    const bioId = String(req.params.biometricId || '').trim();
+    if (!/^\d{1,5}$/.test(bioId)) return res.status(400).json({ success: false, error: 'A numeric biometric ID is required.' });
+    const firestore = getFirestoreDb();
+    if (!firestore) return res.status(503).json({ success: false, error: 'Firebase is unavailable.' });
+    const [asString, asNumber] = await Promise.all([
+      firestore.collection('biometric_enrollment').where('biometricId', '==', bioId).get(),
+      firestore.collection('biometric_enrollment').where('biometricId', '==', Number(bioId)).get(),
+    ]);
+    const commands = [...asString.docs, ...asNumber.docs]
+      .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+      .filter((c: any) => c.command === 'hikvision_sync_member')
+      .sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    const latest: any = commands[0];
+    if (!latest) return res.json({ success: true, found: false, biometricId: bioId, syncStatus: 'none' });
+    const recordSnap = await firestore.collection(latest.targetCollection === 'employees' ? 'employees' : 'members').doc(String(latest.memberId)).get();
+    const record: any = recordSnap.exists ? recordSnap.data() : {};
+    return res.json({
+      success: true, found: true, biometricId: bioId, commandId: latest.id,
+      syncStatus: record.biometricSyncStatus || (latest.status === 'success' ? 'synced' : latest.status),
+      commandStatus: latest.status, message: latest.message || '', error: record.biometricSyncError || latest.error || null,
+      hasFace: Boolean(latest.hasFace ?? record.faceEnrolled), hasFingerprint: Boolean(latest.hasFingerprint ?? record.fingerprintEnrolled),
+      syncedAt: record.biometricSyncedAt || null,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -1122,6 +1600,8 @@ export const enrollHikvisionBiometrics = async (req: Request, res: Response) => 
       memberName: nameStr,
       biometricId: bioId,
       enrollmentType: type,
+      targetCollection: (req.body.isEmployee === true || req.body.targetCollection === 'employees') ? 'employees' : 'members',
+      isEmployee: req.body.isEmployee === true || req.body.targetCollection === 'employees',
       deviceId: 'hikvision-main-gate',
       createdAt: now,
       updatedAt: now,
@@ -1947,4 +2427,3 @@ export const getHikvisionMemberPhoto = async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 };
-

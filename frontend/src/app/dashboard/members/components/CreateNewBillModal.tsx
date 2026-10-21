@@ -1,39 +1,25 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Plus, X, Calendar, AlertCircle, AlertTriangle, Check, DollarSign, 
-  CreditCard, Receipt, User, ShieldCheck, Phone, Send, CheckCircle2, 
-  Printer, MessageSquare, ExternalLink, Sparkles
-} from 'lucide-react';
+import { Plus, X, Calendar, AlertCircle, AlertTriangle, Check, DollarSign, CreditCard } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import { billingRepository } from '@/services/billingRepository';
+import { doc, setDoc, updateDoc, collection, writeBatch } from 'firebase/firestore';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
-import styles from '../members.module.css';
-import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
-import { downloadOfficialInvoicePdf } from '@/lib/invoicePdf';
+import { getDefaultPriceForPlan } from '@/services/billingService';
+import { getCanonicalISTDate } from '@/hooks/useTodaysPayments';
 
 // ── ZOD VALIDATION SCHEMA ──────────────────────────────────────────────────
 const createBillSchema = z.object({
-  phone: z.string().optional(),
-  billingDate: z.string().min(1, 'Billing date is required.'),
   plan: z.string().min(1, 'Package selection is required'),
-  originalAmount: z.coerce.number().min(0, 'Package amount cannot be negative'),
-  discount: z.coerce.number().min(0, 'Discount cannot be negative').default(0),
-  tax: z.coerce.number().min(0, 'Tax cannot be negative').default(0),
-  amountPaid: z.coerce.number().min(0, 'Amount paid cannot be negative'),
+  amount: z.coerce.number().min(0, 'Amount cannot be negative'),
   method: z.string().min(1, 'Payment mode is required'),
-  paymentStatus: z.string().default('paid'),
   startDate: z.string().min(1, 'Start date is required.'),
   expiryDate: z.string().min(1, 'Expiry date is required.'),
-  notes: z.string().optional(),
-  sendWhatsApp: z.boolean().default(true),
 }).superRefine((data, ctx) => {
   if (!data.startDate) {
     ctx.addIssue({
@@ -80,7 +66,7 @@ const createBillSchema = z.object({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['expiryDate'],
-        message: 'Expiry date cannot be earlier than start date.',
+        message: 'Expiry date cannot be earlier than the start date.',
       });
     }
   }
@@ -96,52 +82,16 @@ interface CreateNewBillModalProps {
   onSaved?: () => void;
 }
 
-interface SuccessBillData {
-  invoiceNumber: string;
-  memberName: string;
-  phone: string;
-  plan: string;
-  billingDate: string;
-  startDate: string;
-  expiryDate: string;
-  netPayable: number;
-  amountPaid: number;
-  pendingBalance: number;
-  method: string;
-  invoice: any;
-}
-
 export default function CreateNewBillModal({
   isOpen,
   member,
   onClose,
   onSaved,
 }: CreateNewBillModalProps) {
-  const { fetchMembers, addPayment } = useGymStore();
+  const { fetchMembers } = useGymStore();
   const [showShorterConfirmation, setShowShorterConfirmation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingFormData, setPendingFormData] = useState<CreateBillFormOutput | null>(null);
-  const [successData, setSuccessData] = useState<SuccessBillData | null>(null);
-  const [isPreparingPdf, setIsPreparingPdf] = useState(false);
-
-  const sendInvoicePdfOnWhatsApp = async (bill: SuccessBillData) => {
-    setIsPreparingPdf(true);
-    try {
-      const invoiceElement = document.getElementById('printable-official-invoice');
-      if (!invoiceElement) throw new Error('Invoice template is not ready.');
-      const digits = bill.phone.replace(/\D/g, '');
-      const fullNumber = digits.length === 10 ? `91${digits}` : digits;
-      const message = encodeURIComponent(`Hello ${bill.memberName}, your membership invoice ${bill.invoiceNumber} is attached as a PDF. Thank you for choosing The Warrior Gym!`);
-      window.open(`https://wa.me/${fullNumber}?text=${message}`, '_blank', 'noopener,noreferrer');
-      await downloadOfficialInvoicePdf(invoiceElement, bill.invoiceNumber);
-      toast.success('Invoice PDF downloaded. Attach it in the WhatsApp chat to send.');
-    } catch (error) {
-      console.error('Could not create invoice PDF:', error);
-      toast.error('Could not create the invoice PDF. Please try again.');
-    } finally {
-      setIsPreparingPdf(false);
-    }
-  };
 
   // Default Package Options & Pricing
   const packages = useMemo(() => [
@@ -149,23 +99,12 @@ export default function CreateNewBillModal({
     { label: '3 Months (Quarterly)', value: '3 Months (Quarterly)', price: 6500 },
     { label: '6 Months (Semi-Annual)', value: '6 Months (Semi-Annual)', price: 11500 },
     { label: '12 Months (Annual)', value: '12 Months (Annual)', price: 18000 },
-    { label: 'Custom Plan', value: 'Custom Plan', price: 3000 },
   ], []);
 
-  const isHoldMember = useMemo(() => {
-    return (member?.status || '').toLowerCase() === 'hold';
-  }, [member]);
-
-  const todayIST = useMemo(() => new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date()), []);
-
+  // Compute Initial Dates based on Renewal Logic (Requirement 1 & 12)
   const initialStartDate = useMemo(() => {
-    if (isHoldMember || !member?.expiryDate) {
-      return todayIST;
-    }
     return membershipEngine.calculateAutoStartDate(member);
-  }, [member, isHoldMember, todayIST]);
+  }, [member]);
 
   const initialExpiryDate = useMemo(() => {
     return membershipEngine.calculateMembershipExpiry(initialStartDate, '3 Months (Quarterly)');
@@ -179,108 +118,55 @@ export default function CreateNewBillModal({
     formState: { errors, isValid },
   } = useForm<CreateBillFormInput, any, CreateBillFormOutput>({
     resolver: zodResolver(createBillSchema),
-    mode: 'onChange',
+    mode: 'onChange', // Real-time validation (Requirement 7)
     defaultValues: {
-      phone: member?.phone || '',
-      billingDate: todayIST,
       plan: '3 Months (Quarterly)',
-      originalAmount: 6500,
-      discount: 0,
-      tax: 0,
-      amountPaid: 6500,
+      amount: 6500,
       method: 'UPI',
-      paymentStatus: 'paid',
       startDate: initialStartDate,
       expiryDate: initialExpiryDate,
-      notes: '',
-      sendWhatsApp: true,
     },
   });
 
   const selectedPlan = watch('plan');
   const startDate = watch('startDate');
   const expiryDate = watch('expiryDate');
-  const billingDate = watch('billingDate');
-  const phone = watch('phone');
-  const sendWhatsApp = watch('sendWhatsApp');
-  const originalAmount = Number(watch('originalAmount') || 0);
-  const discount = Number(watch('discount') || 0);
-  const tax = Number(watch('tax') || 0);
-  const amountPaid = Number(watch('amountPaid') || 0);
-
-  // Live calculations
-  const netPayable = useMemo(() => {
-    return Math.max(0, originalAmount - discount + tax);
-  }, [originalAmount, discount, tax]);
-
-  const pendingBalance = useMemo(() => {
-    return Math.max(0, netPayable - amountPaid);
-  }, [netPayable, amountPaid]);
 
   // Reset values when modal opens or member changes
   useEffect(() => {
     if (isOpen && member) {
-      const autoStart = (member.status || '').toLowerCase() === 'hold' || !member.expiryDate
-        ? todayIST
-        : membershipEngine.calculateAutoStartDate(member);
-      const autoExpiry = membershipEngine.calculateMembershipExpiry(autoStart, '3 Months (Quarterly)');
-
-      setValue('phone', member.phone || '', { shouldValidate: true });
-      setValue('billingDate', todayIST, { shouldValidate: true });
-      setValue('plan', '3 Months (Quarterly)', { shouldValidate: true });
-      setValue('originalAmount', 6500, { shouldValidate: true });
-      setValue('discount', 0, { shouldValidate: true });
-      setValue('tax', 0, { shouldValidate: true });
-      setValue('amountPaid', 6500, { shouldValidate: true });
+      const targetPlan = member.plan || member.packageName || '1 Month Standard';
+      const targetPrice = getDefaultPriceForPlan(targetPlan);
+      const autoStart = membershipEngine.calculateAutoStartDate(member);
+      const autoExpiry = membershipEngine.calculateMembershipExpiry(autoStart, targetPlan);
+      setValue('plan', targetPlan, { shouldValidate: true });
+      setValue('amount', targetPrice, { shouldValidate: true });
       setValue('method', 'UPI', { shouldValidate: true });
-      setValue('paymentStatus', 'paid', { shouldValidate: true });
       setValue('startDate', autoStart, { shouldValidate: true });
       setValue('expiryDate', autoExpiry, { shouldValidate: true });
-      setValue('notes', (member.status || '').toLowerCase() === 'hold' ? 'Activation bill for Hold member' : '');
-      setValue('sendWhatsApp', true, { shouldValidate: true });
       setShowShorterConfirmation(false);
-      setSuccessData(null);
     }
-  }, [isOpen, member, setValue, todayIST]);
+  }, [isOpen, member, setValue]);
 
-  // When package changes: Auto update price & Expiry Date
+  // When package changes: Auto update price, and recalculate Expiry Date (Requirement 1)
   const handlePlanChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newPlan = e.target.value;
     let price = 2500;
     if (newPlan.includes('3 Month') || newPlan.includes('Quarterly')) price = 6500;
-    else if (newPlan.includes('6 Month') || newPlan.includes('Semi')) price = 11500;
-    else if (newPlan.includes('12 Month') || newPlan.includes('Annual')) price = 18000;
-    else if (newPlan.includes('Custom')) price = 3000;
+    if (newPlan.includes('6 Month') || newPlan.includes('Semi')) price = 11500;
+    if (newPlan.includes('12 Month') || newPlan.includes('Annual')) price = 18000;
 
     setValue('plan', newPlan, { shouldValidate: true });
-    setValue('originalAmount', price, { shouldValidate: true });
-    const currentDiscount = Number(watch('discount') || 0);
-    const currentTax = Number(watch('tax') || 0);
-    const newNet = Math.max(0, price - currentDiscount + currentTax);
-    setValue('amountPaid', newNet, { shouldValidate: true });
+    setValue('amount', price, { shouldValidate: true });
 
+    // Recalculate Expiry Date based on current Start Date + selected Package Duration
     if (startDate) {
       const newExpiry = membershipEngine.calculateMembershipExpiry(startDate, newPlan);
       setValue('expiryDate', newExpiry, { shouldValidate: true });
     }
   };
 
-  const handleAmountChange = (newOrig: number) => {
-    setValue('originalAmount', newOrig, { shouldValidate: true });
-    const curDisc = Number(watch('discount') || 0);
-    const curTax = Number(watch('tax') || 0);
-    const newNet = Math.max(0, newOrig - curDisc + curTax);
-    setValue('amountPaid', newNet, { shouldValidate: true });
-  };
-
-  const handleDiscountChange = (newDisc: number) => {
-    setValue('discount', newDisc, { shouldValidate: true });
-    const curOrig = Number(watch('originalAmount') || 0);
-    const curTax = Number(watch('tax') || 0);
-    const newNet = Math.max(0, curOrig - newDisc + curTax);
-    setValue('amountPaid', newNet, { shouldValidate: true });
-  };
-
+  // When Start Date changes: Auto recalculate Expiry Date (Requirement 2)
   const handleStartDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newStart = e.target.value;
     setValue('startDate', newStart, { shouldValidate: true });
@@ -291,7 +177,7 @@ export default function CreateNewBillModal({
     }
   };
 
-  // Expected Expiry Calculation for Warning
+  // Expected Expiry Calculation for Non-Blocking Warning (Requirement 9)
   const expectedExpiry = useMemo(() => {
     if (!startDate || !selectedPlan) return '';
     return membershipEngine.calculateMembershipExpiry(startDate, selectedPlan);
@@ -307,217 +193,115 @@ export default function CreateNewBillModal({
 
   // Compute status & auto-start info
   const isMemberActive = useMemo(() => {
-    if (!member || !member.expiryDate || isHoldMember) return false;
+    if (!member || !member.expiryDate) return false;
     const exp = new Date(member.expiryDate);
     if (isNaN(exp.getTime())) return false;
     const today = new Date();
     const eDay = new Date(exp.getFullYear(), exp.getMonth(), exp.getDate());
     const tDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     return eDay.getTime() >= tDay.getTime();
-  }, [member, isHoldMember]);
+  }, [member]);
 
-  const queuedRenewal = isMemberActive && !!startDate && startDate > todayIST;
-  const totalDaysAfterBill = expiryDate ? membershipEngine.calculateDaysLeft(expiryDate) : 0;
+  const autoExtensionStart = useMemo(() => {
+    return membershipEngine.calculateAutoStartDate(member);
+  }, [member]);
 
-  // Save Bill & Activate Membership
+  const isManualStartOverride = useMemo(() => {
+    if (!isMemberActive || !startDate) return false;
+    return startDate !== autoExtensionStart;
+  }, [isMemberActive, startDate, autoExtensionStart]);
+
+  // Final submission execution
   const executeSaveBill = async (data: CreateBillFormOutput) => {
     if (!member) return;
     setIsSubmitting(true);
     try {
-      const invNum = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
-      const now = new Date();
-      const bDate = data.billingDate || todayIST;
-      const cleanPhoneInput = String(data.phone || member.phone || '').trim();
-      const origAmt = Number(data.originalAmount);
-      const discAmt = Number(data.discount || 0);
-      const taxAmt = Number(data.tax || 0);
-      const netPay = Math.max(0, origAmt - discAmt + taxAmt);
-      const paidAmt = Number(data.amountPaid);
-      const outstanding = Math.max(0, netPay - paidAmt);
-      const computedPayStatus = outstanding <= 0 ? 'paid' : (paidAmt > 0 ? 'partial' : 'unpaid');
-      const computedDaysLeft = membershipEngine.calculateDaysLeft(data.expiryDate);
+      const invNum = `INV-${Math.floor(10000 + Math.random() * 90000)}`;
+      const origAmt = Number(data.amount);
+      const discAmt = 0;
+      const netPayable = origAmt - discAmt;
+      const normalizedToday = getCanonicalISTDate();
+      const newPayRef = doc(collection(db, 'payments'));
+      const txnId = `TXN-${normalizedToday.replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      const billPayload: any = {
+      const newBill = {
+        id: newPayRef.id,
+        transactionId: txnId,
         memberId: member.id,
         memberName: member.name,
-        memberPhone: cleanPhoneInput,
-        phone: cleanPhoneInput,
+        memberPhone: member.phone || member.mobile || '',
         invoiceNumber: invNum,
         invoice: invNum,
         plan: data.plan,
+        packageName: data.plan,
         originalAmount: origAmt,
         discountAmount: discAmt,
         discount: discAmt,
-        taxAmount: taxAmt,
-        tax: taxAmt,
+        taxAmount: 0,
         otherCharges: 0,
-        netPayable: netPay,
-        amount: netPay,
-        amountPaid: paidAmt,
-        paid: paidAmt,
-        outstandingAmount: outstanding,
-        pendingAmount: outstanding,
-        balanceAmount: outstanding,
+        netPayable: netPayable,
+        amount: netPayable,
+        amountPaid: netPayable,
+        paid: netPayable,
+        outstandingAmount: 0,
+        pendingAmount: 0,
+        paymentMethod: data.method,
         method: data.method,
-        status: computedPayStatus,
-        paymentStatus: computedPayStatus,
-        date: bDate,
-        billingDate: bDate,
-        paymentDate: bDate,
-        startDate: data.startDate,
-        expiryDate: data.expiryDate,
-        newExpiryDate: data.expiryDate,
+        status: 'paid',
+        paymentStatus: 'paid',
+        date: normalizedToday,
+        paymentDate: normalizedToday,
+        invoiceDate: normalizedToday,
+        billingDate: normalizedToday,
+        transactionDate: normalizedToday,
         transactionType: 'membership_payment',
+        billingType: 'membership',
         isHistorical: false,
         imported: false,
-        notes: data.notes || (isHoldMember ? 'Hold Member Activated' : 'Membership Bill'),
-        createdAt: now.toISOString(),
+        startDate: data.startDate,
+        expiryDate: data.expiryDate,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         isRealTimeToday: true,
       };
 
-      // 1. Create canonical bill via repository
-      const idempotencyKey = `pay_${member.id}_${data.plan}_${bDate}_${Date.now()}`;
-      billPayload.idempotencyKey = idempotencyKey;
+      const batch = writeBatch(db);
 
-      let createdInvoice: any = null;
-      try {
-        createdInvoice = await billingRepository.createBill(billPayload);
-      } catch (apiErr: any) {
-        console.warn('Backend billing API call error, proceeding with direct activation:', apiErr);
-      }
+      // 1. Create payment document
+      batch.set(newPayRef, newBill);
 
-      const txId = createdInvoice?.id || `tx_${Date.now()}`;
-
-      // 2. Update Member Document
+      // 2. Append to membershipHistory array & update member
       const existingHistory = Array.isArray(member.membershipHistory) ? member.membershipHistory : [];
       const newHistoryEntry = {
-        transactionId: txId,
         plan: data.plan,
-        billingDate: bDate,
         startDate: data.startDate,
         expiryDate: data.expiryDate,
-        amount: netPay,
-        paid: paidAmt,
+        amount: netPayable,
         invoiceId: invNum,
-        createdAt: now.toISOString(),
+        createdAt: new Date().toISOString(),
       };
       const updatedHistory = [...existingHistory, newHistoryEntry];
 
-      const canonicalTx = {
-        transactionId: txId,
-        memberId: member.id,
-        memberCode: member.memberId || '',
-        biometricId: member.biometricId || member.deviceUserId || '',
-        invoiceId: txId,
-        invoiceNumber: invNum,
-        packageId: data.plan,
-        packageName: data.plan,
-        billingDate: bDate,
-        paymentDate: bDate,
-        startDate: data.startDate,
-        expiryDate: data.expiryDate,
-        originalAmount: origAmt,
-        discount: discAmt,
-        tax: taxAmt,
-        otherCharges: 0,
-        netPayable: netPay,
-        amountPaid: paidAmt,
-        pendingAmount: outstanding,
-        paymentMethod: data.method,
-        paymentStatus: computedPayStatus,
-        billingType: 'MEMBERSHIP',
-        isHistorical: false,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString()
-      };
-
-      const existingBilling = Array.isArray(member.billingHistory) ? member.billingHistory : [];
-      const updatedBillingHistory = [canonicalTx, ...existingBilling.filter((b: any) => b.invoiceNumber !== invNum && b.transactionId !== txId)];
-
-      const newTotalPaid = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.amountPaid || b.paid || 0)), 0);
-      const newTotalBilled = updatedBillingHistory.reduce((sum: number, b: any) => sum + (Number(b.netPayable || b.amount || 0)), 0);
-      const newOutstandingBalance = Math.max(0, newTotalBilled - newTotalPaid);
-
-      const biometricSafetyUpdates: any = {};
-      if (member.biometricId) biometricSafetyUpdates.biometricId = member.biometricId;
-      if (member.deviceUserId) biometricSafetyUpdates.deviceUserId = member.deviceUserId;
-      if (member.biometricUserId) biometricSafetyUpdates.biometricUserId = member.biometricUserId;
-      if (member.faceEnrollmentStatus) biometricSafetyUpdates.faceEnrollmentStatus = member.faceEnrollmentStatus;
-      if (member.fingerprintEnrollmentStatus) biometricSafetyUpdates.fingerprintEnrollmentStatus = member.fingerprintEnrollmentStatus;
-      if (member.biometric) biometricSafetyUpdates.biometric = member.biometric;
-
-      // Firestore Update
-      try {
-        await updateDoc(doc(db, 'members', member.id), {
-          phone: cleanPhoneInput || member.phone || '',
-          plan: data.plan,
-          packageName: data.plan,
-          membershipPlan: data.plan,
-          startDate: member.startDate || data.startDate,
-          membershipStartDate: member.startDate || data.startDate,
-          expiryDate: data.expiryDate,
-          membershipExpiryDate: data.expiryDate,
-          status: 'active',
-          membershipStatus: 'ACTIVE',
-          activationStatus: 'ACTIVE',
-          daysLeft: computedDaysLeft,
-          paymentStatus: computedPayStatus,
-          totalBilled: newTotalBilled,
-          amount: newTotalBilled,
-          price: newTotalBilled,
-          totalPaid: newTotalPaid,
-          amountPaid: newTotalPaid,
-          paid: newTotalPaid,
-          outstandingBalance: newOutstandingBalance,
-          pendingBalance: newOutstandingBalance,
-          balance: newOutstandingBalance,
-          balanceAmount: newOutstandingBalance,
-          membershipHistory: updatedHistory,
-          billingHistory: updatedBillingHistory,
-          payments: updatedBillingHistory,
-          updatedAt: now.toISOString(),
-          ...biometricSafetyUpdates,
-        });
-      } catch (clientDocErr) {
-        console.warn('Direct client updateDoc skipped (already committed by backend Admin SDK):', clientDocErr);
-      }
-
-      // WhatsApp URL generation
-      const digitsOnly = cleanPhoneInput.replace(/\D/g, '');
-      toast.success(`🎉 Bill ${invNum} generated! ${member.name} is now ACTIVE!`);
-
-      // Set Success State to show success modal
-      setSuccessData({
-        invoiceNumber: invNum,
-        memberName: member.name,
-        phone: cleanPhoneInput,
+      const memberRef = doc(db, 'members', member.id);
+      batch.update(memberRef, {
         plan: data.plan,
-        billingDate: bDate,
-        startDate: data.startDate,
+        startDate: member.startDate || data.startDate,
         expiryDate: data.expiryDate,
-        netPayable: netPay,
-        amountPaid: paidAmt,
-        pendingBalance: outstanding,
-        method: data.method,
-        invoice: {
-          ...billPayload,
-          invoiceNumber: invNum,
-          invoice: invNum,
-          date: bDate,
-          paymentMethod: data.method,
-        },
+        status: 'active',
+        paymentStatus: 'paid',
+        totalPaid: (Number(member.totalPaid) || 0) + netPayable,
+        totalBilled: (Number(member.totalBilled) || 0) + netPayable,
+        outstandingBalance: 0,
+        membershipHistory: updatedHistory,
+        updatedAt: new Date().toISOString(),
       });
 
-      // Invalidate store cache
-      try {
-        const { fetchMembers, fetchPayments } = useGymStore.getState();
-        await fetchMembers(true);
-        await fetchPayments(true);
-      } catch (e) {
-        console.warn('Store refresh notice:', e);
-      }
+      await batch.commit();
 
+      toast.success(`Bill ${invNum} generated successfully!`);
+      fetchMembers();
       if (onSaved) onSaved();
+      onClose();
     } catch (err: any) {
       toast.error('Failed to generate bill: ' + (err?.message || err));
     } finally {
@@ -526,8 +310,10 @@ export default function CreateNewBillModal({
     }
   };
 
+  // Form submit handler
   const onSubmit = (data: CreateBillFormOutput) => {
     if (isShorterThanExpected) {
+      // Require confirmation before saving a manually shortened membership (Requirement 9)
       setPendingFormData(data);
       setShowShorterConfirmation(true);
       return;
@@ -537,328 +323,210 @@ export default function CreateNewBillModal({
 
   if (!isOpen || !member) return null;
 
-  const bioIdDisplay = member.biometricId || member.biometricUserId || member.deviceUserId || null;
-
-  return (<>
+  return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className={`${styles.modalCard} bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4 relative border border-slate-100 max-h-[95vh] overflow-y-auto`}>
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 relative border border-slate-100 max-h-[95vh] overflow-y-auto">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-              <Receipt size={18} className="text-[#EA580C]" />
-              {isHoldMember ? 'Activate Membership & Bill' : 'Create New Bill'}
-            </h3>
-            <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-              Generate invoice, record payment, update phone & prepare a PDF for WhatsApp
-            </p>
-          </div>
+          <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+            <Plus size={18} className="text-orange-600" /> Create New Bill for {member.name}
+          </h3>
           <button
             onClick={onClose}
             className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full border-none bg-transparent cursor-pointer transition-colors"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
-        {/* Member Identity & Status Card */}
-        <div className="bg-gradient-to-r from-orange-50/70 to-amber-50/70 border border-orange-200/80 rounded-2xl p-3.5 space-y-2">
+        {/* Current Membership Summary Card */}
+        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-[#EA580C] text-white font-black flex items-center justify-center text-xs shadow-sm">
-                {member.name?.charAt(0) || 'M'}
-              </div>
-              <div>
-                <span className="text-xs font-black text-slate-900 block">{member.name}</span>
-                <span className="text-[10px] text-slate-500 font-mono">
-                  {phone || member.phone || 'No phone number added'}
-                </span>
-              </div>
-            </div>
-            
-            <div className="text-right">
-              <span className={`text-[9px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
-                isHoldMember 
-                  ? 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse' 
-                  : isMemberActive 
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                    : 'bg-rose-50 text-rose-700 border-rose-200'
-              }`}>
-                {member.status?.toUpperCase() || (isHoldMember ? 'HOLD' : 'UNKNOWN')}
-              </span>
-              {bioIdDisplay && (
-                <span className="block text-[10px] font-mono font-bold text-[#C2410C] mt-0.5">
-                  BIO ID: #{bioIdDisplay}
-                </span>
-              )}
-            </div>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Current Membership</span>
+            <span className={`text-[8.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+              isMemberActive 
+                ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
+                : 'bg-red-50 text-red-600 border-red-200'
+            }`}>
+              {isMemberActive ? 'ACTIVE' : 'EXPIRED'}
+            </span>
           </div>
 
-          {isHoldMember ? (
-            <div className="p-2 rounded-xl bg-amber-50/90 text-amber-800 border border-amber-200 text-[11px] font-bold flex items-center gap-2">
-              <ShieldCheck size={14} className="text-amber-600 shrink-0" />
-              <span>Imported member on HOLD. Saving this bill will activate the member immediately.</span>
-            </div>
-          ) : isMemberActive ? (
-            <div className="p-2 rounded-xl bg-[#FFF7ED] text-[#C2410C] border border-[#FED7AA] text-[11px] font-bold flex items-center gap-2">
-              <Check size={14} className="text-[#EA580C] shrink-0" />
-              <span>
-                {queuedRenewal
-                  ? `Renewal queued: ${membershipEngine.calculateDaysLeft(member.expiryDate)} current days are preserved. ${selectedPlan} starts ${startDate}; after billing, total cover will be ${totalDaysAfterBill} days through ${expiryDate}.`
-                  : `Active member: coverage extends through ${expiryDate}.`}
+          <div className="grid grid-cols-3 gap-2 text-left pt-1">
+            <div>
+              <span className="text-[9px] text-slate-400 font-bold block uppercase">Plan</span>
+              <span className="text-[11px] font-extrabold text-slate-800 truncate block">
+                {member.plan || 'Standard'}
               </span>
             </div>
-          ) : null}
+            <div>
+              <span className="text-[9px] text-slate-400 font-bold block uppercase">Current Start</span>
+              <span className="text-[11px] font-extrabold text-slate-800 block">
+                {member.startDate || member.joinDate || 'N/A'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[9px] text-slate-400 font-bold block uppercase">Current Expiry</span>
+              <span className="text-[11px] font-extrabold text-slate-800 block">
+                {member.expiryDate || 'N/A'}
+              </span>
+            </div>
+          </div>
         </div>
 
+        {/* Extension Indicator Message */}
+        {isMemberActive && (
+          <div className={`p-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 border ${
+            isManualStartOverride 
+              ? 'bg-amber-50 text-amber-700 border-amber-200' 
+              : 'bg-orange-50 text-orange-700 border-orange-200'
+          }`}>
+            {isManualStartOverride ? (
+              <>
+                <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                <span>Manual start date override</span>
+              </>
+            ) : (
+              <>
+                <Check size={14} className="text-orange-500 shrink-0" />
+                <span>Membership will be extended from current expiry ({member.expiryDate}).</span>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Form Body */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5 text-xs">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-xs">
           
-          {/* Member Phone Number & Billing Date */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                <Phone size={12} className="text-emerald-600" />
-                Phone Number (WhatsApp)
-              </label>
-              <input
-                type="tel"
-                {...register('phone')}
-                placeholder="e.g. 9876543210"
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all font-mono"
-              />
-              <p className="mt-1 text-[10px] text-slate-400 font-semibold">
-                Bill & receipts will be sent to this number
+          {/* Select Package */}
+          <div>
+            <label className="font-extrabold text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
+              Select Package
+            </label>
+            <select
+              value={selectedPlan}
+              onChange={handlePlanChange}
+              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 transition-all cursor-pointer"
+            >
+              {packages.map((pkg) => (
+                <option key={pkg.value} value={pkg.value}>
+                  {pkg.label} (₹{pkg.price.toLocaleString('en-IN')})
+                </option>
+              ))}
+            </select>
+            {errors.plan && (
+              <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
+                <AlertCircle size={12} className="text-red-500 shrink-0" /> {errors.plan.message}
               </p>
-            </div>
-
-            <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px] flex items-center gap-1">
-                <Calendar size={12} className="text-[#EA580C]" />
-                Billing Date *
-              </label>
-              <input
-                type="date"
-                {...register('billingDate')}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-              />
-              {errors.billingDate && (
-                <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.billingDate.message}
-                </p>
-              )}
-            </div>
+            )}
           </div>
 
-          {/* Select Package & Package Amount */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Membership Package *
-              </label>
-              <select
-                value={selectedPlan}
-                onChange={handlePlanChange}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all cursor-pointer"
-              >
-                {packages.map((pkg) => (
-                  <option key={pkg.value} value={pkg.value}>
-                    {pkg.label} (₹{pkg.price.toLocaleString('en-IN')})
-                  </option>
-                ))}
-              </select>
-              {errors.plan && (
-                <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.plan.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Package Price (₹) *
-              </label>
-              <input
-                type="number"
-                value={originalAmount}
-                readOnly={!selectedPlan?.toLowerCase().includes('custom')}
-                disabled={!selectedPlan?.toLowerCase().includes('custom')}
-                onChange={(e) => handleAmountChange(Number(e.target.value))}
-                className={`w-full p-2.5 rounded-xl font-bold text-slate-800 outline-none transition-all ${
-                  !selectedPlan?.toLowerCase().includes('custom')
-                    ? 'bg-slate-100/90 border border-slate-200 cursor-not-allowed text-slate-600'
-                    : 'bg-slate-50 border border-slate-200 focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200'
-                }`}
-                title={!selectedPlan?.toLowerCase().includes('custom') ? 'Fixed package price (use Discount field below to adjust)' : 'Custom package price'}
-              />
-              {!selectedPlan?.toLowerCase().includes('custom') && (
-                <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                  Fixed package rate. Apply discounts below.
-                </p>
-              )}
-              {errors.originalAmount && (
-                <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.originalAmount.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Discount & Tax / GST */}
+          {/* Amount & Payment Mode */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Discount (₹)
+              <label className="font-extrabold text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
+                Amount (₹)
               </label>
-              <input
-                type="number"
-                value={discount}
-                onChange={(e) => handleDiscountChange(Number(e.target.value))}
-                placeholder="0"
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Tax / GST (₹)
-              </label>
-              <input
-                type="number"
-                {...register('tax')}
-                placeholder="0"
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Amount Paid & Payment Mode */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Amount Paid (₹) *
-              </label>
-              <input
-                type="number"
-                {...register('amountPaid')}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-              />
-              {errors.amountPaid && (
+              <div className="relative flex items-center">
+                <input
+                  type="number"
+                  {...register('amount')}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 transition-all"
+                />
+              </div>
+              {errors.amount && (
                 <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.amountPaid.message}
+                  <AlertCircle size={12} className="text-red-500 shrink-0" /> {errors.amount.message}
                 </p>
               )}
             </div>
 
             <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Payment Method *
+              <label className="font-extrabold text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
+                Payment Mode
               </label>
               <select
                 {...register('method')}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all cursor-pointer"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 transition-all cursor-pointer"
               >
                 <option value="UPI">UPI</option>
                 <option value="Cash">Cash</option>
                 <option value="Card">Card</option>
                 <option value="Bank">Bank Transfer</option>
-                <option value="Cheque">Cheque</option>
               </select>
+              {errors.method && (
+                <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
+                  <AlertCircle size={12} className="text-red-500 shrink-0" /> {errors.method.message}
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Live Calculation Summary */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 grid grid-cols-3 gap-2 text-center">
-            <div>
-              <span className="text-[9px] uppercase font-black text-slate-400 block">Net Payable</span>
-              <span className="text-xs font-black text-slate-900 font-mono">₹{netPayable.toLocaleString('en-IN')}</span>
-            </div>
-            <div>
-              <span className="text-[9px] uppercase font-black text-slate-400 block">Paid</span>
-              <span className="text-xs font-black text-emerald-600 font-mono">₹{amountPaid.toLocaleString('en-IN')}</span>
-            </div>
-            <div>
-              <span className="text-[9px] uppercase font-black text-slate-400 block">Pending Balance</span>
-              <span className={`text-xs font-black font-mono ${pendingBalance > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                ₹{pendingBalance.toLocaleString('en-IN')}
-              </span>
-            </div>
-          </div>
-
-          {/* Start Date & Expiry Date */}
+          {/* Start Date & Expiry Date Fields */}
           <div className="grid grid-cols-2 gap-3">
+            
+            {/* Start Date Field */}
             <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Start Date *
+              <label className="font-extrabold text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
+                Start Date
               </label>
-              <input
-                type="date"
-                value={startDate || ''}
-                onChange={handleStartDateChange}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-              />
+              <div className="relative flex items-center">
+                <input
+                  type="date"
+                  value={startDate || ''}
+                  onChange={handleStartDateChange}
+                  className={`w-full p-2.5 rounded-xl font-bold text-slate-800 outline-none transition-all ${
+                    errors.startDate
+                      ? 'bg-red-50/40 border-2 border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                      : 'bg-slate-50 border border-slate-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100'
+                  }`}
+                />
+              </div>
+
+              {/* Requirement 6: Start Date Error directly under field */}
               {errors.startDate && (
                 <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.startDate.message}
+                  <AlertCircle size={12} className="text-red-500 shrink-0" /> {errors.startDate.message}
                 </p>
               )}
             </div>
 
+            {/* Expiry Date Field */}
             <div>
-              <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-                Expiry Date *
+              <label className="font-extrabold text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
+                Expiry Date
               </label>
-              <input
-                type="date"
-                value={expiryDate || ''}
-                onChange={(e) => setValue('expiryDate', e.target.value, { shouldValidate: true })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-              />
+              <div className="relative flex items-center">
+                <input
+                  type="date"
+                  value={expiryDate || ''}
+                  onChange={(e) => setValue('expiryDate', e.target.value, { shouldValidate: true })}
+                  className={`w-full p-2.5 rounded-xl font-bold text-slate-800 outline-none transition-all ${
+                    errors.expiryDate
+                      ? 'bg-red-50/40 border-2 border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                      : isShorterThanExpected
+                      ? 'bg-amber-50/40 border-2 border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100'
+                      : 'bg-slate-50 border border-slate-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-100'
+                  }`}
+                />
+              </div>
+
+              {/* Requirement 3 & 5: Expiry Date Error directly under field (NO POPUP) */}
               {errors.expiryDate && (
                 <p className="mt-1 text-[11px] font-bold text-red-500 flex items-center gap-1">
-                  <AlertCircle size={12} /> {errors.expiryDate.message}
+                  <AlertCircle size={12} className="text-red-500 shrink-0" /> {errors.expiryDate.message}
                 </p>
               )}
+
+              {/* Requirement 9: Non-blocking warning under field if shorter than expected */}
               {!errors.expiryDate && isShorterThanExpected && (
-                <p className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
-                  <AlertTriangle size={11} className="shrink-0" /> Earlier than package duration
+                <p className="mt-1 text-[10.5px] font-bold text-amber-600 flex items-start gap-1 leading-snug">
+                  <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-0.5" />
+                  Expiry date is earlier than the expected membership period.
                 </p>
               )}
             </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className="font-black text-slate-700 block mb-1 uppercase tracking-wider text-[10px]">
-              Notes / Remarks
-            </label>
-            <input
-              type="text"
-              {...register('notes')}
-              placeholder="e.g. Initial payment for biometric imported member"
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none focus:border-[#EA580C] focus:ring-2 focus:ring-orange-200 transition-all"
-            />
-          </div>
-
-          {/* WhatsApp Checkbox Option */}
-          <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 flex items-center justify-between cursor-pointer" onClick={() => setValue('sendWhatsApp', !sendWhatsApp)}>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                <MessageSquare size={16} />
-              </div>
-              <div>
-                <span className="text-xs font-black text-slate-900 block">Send Bill on WhatsApp</span>
-                <span className="text-[10px] text-emerald-700 font-semibold">
-                  Instantly open WhatsApp with official formatted invoice receipt
-                </span>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              {...register('sendWhatsApp')}
-              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-            />
           </div>
 
           {/* Action Buttons */}
@@ -866,16 +534,9 @@ export default function CreateNewBillModal({
             <button
               type="submit"
               disabled={!isValid || isSubmitting}
-              className="flex-1 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+              className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-xs font-black transition-all border-none cursor-pointer shadow-md flex items-center justify-center gap-1.5"
             >
-              {isSubmitting ? (
-                'Saving Bill & Activating...' 
-              ) : (
-                <>
-                  <Receipt size={15} />
-                  {isHoldMember ? 'Generate Bill & Activate Member' : 'Save Bill & Activate Coverage'}
-                </>
-              )}
+              {isSubmitting ? 'Processing...' : 'Generate Bill & Activate'}
             </button>
             <button
               type="button"
@@ -887,7 +548,7 @@ export default function CreateNewBillModal({
           </div>
         </form>
 
-        {/* Confirmation Dialog for manually shortened expiry */}
+        {/* Requirement 9: Confirmation Dialog for manually shortened expiry */}
         {showShorterConfirmation && pendingFormData && (
           <div className="absolute inset-0 z-50 bg-slate-900/85 backdrop-blur-sm rounded-3xl p-6 flex flex-col justify-center items-center text-center animate-fade-in">
             <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-3">
@@ -917,86 +578,7 @@ export default function CreateNewBillModal({
             </div>
           </div>
         )}
-
-        {/* Success Modal with WhatsApp Send Button & Summary */}
-        {successData && (
-          <div className="absolute inset-0 z-[100] bg-slate-900/90 backdrop-blur-md rounded-3xl p-6 flex flex-col justify-center items-center text-center animate-fade-in">
-            <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center mb-3 shadow-lg shadow-emerald-500/30 animate-bounce">
-              <CheckCircle2 size={32} />
-            </div>
-
-            <h4 className="text-base font-black text-white mb-0.5">
-              🎉 Bill Generated Successfully!
-            </h4>
-            <p className="text-xs text-emerald-400 font-bold mb-4">
-              {successData.memberName} is now ACTIVE! (Invoice #{successData.invoiceNumber})
-            </p>
-
-            {/* Bill Summary Card */}
-            <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-3.5 w-full text-left space-y-1.5 text-xs text-slate-200 mb-4 font-mono">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Package:</span>
-                <span className="font-bold text-white">{successData.plan}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Billing Date:</span>
-                <span className="font-bold text-white">{successData.billingDate}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Validity:</span>
-                <span className="font-bold text-white">{successData.startDate} → {successData.expiryDate}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-700 pt-1.5">
-                <span className="text-slate-400">Amount Paid:</span>
-                <span className="font-bold text-emerald-400">₹{successData.amountPaid.toLocaleString('en-IN')} ({successData.method})</span>
-              </div>
-              {successData.pendingBalance > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Pending Balance:</span>
-                  <span className="font-bold text-rose-400">₹{successData.pendingBalance.toLocaleString('en-IN')}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-2 w-full">
-              {successData.phone ? (
-                <button
-                  type="button"
-                  disabled={isPreparingPdf}
-                  onClick={() => sendInvoicePdfOnWhatsApp(successData)}
-                  className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 disabled:opacity-60 disabled:cursor-wait text-white font-black rounded-xl text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 no-underline"
-                >
-                  <MessageSquare size={16} />
-                  {isPreparingPdf ? 'Preparing Invoice PDF...' : `Download PDF & Open WhatsApp (${successData.phone})`}
-                  <ExternalLink size={14} />
-                </button>
-              ) : (
-                <div className="text-[11px] text-amber-400 font-semibold bg-amber-950/50 border border-amber-800/50 rounded-xl p-2 mb-2">
-                  ⚠️ No phone number was provided to send via WhatsApp.
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSuccessData(null);
-                  onClose();
-                }}
-                className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs transition-all border-none cursor-pointer"
-              >
-                Done / Close
-              </button>
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
-    {successData && (
-      <div className="fixed left-[-10000px] top-0 w-[760px]" aria-hidden="true">
-        <OfficialInvoiceReceipt invoice={successData.invoice} member={{ ...member, phone: successData.phone }} />
-      </div>
-    )}
-  </>);
+  );
 }

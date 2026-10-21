@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { 
   Users, Clock, Plus, ArrowUpRight, Unlock, Phone, MessageSquare, 
@@ -15,15 +16,14 @@ import API from '@/services/api';
 import { unlockHikvisionDoor } from '@/lib/deviceCommands';
 import { useFollowups } from '@/hooks/useFollowups';
 import AttendanceCalendarSection from './components/AttendanceCalendarSection';
-import { useTodaysPayments } from '@/hooks/useTodaysPayments';
-import styles from './dashboard-home.module.css';
+import { getISTDateStr } from '@/hooks/useTodaysPayments';
+import './dashboard-ui.css';
 
 export default function DashboardPage() {
   const router = useRouter();
   const { pendingCount: followupsCount, todaysCount } = useFollowups();
-  const { todaysTotal: todaysCollection, todaysPayments, todayStr, loading: paymentsLoading } = useTodaysPayments();
   const {
-    members, attendance, gymPresence, fetchMembers, fetchAttendance, fetchPayments,
+    members, attendance, gymPresence, payments, fetchMembers, fetchAttendance, fetchPayments,
     triggerGateUnlock, dashboardAnalytics, fetchDashboardAnalytics, deviceStatus
   } = useGymStore();
 
@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [empAttendance, setEmpAttendance] = useState<any[]>([]);
   const [memberAttendance, setMemberAttendance] = useState<any[]>([]);
   const [realtimeMembers, setRealtimeMembers] = useState<any[]>([]);
+  const [realtimePayments, setRealtimePayments] = useState<any[]>([]);
   const [enquiriesCount, setEnquiriesCount] = useState<number>(0);
   const [activeHeatmapFilter, setActiveHeatmapFilter] = useState('Yours');
 
@@ -75,11 +76,18 @@ export default function DashboardPage() {
       }).catch(() => {});
     });
 
+    const unsubPayments = onSnapshot(collection(fDb, 'payments'), (snap) => {
+      setRealtimePayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("Firestore payments listener notice:", err);
+    });
+
     return () => {
       unsubEmployees();
       unsubEmpAtt();
       unsubMemberAtt();
       unsubEnq();
+      unsubPayments();
     };
   }, []);
 
@@ -224,6 +232,43 @@ export default function DashboardPage() {
   const membersExpiringSoon = evaluatedMembers.filter(m => m.ai.daysLeft > 0 && m.ai.daysLeft <= 15).slice(0, 5);
   const renewalOpportunities = evaluatedMembers.filter(m => m.ai.renewalChance > 70).slice(0, 5);
 
+  const todaysCollection = useMemo(() => {
+    // IST-correct today string (fixes UTC midnight boundary bug)
+    const todayStr = getISTDateStr();
+    const seen = new Set<string>();
+
+    const activeList = (realtimePayments && realtimePayments.length > 0) ? realtimePayments : (payments || []);
+    let total = 0;
+
+    if (Array.isArray(activeList) && activeList.length > 0) {
+      activeList.forEach((p: any) => {
+        if (!p || p.isSample || p.isMock) return;
+        // Exclude soft-deleted payments
+        if (p.deleted === true) return;
+
+        // Strictly exclude historical imports from today's collection
+        const isHistorical = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
+        if (isHistorical) return;
+
+        const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
+        if (status !== 'paid' && status !== 'partial') return;
+
+        // Payment date must match today IST on transactionDate / paymentDate / date
+        const pDate = String(p.transactionDate || p.paymentDate || p.date || '').split('T')[0];
+        if (pDate !== todayStr) return;
+
+        const key = String(p.id || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
+        if (key && seen.has(key)) return;
+        if (key) seen.add(key);
+
+        const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
+        total += (isNaN(val) ? 0 : val);
+      });
+    }
+
+    return total;
+  }, [realtimePayments, payments]);
+
   const expiringSoonCount = realtimeMembers.filter((m: any) => {
     const left = daysUntilExpiry(m.expiryDate);
     return left >= 0 && left <= 30;
@@ -234,10 +279,127 @@ export default function DashboardPage() {
   const checkinDays = attendance ? attendance.map((a: any) => new Date(a.checkIn || '').getDate()) : [];
 
   return (
-    <div className={`${styles.dashboard} flex flex-col gap-5 w-full text-slate-800 text-left bg-[#FDFDFD]`}>
+    <div className="dashboard-ops flex flex-col gap-5 w-full text-slate-800 text-left bg-[#FDFDFD]">
       
-      {/* ─── 1. PAGE HEADER ─── */}
-      <div className={`${styles.hero} flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs`}>
+      {/* ── MOBILE COMPACT COMMAND CENTER (MOBILE ONLY < md) ── */}
+      <div className="md:hidden space-y-3 text-left">
+        {/* 2x2 KPI Grid */}
+        <div className="grid grid-cols-2 gap-2.5">
+          {/* Card 1: Today's Collection */}
+          <div
+            onClick={() => router.push('/dashboard/billing')}
+            className="dashboard-frosted-card bg-white border border-slate-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Collection</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <DollarSign size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                ₹{todaysCollection.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[9px] font-bold text-emerald-600 mt-0.5">Today IST →</p>
+            </div>
+          </div>
+
+          {/* Card 2: Present Today */}
+          <div
+            onClick={() => router.push('/dashboard/attendance')}
+            className="dashboard-frosted-card bg-white border border-slate-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Present</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <Users size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">{liveCount}</h3>
+              <p className="text-[9px] font-bold text-[#EA580C] mt-0.5">Members inside →</p>
+            </div>
+          </div>
+
+          {/* Card 3: Active Members */}
+          <div
+            onClick={() => router.push('/dashboard/members')}
+            className="dashboard-frosted-card bg-white border border-slate-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <Users size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                {realtimeMembers ? realtimeMembers.filter(m => m.status === 'active').length : 0}
+              </h3>
+              <p className="text-[9px] font-bold text-slate-500 mt-0.5">Gym Members →</p>
+            </div>
+          </div>
+
+          {/* Card 4: Today's Follow-ups */}
+          <div
+            onClick={() => router.push('/dashboard/follow-up')}
+            className="dashboard-frosted-card bg-white border border-slate-200/90 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Follow-ups</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <AlertTriangle size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">{todaysCount}</h3>
+              <p className="text-[9px] font-bold text-[#EA580C] mt-0.5">Due today →</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Compact Quick Actions */}
+        <div className="dashboard-frosted-card bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">Quick Actions</span>
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              onClick={() => router.push('/dashboard/members?action=add')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-orange-50 border border-orange-100 text-[#EA580C] hover:bg-orange-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <Plus size={16} />
+              <span className="text-[10px] font-bold mt-1 leading-tight">+ Member</span>
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard/billing')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <DollarSign size={16} className="text-emerald-600" />
+              <span className="text-[10px] font-bold mt-1 leading-tight">Bill</span>
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard/attendance')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <Clock size={16} className="text-orange-600" />
+              <span className="text-[10px] font-bold mt-1 leading-tight">Attendance</span>
+            </button>
+
+            <button
+              onClick={handleManualUnlock}
+              disabled={gateUnlocked}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <Unlock size={16} className="text-orange-600" />
+              <span className="text-[10px] font-bold mt-1 leading-tight">Gate</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── 1. PAGE HEADER (DESKTOP ONLY < md hidden) ─── */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }} className="dashboard-frosted-card dashboard-page-header hidden md:flex flex-col md:flex-row md:items-center justify-between gap-3 p-5 rounded-2xl border shadow-xs">
         <div>
           <h1 className="font-rowdies text-2xl font-bold text-slate-900 uppercase tracking-tight leading-none">
             Dashboard
@@ -249,34 +411,34 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-3">
           {/* Device status badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FFF7ED] border border-[#FED7AA] rounded-xl text-[10px] font-black uppercase tracking-wider text-[#EA580C]">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-white/70 backdrop-blur-md border border-orange-200/80 rounded-xl text-[10px] font-black uppercase tracking-wider text-[#EA580C] shadow-sm">
             <span className={`w-2 h-2 rounded-full ${deviceStatus === 'connected' ? 'bg-emerald-500' : deviceStatus === 'syncing' ? 'bg-orange-400 animate-pulse' : 'bg-rose-500'}`} />
             {deviceStatus === 'connected' ? 'Device Online' : deviceStatus === 'syncing' ? 'Syncing...' : 'Device Offline'}
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* ─── 2. TOP KPI CARDS (ROW 1) ─── */}
-      <div className={`${styles.kpiGrid} grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full`}>
+      {/* ─── 2. TOP KPI CARDS (DESKTOP ONLY) ─── */}
+      <div className="dashboard-kpi-grid hidden md:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
         {/* Card 1: Today's Follow-ups */}
-        <button type="button"
+        <div 
           onClick={() => router.push('/dashboard/follow-up')}
-          className={`${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
+          className="dashboard-frosted-card bg-white border border-slate-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#EA580C] hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <AlertTriangle size={20} />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today&apos;s Follow-ups</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today's Follow-ups</span>
             <h3 className="text-xl font-black text-slate-900 mt-0.5">{todaysCount} Follow-ups</h3>
             <p className="text-[9px] text-[#EA580C] font-bold mt-0.5">Click to view follow-up list →</p>
           </div>
-        </button>
+        </div>
 
         {/* Card 2: Total Enquiry */}
-        <button type="button"
+        <div 
           onClick={() => router.push('/dashboard/enquiries')}
-          className={`${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
+          className="dashboard-frosted-card bg-white border border-slate-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#EA580C] hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <ClipboardList size={20} />
@@ -286,12 +448,12 @@ export default function DashboardPage() {
             <h3 className="text-xl font-black text-slate-900 mt-0.5">{enquiriesCount} Enquiries</h3>
             <p className="text-[9px] text-[#EA580C] font-bold mt-0.5">Click to view enquiry leads →</p>
           </div>
-        </button>
+        </div>
 
         {/* Card 3: Expiring Soon Clients */}
-        <button type="button"
+        <div 
           onClick={() => router.push('/dashboard/expired')}
-          className={`${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
+          className="dashboard-frosted-card bg-white border border-slate-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#EA580C] hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <Clock size={20} />
@@ -301,35 +463,33 @@ export default function DashboardPage() {
             <h3 className="text-xl font-black text-slate-900 mt-0.5">{expiringSoonCount} Clients</h3>
             <p className="text-[9px] text-[#EA580C] font-bold mt-0.5">Click to view expiring list →</p>
           </div>
-        </button>
+        </div>
 
         {/* Card 4: Today's Collection */}
-        <button type="button"
+        <div 
           onClick={() => router.push('/dashboard/billing')}
-          className={`${styles.collectionCard} ${styles.kpiCard} w-full text-left bg-white border border-stone-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#F97316] hover:shadow-[0_8px_25px_rgba(249,115,22,0.12)] transition-all cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2`}
+          className="dashboard-frosted-card bg-white border border-slate-200/80 p-4.5 rounded-2xl shadow-xs flex items-center gap-4 hover:border-[#EA580C] hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="w-11 h-11 rounded-xl bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform border border-[#FED7AA]">
             <DollarSign size={20} />
           </div>
           <div>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today&apos;s Collection</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Today's Collection</span>
             <h3 className="text-xl font-black text-slate-900 mt-0.5">
-              {paymentsLoading ? '—' : `₹${todaysCollection.toLocaleString('en-IN')}`}
+              ₹{todaysCollection.toLocaleString('en-IN')}
             </h3>
-            <p className="text-[9px] text-orange-800/75 font-bold mt-0.5">
-              {paymentsLoading ? 'Syncing payments…' : `${todaysPayments.length} bill${todaysPayments.length === 1 ? '' : 's'} · ${todayStr} IST`}
-            </p>
+            <p className="text-[9px] text-emerald-600 font-bold mt-0.5">Collected today →</p>
           </div>
-        </button>
+        </div>
       </div>
 
-      {/* ─── 3. SECONDARY OPERATIONS CARDS (ROW 2) ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+      {/* ─── 3. SECONDARY OPERATIONS CARDS (DESKTOP ONLY) ─── */}
+      <div className="dashboard-secondary-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
         {/* Card 1: Members Inside */}
-        <div className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-xs flex flex-col justify-between min-h-[120px]">
+        <div className="dashboard-frosted-card bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs flex flex-col justify-between min-h-[120px]">
           <div className="flex justify-between items-center text-slate-400">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Members Inside</span>
-            <div className="w-6 h-6 rounded-full bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-center text-[#EA580C]">
+            <div className="w-6 h-6 rounded-full bg-[#FFFAF5] border border-[#FED7AA] flex items-center justify-center text-[#EA580C]">
               <ArrowUpRight size={12} />
             </div>
           </div>
@@ -337,8 +497,8 @@ export default function DashboardPage() {
             <h3 className="text-2xl font-black text-slate-900 leading-none">
               {liveCount}
             </h3>
-            <div className="h-1.5 bg-stone-100 rounded-full mt-2.5 overflow-hidden flex">
-              <div className="h-full bg-gradient-to-r from-[#FB923C] to-[#EA580C]" style={{ width: `${Math.min(100, (liveCount / 50) * 100)}%` }} />
+            <div className="h-1.5 bg-slate-100 rounded-full mt-2.5 overflow-hidden flex">
+              <div className="h-full bg-[#EA580C]" style={{ width: `${Math.min(100, (liveCount / 50) * 100)}%` }} />
             </div>
             <div className="flex justify-between text-[9px] text-slate-400 font-bold mt-1.5">
               <span>Inside Now</span>
@@ -348,7 +508,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 2: Active Pass */}
-        <div className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-xs flex flex-col justify-between min-h-[120px]">
+        <div className="dashboard-frosted-card bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs flex flex-col justify-between min-h-[120px]">
           <div className="flex justify-between items-center text-slate-400">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active Pass</span>
             <span className="text-[9px] bg-[#FFF7ED] text-[#EA580C] px-2 py-0.5 rounded-full font-black uppercase border border-[#FED7AA]">Gold</span>
@@ -363,14 +523,14 @@ export default function DashboardPage() {
                 {realtimeMembers ? realtimeMembers.slice(0, 4).map((m, idx) => (
                   <div 
                     key={idx} 
-                    className="w-6 h-6 rounded-full border-2 border-white bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white text-[8px] font-black flex items-center justify-center shadow-xs"
+                    className="w-6 h-6 rounded-full border-2 border-white bg-[#EA580C] text-white text-[8px] font-black flex items-center justify-center shadow-xs"
                   >
                     {getInitials(m.name)}
                   </div>
                 )) : null}
               </div>
               {realtimeMembers && realtimeMembers.length > 4 && (
-                <span className="text-[9px] bg-[#FFF7ED] text-[#EA580C] px-2 py-0.5 rounded-full font-black border border-[#FED7AA]">
+                <span className="text-[9px] bg-[#FFFAF5] text-[#EA580C] px-2 py-0.5 rounded-full font-black border border-[#FED7AA]">
                   +{realtimeMembers.length - 4}
                 </span>
               )}
@@ -379,7 +539,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 3: Staff Live */}
-        <div className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-xs flex flex-col justify-between min-h-[120px] text-xs font-semibold">
+        <div className="dashboard-frosted-card bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs flex flex-col justify-between min-h-[120px] text-xs font-semibold">
           <div className="flex justify-between items-center text-slate-400">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1">
               Staff Live
@@ -408,7 +568,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <div className="mt-1.5 pt-1.5 border-t border-stone-100 flex justify-between items-center text-[9px]">
+          <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex justify-between items-center text-[9px]">
             <span className="text-slate-400 font-bold">Total Staff Inside</span>
             <span className="font-black text-slate-900 font-mono">
               {employees.filter(e => e.currentStatus === 'Inside').length}
@@ -417,10 +577,12 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 4: Unlock Turnstile */}
-        <button 
+        <motion.button
           onClick={handleManualUnlock}
           disabled={gateUnlocked}
-          className="bg-white border-2 border-dashed border-[#FED7AA] hover:border-[#EA580C] hover:bg-[#FFF7ED] rounded-2xl p-4 flex flex-col items-center justify-center min-h-[120px] transition-all cursor-pointer group text-center"
+          whileHover={!gateUnlocked ? { y: -3, scale: 1.015 } : undefined}
+          whileTap={!gateUnlocked ? { scale: 0.98 } : undefined}
+          className="dashboard-unlock-card bg-white border-2 border-dashed border-[#FED7AA] hover:border-[#EA580C] hover:bg-[#FFFAF5] rounded-2xl p-4 flex flex-col items-center justify-center min-h-[120px] transition-all cursor-pointer group text-center"
         >
           <div className={`w-9 h-9 rounded-full border-2 border-dashed ${gateUnlocked ? 'bg-[#EA580C] border-[#EA580C] text-white' : 'border-[#EA580C]/40 text-[#EA580C] group-hover:bg-[#EA580C] group-hover:text-white'} flex items-center justify-center transition-all`}>
             {gateUnlocked ? <Unlock size={16} /> : <Plus size={16} />}
@@ -429,7 +591,7 @@ export default function DashboardPage() {
             {gateUnlocked ? 'Gate Unlocked' : 'Unlock Turnstile'}
           </span>
           <span className="text-[8px] text-slate-400 font-bold mt-0.5">Hikvision DS-K1T320EFWX</span>
-        </button>
+        </motion.button>
       </div>
 
       {/* ─── 4. ATTENDANCE CALENDAR & STAFF ATTENDANCE ─── */}

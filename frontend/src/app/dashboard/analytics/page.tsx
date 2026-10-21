@@ -14,7 +14,7 @@ import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 
 const ACCENT = '#d4ff00';
-const COLORS = ['#0052FF', '#d4ff00', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = ['#EA580C', '#d4ff00', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -210,7 +210,7 @@ export default function AnalyticsPage() {
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Revenue" value={`₹${totalRevenue.toLocaleString()}`} icon={IndianRupee} color="#0052FF" trend={12} sub="All time" />
+        <StatCard label="Total Revenue" value={`₹${totalRevenue.toLocaleString()}`} icon={IndianRupee} color="#EA580C" trend={12} sub="All time" />
         <StatCard label="Active Members" value={activeMembers} icon={Users} color="#10b981" trend={5} sub={`${members.length} total`} />
         <StatCard label="Total Check-ins" value={totalCheckins} icon={Activity} color="#f59e0b" trend={8} sub="All time" />
         <StatCard label="Expiring (7d)" value={expiringCount} icon={Calendar} color="#ef4444" trend={-2} sub="Renewal alert" />
@@ -242,15 +242,15 @@ export default function AnalyticsPage() {
               <AreaChart data={attendanceTrend}>
                 <defs>
                   <linearGradient id="attGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0052FF" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0052FF" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#EA580C" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#EA580C" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="label" tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="checkins" name="Check-ins" stroke="#0052FF" strokeWidth={2.5} fill="url(#attGrad)" dot={false} />
+                <Area type="monotone" dataKey="checkins" name="Check-ins" stroke="#EA580C" strokeWidth={2.5} fill="url(#attGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -282,9 +282,9 @@ export default function AnalyticsPage() {
                 <XAxis dataKey="label" tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} tickFormatter={v => `₹${(v / 1000).toFixed(0)}k`} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="revenue" name="Revenue" fill="#0052FF" radius={[6, 6, 0, 0]}>
+                <Bar dataKey="revenue" name="Revenue" fill="#EA580C" radius={[6, 6, 0, 0]}>
                   {revenueTrend.map((_, i) => (
-                    <Cell key={i} fill={revenueTrend[i].revenue === Math.max(...revenueTrend.map(d => d.revenue)) ? ACCENT : '#0052FF'} />
+                    <Cell key={i} fill={revenueTrend[i].revenue === Math.max(...revenueTrend.map(d => d.revenue)) ? ACCENT : '#EA580C'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -305,7 +305,7 @@ export default function AnalyticsPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-black text-black">Membership Growth</h3>
             <div className="flex items-center gap-3 text-[9px] font-bold text-slate-400">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#0052FF] inline-block" /> Cumulative</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#EA580C] inline-block" /> Cumulative</span>
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> New</span>
             </div>
           </div>
@@ -324,7 +324,7 @@ export default function AnalyticsPage() {
                 <XAxis dataKey="label" tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fontSize: 9, fontWeight: 700 }} tickLine={false} axisLine={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="members" name="Cumulative" stroke="#0052FF" strokeWidth={2.5} dot={false} />
+                <Line type="monotone" dataKey="members" name="Cumulative" stroke="#EA580C" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="new" name="New" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} strokeDasharray="4 2" />
               </LineChart>
             </ResponsiveContainer>

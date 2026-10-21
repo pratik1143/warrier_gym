@@ -2,6 +2,10 @@ import { admin, isFirebaseInitialized } from '../firebase';
 import { whatsappService } from '../services/whatsapp.service';
 
 export const initQueueJob = () => {
+  if (process.env.ENABLE_WHATSAPP_WEB !== 'true') {
+    console.log('[WhatsApp Queue Worker] Disabled (Meta Cloud API selected).');
+    return;
+  }
   console.log('[WhatsApp Queue Worker] Starting background worker (30s interval)...');
   
   setInterval(async () => {

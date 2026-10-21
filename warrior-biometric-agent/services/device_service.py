@@ -6,7 +6,8 @@ import logging
 import threading
 import uuid
 import base64
-from datetime import datetime, timezone
+import requests
+from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Dict, Any
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
@@ -42,6 +43,74 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("BiometricAgent")
+
+
+# ---------------------------------------------------------------------------
+# Membership / access policy helpers (same field semantics as the CRM + K90 listener)
+# ---------------------------------------------------------------------------
+EXPLICIT_BLOCK_STATUSES = {"blocked", "blacklisted", "frozen", "inactive", "suspended", "cancelled", "canceled"}
+
+
+def parse_membership_date(value):
+    if not value:
+        return None
+    try:
+        if hasattr(value, "date") and callable(value.date):
+            return value.date()
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value / 1000 if value > 10_000_000_000 else value).date()
+        return datetime.strptime(str(value).strip()[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def membership_allows_terminal_access(data, today=None, allow_explicit_unblock=False):
+    today = today or date.today()
+    statuses = {str(data.get(key, "") or "").strip().casefold() for key in ("status", "membershipStatus")}
+    explicit_unblock_pending = allow_explicit_unblock and data.get("biometricBlockPending") is True and data.get("biometricBlockAction") == "unblock"
+    if ((data.get("biometricBlocked") is True and not explicit_unblock_pending)
+            or data.get("isBlocked") is True or data.get("blacklisted") is True
+            or statuses.intersection(EXPLICIT_BLOCK_STATUSES | {"expired"})):
+        return False
+    start = parse_membership_date(data.get("startDate") or data.get("membershipStartDate") or data.get("joinDate"))
+    expiry = parse_membership_date(data.get("expiryDate") or data.get("membershipExpiryDate") or data.get("endDate"))
+    if start and today < start:
+        return False
+    if expiry and today > expiry:
+        return False
+    return True
+
+
+def explicitly_blocked(data):
+    """True only for admin/CRM blocks. Date windows are enforced by the terminal's own validity period."""
+    statuses = {str(data.get(key, "") or "").strip().casefold() for key in ("status", "membershipStatus")}
+    return bool(data.get("biometricBlocked") is True or data.get("isBlocked") is True
+                or data.get("blacklisted") is True or statuses.intersection(EXPLICIT_BLOCK_STATUSES))
+
+
+PHOTO_KEYS = ("photoUrl", "photo", "avatarUrl", "avatar", "profilePhotoUrl")
+
+
+def load_record_photo_bytes(record):
+    """Returns JPEG/PNG bytes of the CRM photo, or None when the record has no usable photo."""
+    for key in PHOTO_KEYS:
+        value = str(record.get(key) or "").strip()
+        if not value:
+            continue
+        try:
+            if value.startswith("data:image"):
+                return base64.b64decode(value.split(",", 1)[1])
+            if value.startswith("http://") or value.startswith("https://"):
+                resp = requests.get(value, timeout=20)
+                if resp.status_code == 200 and resp.content:
+                    return resp.content
+        except Exception as exc:
+            logger.warning(f"[Sync] Could not load CRM photo ({key}): {exc}")
+    return None
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def acquire_instance_lock():
@@ -289,6 +358,9 @@ class BiometricAgentManager:
             for command_doc in pending:
                 data = command_doc.to_dict() or {}
                 command = data.get("command")
+                if command in self.EXTENDED_COMMANDS:
+                    self._dispatch_extended_command(db, command_doc, data)
+                    continue
                 if command not in ("hikvision_enroll_face", "hikvision_enroll_fingerprint"):
                     continue
 
@@ -337,6 +409,8 @@ class BiometricAgentManager:
                         "error": None if (accepted or face_confirmed) else result.get("errorMessage", "Hikvision rejected the enrollment request"),
                         "updatedAt": datetime.now(timezone.utc).isoformat(),
                     })
+                    if face_confirmed:
+                        self._apply_enrollment_to_crm(db, command_doc.reference, "face")
                     if accepted and not face_confirmed:
                         threading.Thread(
                             target=self._watch_biometric_enrollment,
@@ -356,9 +430,246 @@ class BiometricAgentManager:
         except Exception as exc:
             logger.warning(f"Could not process cloud enrollment queue: {exc}")
 
+    # ------------------------------------------------------------------
+    # Extended cloud commands (block/unblock, delete, member sync) for Hikvision
+    # ------------------------------------------------------------------
+    EXTENDED_COMMANDS = ("set_user_access", "delete_biometric", "hikvision_delete_user",
+                         "sync_to_device", "hikvision_sync_member")
+    _terminal_lock = threading.Lock()
+
+    @staticmethod
+    def _target_collection(data):
+        target = data.get("targetCollection")
+        if target in ("members", "employees"):
+            return target
+        return "employees" if (data.get("isEmployee") or data.get("targetType") == "EMPLOYEE") else "members"
+
+    def _dispatch_extended_command(self, db, command_doc, data):
+        """Claims the command, then runs it in a worker thread so the heartbeat loop never blocks."""
+        command = data.get("command")
+        command_doc.reference.update({
+            "status": "processing",
+            "startedAt": now_iso(),
+            "updatedAt": now_iso(),
+            "processedBy": Config.HIKVISION_DEVICE_ID,
+        })
+        target = {
+            "set_user_access": self._run_set_user_access,
+            "delete_biometric": self._run_delete_user,
+            "hikvision_delete_user": self._run_delete_user,
+            "sync_to_device": self._run_sync_member,
+            "hikvision_sync_member": self._run_sync_member,
+        }[command]
+        threading.Thread(target=target, args=(db, command_doc.reference, data),
+                         name=f"HikCmd-{command}-{command_doc.id}", daemon=True).start()
+
+    @staticmethod
+    def _finish(ref, status, message, extra=None):
+        payload = {"status": status, "message": message, "updatedAt": now_iso()}
+        if status == "failed":
+            payload["error"] = message
+        if extra:
+            payload.update(extra)
+        try:
+            ref.update(payload)
+        except Exception as exc:
+            logger.warning(f"[Command] Could not write status to {ref.id}: {exc}")
+
+    def _run_set_user_access(self, db, ref, data):
+        bio_id = str(data.get("biometricId", "")).strip()
+        member_id = str(data.get("memberId", "")).strip()
+        name = data.get("memberName") or f"Member {bio_id}"
+        enabled = data.get("enabled") is True
+        manual = data.get("source") != "membership_policy"
+        collection = self._target_collection(data)
+        target_ref = db.collection(collection).document(member_id)
+        try:
+            snap = target_ref.get()
+            if not snap.exists:
+                raise RuntimeError(f"{collection[:-1].capitalize()} record no longer exists.")
+            record = snap.to_dict() or {}
+            action = "unblock" if enabled else "block"
+            if manual:
+                if (record.get("biometricBlockCommandId") != ref.id or record.get("biometricBlockPending") is not True
+                        or record.get("biometricBlockAction") != action):
+                    return self._finish(ref, "cancelled", "Skipped: superseded by a newer CRM access action.")
+                if enabled and not membership_allows_terminal_access(record, allow_explicit_unblock=True):
+                    target_ref.set({"biometricBlocked": True, "biometricBlockPending": False, "biometricBlockAction": None}, merge=True)
+                    return self._finish(ref, "failed", "Membership is not eligible for access; renew or activate it first.")
+            elif membership_allows_terminal_access(record) != bool(enabled):
+                return self._finish(ref, "cancelled", "Skipped: superseded by newer membership state.")
+            if not self.hikvision_provider or not self.hikvision_provider.is_connected():
+                raise RuntimeError("Hikvision terminal is offline.")
+            with self._terminal_lock:
+                result = self.hikvision_provider.set_user_access(bio_id, bool(enabled))
+            if not result.get("success"):
+                raise RuntimeError(result.get("errorMessage") or "Terminal rejected the access change.")
+            stamp = now_iso()
+            update = {
+                "biometricEnrolled": bool(result.get("hasFace") or result.get("hasFingerprint")),
+                "faceEnrolled": bool(result.get("hasFace")),
+                "fingerprintEnrolled": bool(result.get("hasFingerprint")),
+                "lastBiometricSync": stamp,
+            }
+            if manual:
+                update.update({
+                    "biometricBlocked": not bool(enabled),
+                    "biometricBlockPending": False,
+                    "biometricBlockAction": None,
+                    "biometricBlockCommandId": None,
+                    "biometricBlockedAt": None if enabled else stamp,
+                    "biometricBlockReason": None if enabled else "Manually blocked from gate control",
+                })
+            target_ref.set(update, merge=True)
+            message = ("Access enabled" if enabled else "Access disabled") + f" for {name}; face/fingerprint templates retained."
+            self._finish(ref, "success", message, {"enabled": bool(enabled), "hasFace": bool(result.get("hasFace")),
+                                                  "hasFingerprint": bool(result.get("hasFingerprint"))})
+            logger.info(f"[ACCESS] {message} (ID {bio_id})")
+        except Exception as exc:
+            logger.error(f"[ACCESS] Terminal user {bio_id}: {exc}")
+            if manual:
+                # Fail closed: a failed unblock must never open software-side access.
+                try:
+                    target_ref.set({"biometricBlocked": True, "biometricBlockPending": False, "biometricBlockAction": None}, merge=True)
+                except Exception:
+                    pass
+            self._finish(ref, "failed", f"Access update failed: {exc}")
+
+    def _run_delete_user(self, db, ref, data):
+        bio_id = str(data.get("biometricId", "")).strip()
+        member_id = str(data.get("memberId", "")).strip()
+        name = data.get("memberName") or f"Member {bio_id}"
+        collection = self._target_collection(data)
+        try:
+            if not self.hikvision_provider or not self.hikvision_provider.is_connected():
+                raise RuntimeError("Hikvision terminal is offline.")
+            with self._terminal_lock:
+                result = self.hikvision_provider.delete_user(bio_id)
+            if not result.get("success"):
+                raise RuntimeError(result.get("errorMessage") or "Terminal rejected the delete request.")
+            stamp = now_iso()
+            if member_id:
+                db.collection(collection).document(member_id).set({
+                    "biometricEnrolled": False,
+                    "faceEnrolled": False, "faceStatus": "NOT_ENROLLED", "faceEnrollmentStatus": "NOT_ENROLLED",
+                    "fingerprintEnrolled": False, "fingerprintStatus": "not_enrolled", "fingerprintEnrollmentStatus": "NOT_ENROLLED",
+                    "biometricSyncStatus": "deleted", "lastBiometricSync": stamp,
+                }, merge=True)
+                db.collection("biometric_profiles").document(member_id).set(
+                    {"fingerprintStatus": "not_enrolled", "deletedAt": stamp}, merge=True)
+            self._finish(ref, "success", f"Biometric data deleted for {name}")
+            logger.info(f"[Enrollment] Deleted terminal user {bio_id} ({name})")
+        except Exception as exc:
+            logger.error(f"[Enrollment] Delete failed for {bio_id}: {exc}")
+            self._finish(ref, "failed", f"Delete failed: {exc}")
+
+    def _run_sync_member(self, db, ref, data):
+        """Server-side provisioning: user + membership validity + CRM photo as face. Never needs the UI."""
+        bio_id = str(data.get("biometricId", "")).strip()
+        member_id = str(data.get("memberId", "")).strip()
+        collection = self._target_collection(data)
+        target_ref = db.collection(collection).document(member_id) if member_id else None
+
+        def mark_record(status, error=None, extra=None):
+            if not target_ref:
+                return
+            payload = {"biometricSyncStatus": status, "biometricSyncError": error, "biometricSyncCommandId": ref.id}
+            if status == "synced":
+                payload["biometricSyncedAt"] = now_iso()
+            if extra:
+                payload.update(extra)
+            try:
+                target_ref.set(payload, merge=True)
+            except Exception as exc:
+                logger.warning(f"[Sync] Could not update CRM record {collection}/{member_id}: {exc}")
+
+        try:
+            if not bio_id.isdigit():
+                raise RuntimeError("A numeric biometric ID is required.")
+            record = {}
+            if target_ref:
+                snap = target_ref.get()
+                if not snap.exists:
+                    raise RuntimeError(f"{collection[:-1].capitalize()} record no longer exists.")
+                record = snap.to_dict() or {}
+            name = str(record.get("name") or data.get("memberName") or f"Member {bio_id}").strip()
+            if not self.hikvision_provider or not self.hikvision_provider.is_connected():
+                raise RuntimeError("Hikvision terminal is offline; the command will stay failed until retried.")
+            is_employee = collection == "employees"
+            # Terminal validity stays wide open (2024..2035) exactly like before; membership expiry is
+            # enforced by CRM policy / access blocks, so a renewal can never lock a paying member out.
+            begin = None
+            end = None
+            enabled = not explicitly_blocked(record)
+            with self._terminal_lock:
+                result = self.hikvision_provider.upsert_user(bio_id, name, enabled=enabled, begin=begin, end=end)
+                if not result.get("success"):
+                    raise RuntimeError(result.get("errorMessage") or "Terminal rejected user creation.")
+                status = self.hikvision_provider.get_user_biometric_status(bio_id)
+                has_face = bool(status.get("hasFace"))
+                has_fp = bool(status.get("hasFingerprint"))
+                face_note = ""
+                if not has_face and record.get("photoSource") != "HIKVISION":
+                    photo = load_record_photo_bytes(record)
+                    if photo:
+                        pushed = self.hikvision_provider.push_face_photo(bio_id, photo)
+                        has_face = bool(pushed.get("success"))
+                        if not has_face:
+                            face_note = f" Face photo not accepted: {pushed.get('errorMessage')}"
+                    else:
+                        face_note = " No CRM photo available for face; enroll face at the terminal."
+            stamp = now_iso()
+            flags = {
+                "biometricEnrolled": has_face or has_fp,
+                "faceEnrolled": has_face,
+                "faceStatus": "ENROLLED" if has_face else "NOT_ENROLLED",
+                "faceEnrollmentStatus": "ENROLLED" if has_face else "PENDING",
+                "fingerprintEnrolled": has_fp,
+                "fingerprintStatus": "ENROLLED" if has_fp else "NOT_ENROLLED",
+                "fingerprintEnrollmentStatus": "ENROLLED" if has_fp else "PENDING",
+                "biometricDeviceId": Config.HIKVISION_DEVICE_ID,
+                "lastBiometricSync": stamp,
+            }
+            if has_face:
+                flags["faceEnrolledAt"] = stamp
+            mark_record("synced", None, flags)
+            message = (f"{name} synced to Hikvision (ID {bio_id}); face={'yes' if has_face else 'no'}, "
+                       f"fingerprint={'yes' if has_fp else 'pending at terminal'}.{face_note}")
+            self._finish(ref, "success", message, {"hasFace": has_face, "hasFingerprint": has_fp,
+                                                  "userCreated": bool(result.get("created"))})
+            logger.info(f"[Sync] {message}")
+        except Exception as exc:
+            logger.error(f"[Sync] Member sync failed for ID {bio_id}: {exc}")
+            mark_record("failed", str(exc))
+            self._finish(ref, "failed", f"Sync failed: {exc}")
+
+    def _apply_enrollment_to_crm(self, db, command_ref, kind):
+        """After the terminal confirms a template, set the CRM flags the dashboard reads."""
+        try:
+            data = command_ref.get().to_dict() or {}
+            member_id = str(data.get("memberId") or "").strip()
+            if not member_id or member_id.startswith("new_"):
+                return
+            collection = self._target_collection(data)
+            stamp = now_iso()
+            update = {"biometricEnrolled": True, "lastBiometricSync": stamp}
+            if kind == "face":
+                update.update({"faceEnrolled": True, "faceStatus": "ENROLLED",
+                               "faceEnrollmentStatus": "ENROLLED", "faceEnrolledAt": stamp})
+            else:
+                update.update({"fingerprintEnrolled": True, "fingerprintStatus": "ENROLLED",
+                               "fingerprintEnrollmentStatus": "ENROLLED", "fingerprintEnrolledAt": stamp})
+            doc_ref = db.collection(collection).document(member_id)
+            if doc_ref.get().exists:
+                doc_ref.set(update, merge=True)
+                command_ref.update({"crmUpdated": True, "updatedAt": now_iso()})
+        except Exception as exc:
+            logger.warning(f"[Remote Enrollment] Could not update CRM flags: {exc}")
+
     def _watch_biometric_enrollment(self, command_ref, bio_id, command):
         """Verify saved templates against the actual terminal after it accepts a capture command."""
         expected = "face" if command == "hikvision_enroll_face" else "fingerprint"
+        db = self.processor.db
         for _ in range(60):
             time.sleep(2)
             try:
@@ -389,6 +700,7 @@ class BiometricAgentManager:
                             })
                         else:
                             command_ref.update({"facePhotoError": photo_result.get("error", "Face photo sync failed")})
+                    self._apply_enrollment_to_crm(db, command_ref, expected)
                     logger.info(f"[Remote Enrollment] Verified {expected} template for device user {bio_id}")
                     return
             except Exception as exc:

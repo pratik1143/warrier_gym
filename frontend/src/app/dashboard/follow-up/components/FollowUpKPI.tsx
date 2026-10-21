@@ -54,7 +54,7 @@ export default function FollowUpKPI() {
       <div className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-between">
         <div className="flex justify-between items-start">
           <span className="text-xs font-semibold text-slate-500">Total Follow-ups</span>
-          <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500">
+          <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-500">
             <Users size={14} strokeWidth={2.5} />
           </div>
         </div>
@@ -66,7 +66,7 @@ export default function FollowUpKPI() {
         </div>
         <div className="mt-4 h-6 w-full opacity-60">
           <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,15 Q20,5 40,15 T80,10 T100,5" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" />
+            <path d="M0,15 Q20,5 40,15 T80,10 T100,5" fill="none" stroke="#F97316" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </div>
       </div>
@@ -117,7 +117,7 @@ export default function FollowUpKPI() {
       <div className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-between">
         <div className="flex justify-between items-start">
           <span className="text-xs font-semibold text-slate-500">Contacted Leads</span>
-          <div className="w-8 h-8 rounded-full bg-[#FFF7ED] flex items-center justify-center text-[#F97316]">
+          <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-orange-500">
             <Activity size={14} strokeWidth={2.5} />
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function FollowUpKPI() {
         </div>
         <div className="mt-4 h-6 w-full opacity-60">
           <svg viewBox="0 0 100 20" className="w-full h-full preserve-aspect-ratio-none">
-            <path d="M0,15 Q20,5 40,15 T80,10 T100,5" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" />
+            <path d="M0,15 Q20,5 40,15 T80,10 T100,5" fill="none" stroke="#F97316" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </div>
       </div>

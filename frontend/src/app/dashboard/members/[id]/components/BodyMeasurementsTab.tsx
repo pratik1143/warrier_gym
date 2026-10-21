@@ -31,7 +31,7 @@ export default function BodyMeasurementsTab({ member }: { member: any }) {
     <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 overflow-hidden">
       
       {/* Header */}
-      <div className="bg-[#EA580C] px-8 py-5 flex items-center justify-between text-white">
+      <div className="bg-orange-600 px-8 py-5 flex items-center justify-between text-white">
         <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
           <Activity size={18} /> Anthropometrics
         </h2>
@@ -52,7 +52,7 @@ export default function BodyMeasurementsTab({ member }: { member: any }) {
                   type="date" 
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-[#F97316]" 
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-orange-500" 
                 />
               </div>
             </div>
@@ -63,7 +63,7 @@ export default function BodyMeasurementsTab({ member }: { member: any }) {
                   type="date" 
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-[#F97316]" 
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-orange-500" 
                 />
               </div>
             </div>
@@ -76,7 +76,7 @@ export default function BodyMeasurementsTab({ member }: { member: any }) {
             <button className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-emerald-600 transition-colors">
               <Download size={14} /> Excel
             </button>
-            <button className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-[#EA580C] transition-colors">
+            <button className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-orange-600 transition-colors">
               <Printer size={14} /> Print
             </button>
             <button className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-green-500 transition-colors">
@@ -91,7 +91,7 @@ export default function BodyMeasurementsTab({ member }: { member: any }) {
         {/* Data Table */}
         <div className="border border-slate-200 rounded-[24px] overflow-hidden">
           {/* Table Header */}
-          <div className="bg-[#F97316] px-6 py-4 flex items-center justify-between text-white">
+          <div className="bg-orange-500 px-6 py-4 flex items-center justify-between text-white">
             <div className="flex-1 grid grid-cols-12 gap-4 items-center">
               <div className="col-span-4 text-sm font-black tracking-wide">Measurement Name</div>
               <div className="col-span-2 text-sm font-black tracking-wide text-center">Trend</div>
@@ -127,7 +127,7 @@ export default function BodyMeasurementsTab({ member }: { member: any }) {
                         value={m.value}
                         onChange={(e) => handleValueChange(m.id, e.target.value)}
                         placeholder={`Enter ${m.name.toLowerCase()}`}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/20 transition-all pr-12"
+                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all pr-12"
                       />
                       <span className="absolute right-4 text-xs font-bold text-slate-400">{m.unit}</span>
                     </div>

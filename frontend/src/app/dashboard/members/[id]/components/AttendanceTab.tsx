@@ -33,6 +33,79 @@ function fmtTime(raw: string | undefined | null): string {
   }).toUpperCase();
 }
 
+/**
+ * Ultra-robust multi-vector member matcher for biometric attendance logs.
+ * Matches by ID, UID, MemberCode, BiometricID, DeviceUserID, ClientID, Phone, or Name.
+ */
+export function isLogForMember(log: any, member: any): boolean {
+  if (!log || !member) return false;
+
+  const mTokens = new Set<string>();
+  const addMToken = (val: any) => {
+    if (val === undefined || val === null) return;
+    const s = String(val).trim().toLowerCase();
+    if (!s) return;
+    mTokens.add(s);
+    const cleanNum = s.replace(/^(az-2026-|az-|member_)/i, '');
+    if (cleanNum) mTokens.add(cleanNum);
+    const noZero = cleanNum.replace(/^0+/, '');
+    if (noZero) mTokens.add(noZero);
+  };
+
+  addMToken(member.id);
+  addMToken(member.uid);
+  addMToken(member.docId);
+  addMToken(member.memberId);
+  addMToken(member.biometricId);
+  addMToken(member.deviceUserId);
+  addMToken(member.clientId);
+  addMToken(member.customId);
+  addMToken(member.bioId);
+
+  const mPhone = member.phone ? String(member.phone).replace(/\D/g, '').slice(-10) : '';
+  const mName = (member.name || '').trim().toLowerCase();
+
+  const logTokens = new Set<string>();
+  const addLToken = (val: any) => {
+    if (val === undefined || val === null) return;
+    const s = String(val).trim().toLowerCase();
+    if (!s) return;
+    logTokens.add(s);
+    const cleanNum = s.replace(/^(az-2026-|az-|member_)/i, '');
+    if (cleanNum) logTokens.add(cleanNum);
+    const noZero = cleanNum.replace(/^0+/, '');
+    if (noZero) logTokens.add(noZero);
+  };
+
+  addLToken(log.memberId);
+  addLToken(log.memberCode);
+  addLToken(log.biometricId);
+  addLToken(log.deviceUserId);
+  addLToken(log.clientId);
+  addLToken(log.uid);
+  addLToken(log.id);
+
+  const lPhone = log.phone ? String(log.phone).replace(/\D/g, '').slice(-10) : '';
+  const lName = (log.memberName || log.name || '').trim().toLowerCase();
+
+  // 1. Direct Token Match
+  for (const t of logTokens) {
+    if (mTokens.has(t)) return true;
+  }
+
+  // 2. Phone Match
+  if (mPhone && lPhone && mPhone === lPhone) return true;
+
+  // 3. Name Match
+  if (mName && lName && mName.length > 2 && lName.length > 2) {
+    if (mName === lName || mName.includes(lName) || lName.includes(mName)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export interface AttendanceSession {
   id: string;
   date: string;
@@ -43,6 +116,8 @@ export interface AttendanceSession {
   pct: number;
   method?: string;
   deviceName?: string;
+  status?: string;
+  reason?: string;
 }
 
 /**
@@ -137,6 +212,8 @@ export function buildAttendanceSessions(rawLogs: any[]): AttendanceSession[] {
       pct,
       method: firstPunch.method || 'biometric',
       deviceName: firstPunch.deviceName || 'Biometric Device',
+      status: firstPunch.status || 'granted',
+      reason: firstPunch.reason || '',
     });
   });
 
@@ -152,39 +229,23 @@ export default function AttendanceTab({ member }: { member: any }) {
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const docId      = String(member?.id || member?.uid || member?.memberId || '').trim();
-  const memberCode = String(member?.memberId || member?.clientId || '').trim();
-  const bioId      = String(member?.biometricId || member?.deviceUserId || member?.bioId || '').trim();
-  const phone      = member?.phone ? String(member.phone).replace(/\D/g, '').slice(-10) : '';
-
   // ── Real-time Firestore listener (Read-Only) ────────────────────────────────
   useEffect(() => {
-    if (!docId && !memberCode && !bioId) {
+    if (!member) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
 
-    // Listen to collection 'attendance' (and fallback 'attendance_logs')
+    // Listen to collection 'attendance' in real-time
     const unsub = onSnapshot(
       collection(db, 'attendance'),
       (snap) => {
         const rawLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        // Strict member matching
-        const memberLogs = rawLogs.filter((log: any) => {
-          if (!log) return false;
-          const lMemberId = String(log.memberId || log.memberCode || log.uid || '').trim();
-          const lBioId    = String(log.biometricId || log.deviceUserId || log.bioId || '').trim();
-          const lPhone    = log.phone ? String(log.phone).replace(/\D/g, '').slice(-10) : '';
-
-          if (docId && lMemberId && docId === lMemberId) return true;
-          if (memberCode && lMemberId && memberCode === lMemberId) return true;
-          if (bioId && lBioId && bioId === lBioId) return true;
-          if (phone && lPhone && phone === lPhone) return true;
-          return false;
-        });
+        // Strict multi-vector member matching
+        const memberLogs = rawLogs.filter((log: any) => isLogForMember(log, member));
 
         // Canonical sessionize
         const builtSessions = buildAttendanceSessions(memberLogs);
@@ -198,7 +259,7 @@ export default function AttendanceTab({ member }: { member: any }) {
     );
 
     return () => unsub();
-  }, [docId, memberCode, bioId, phone]);
+  }, [member]);
 
   // ── Badge helpers ───────────────────────────────────────────────────────────
   const pctBadge = (pct: number) => {
@@ -215,7 +276,7 @@ export default function AttendanceTab({ member }: { member: any }) {
         {/* Card Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#FFF7ED] border border-[#FED7AA] text-[#0066FF] flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-orange-50 border border-orange-100 text-[#EA580C] flex items-center justify-center shrink-0">
               <Calendar size={16} />
             </div>
             <div>
@@ -231,7 +292,7 @@ export default function AttendanceTab({ member }: { member: any }) {
         {/* Loading State */}
         {loading && (
           <div className="py-16 flex items-center justify-center gap-2 text-slate-400 text-xs font-medium">
-            <div className="w-4 h-4 rounded-full border-2 border-[#0066FF] border-t-transparent animate-spin" />
+            <div className="w-4 h-4 rounded-full border-2 border-[#EA580C] border-t-transparent animate-spin" />
             Loading attendance records…
           </div>
         )}

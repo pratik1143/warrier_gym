@@ -17,6 +17,7 @@ export interface FollowUpHistoryEvent {
 export interface FollowUpItem {
   id: string;
   memberId?: string | null;
+  invoiceId?: string | null;
   memberName?: string;
   phone?: string;
   enquiryId?: string | null;
@@ -39,7 +40,7 @@ export interface FollowUpItem {
   title?: string;
   reason?: string;
   communicationType?: 'call' | 'whatsapp' | 'visit' | 'email';
-  source?: 'automatic' | 'manual' | 'enquiry' | 'renewal' | 'system' | 'auto';
+  source?: 'automatic' | 'manual' | 'enquiry' | 'renewal' | 'system' | 'auto' | string;
   automationKey?: string | null;
   pendingAmount?: number | null;
   plan?: string;
@@ -91,20 +92,14 @@ export const followupService = {
         const memberStatus = (member.status || '').toLowerCase();
         const assignedStaff = member.trainer || member.assignedStaff || 'Receptionist';
 
-        // RULE 1: GYM MEMBERSHIP RENEWAL (daily from 7 days before expiry onward)
+        // RULE 1: GYM MEMBERSHIP RENEWAL (7 days before expiry)
         const membershipExpiry = member.expiryDate ? member.expiryDate.split('T')[0] : null;
-        if (membershipExpiry && ['active', 'expired'].includes(memberStatus)) {
+        if (membershipExpiry && (memberStatus === 'active' || memberStatus === 'upcoming' || memberStatus === 'frozen')) {
           const daysToExpiry = getCalendarDaysDiff(membershipExpiry, todayStr);
-          if (daysToExpiry <= 7) {
-            const reminderDay = daysToExpiry < 0 ? `EXPIRED_${todayStr}` : `D${daysToExpiry}_${todayStr}`;
-            const key = `AUTO_RENEWAL_${memberId}_${membershipExpiry}_${reminderDay}`;
+          if (daysToExpiry <= 7 && daysToExpiry >= 0) {
+            const key = `AUTO_RENEWAL_${memberId}_${membershipExpiry}`;
             if (!existingKeySet.has(key)) {
               existingKeySet.add(key);
-              const renewalMessage = daysToExpiry < 0
-                ? `Membership expired ${Math.abs(daysToExpiry)} ${Math.abs(daysToExpiry) === 1 ? 'day' : 'days'} ago`
-                : daysToExpiry === 0
-                  ? 'Membership expires today'
-                  : `Membership ending in ${daysToExpiry} days`;
               const payload = {
                 id: key,
                 automationKey: key,
@@ -112,11 +107,11 @@ export const followupService = {
                 memberName,
                 phone: memberPhone,
                 type: 'GYM MEMBERSHIP RENEWAL',
-                reason: renewalMessage,
+                reason: 'GYM MEMBERSHIP RENEWAL',
                 title: 'GYM MEMBERSHIP RENEWAL',
-                description: `${renewalMessage} (${membershipExpiry})`,
-                notes: renewalMessage,
-                priority: daysToExpiry <= 2 ? 'High' : 'Medium',
+                description: 'Gym membership renewal due',
+                notes: 'Gym membership renewal due',
+                priority: 'Medium',
                 dueDate: todayStr,
                 scheduledDate: todayStr,
                 scheduledTime: '10:00',
@@ -126,8 +121,6 @@ export const followupService = {
                 source: 'auto',
                 plan: member.plan || 'Monthly Standard',
                 expiryDate: membershipExpiry,
-                daysToExpiry,
-                reminderStage: daysToExpiry < 0 ? 'EXPIRED' : `D${daysToExpiry}`,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
               };
@@ -245,9 +238,9 @@ export const followupService = {
                 priority: enq.priority === 'Hot' ? 'High' : 'Medium',
                 dueDate: followUpDate,
                 scheduledDate: followUpDate,
-                scheduledTime: enq.followUpTime || '11:00',
-                scheduledTimestamp: new Date(`${followUpDate}T${enq.followUpTime || '11:00'}:00+05:30`).getTime() || Date.now(),
-                assignedTo: enq.assignedTo || enq.attendedBy || 'Manager',
+                scheduledTime: enq.followUpTime || '05:00',
+                scheduledTimestamp: new Date(`${followUpDate}T${enq.followUpTime || '05:00'}:00+05:30`).getTime() || Date.now(),
+                assignedTo: enq.assignedTo || enq.attendedBy || 'Veer Chand (manager)',
                 status: 'Pending',
                 source: 'auto',
                 plan: enq.duration || enq.interestedPlan || '',
@@ -442,6 +435,21 @@ export const followupService = {
     } catch (_) {}
 
     return { id: createdId, ...payload } as FollowUpItem;
+  },
+
+  // Update generic properties of a follow-up document
+  update: async (id: string, updates: Partial<FollowUpItem>): Promise<void> => {
+    const patchData = {
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    try {
+      await updateDoc(doc(db, 'followups', id), patchData as any);
+    } catch (_) {
+      try {
+        await API.put(`/followups/${id}`, patchData);
+      } catch (_) {}
+    }
   },
 
   // Reschedule existing follow-up task (updates SAME document and appends to history)
@@ -714,6 +722,61 @@ export const followupService = {
       try {
         await API.delete(`/followups/${id}`);
       } catch (_) {}
+    }
+  },
+
+  // Archive old automatic expired membership follow-up tasks so they only belong to Expired page
+  cleanupAutoExpiredFollowups: async (): Promise<number> => {
+    try {
+      const snap = await getDocs(collection(db, 'followups'));
+      if (!snap || snap.empty) return 0;
+
+      const { writeBatch, doc } = await import('firebase/firestore');
+      let batch = writeBatch(db);
+      let count = 0;
+      let batchOps = 0;
+
+      for (const d of snap.docs) {
+        const data = d.data();
+        const status = data.status || '';
+        if (status === 'archived' || status === 'Completed' || status === 'Lost') continue;
+
+        const sourceLower = String(data.source || '').toLowerCase();
+        const typeLower = String(data.type || '').toLowerCase();
+        const reasonLower = String(data.reason || data.description || data.notes || '').toLowerCase();
+        const key = String(data.automationKey || d.id || '');
+
+        const isAuto = sourceLower === 'auto' || sourceLower === 'automatic' || key.startsWith('AUTO_');
+        const isExpiredTask = typeLower === 'expired' || key.startsWith('AUTO_EXPIRED_') || reasonLower.includes('membership expired');
+
+        if (isAuto && isExpiredTask) {
+          batch.update(doc(db, 'followups', d.id), {
+            status: 'archived',
+            isActive: false,
+            archivedReason: 'Cleaned up automatic expired membership task',
+            updatedAt: new Date().toISOString()
+          });
+          count++;
+          batchOps++;
+          if (batchOps >= 400) {
+            await batch.commit();
+            batch = writeBatch(db);
+            batchOps = 0;
+          }
+        }
+      }
+
+      if (batchOps > 0) {
+        await batch.commit();
+      }
+
+      if (count > 0) {
+        console.log(`[Followup Cleanup] Archived ${count} automatic expired follow-up tasks from database.`);
+      }
+      return count;
+    } catch (err) {
+      console.warn('[Followup Cleanup] Error during auto-expired cleanup:', err);
+      return 0;
     }
   }
 };

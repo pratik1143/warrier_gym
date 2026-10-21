@@ -1,24 +1,20 @@
 import axios from 'axios';
 import { auth } from '../lib/firebase';
 
-// Ensure baseURL always properly points to the /api endpoint
-// In browser (client-side), default to same-origin relative path '/api' when NEXT_PUBLIC_API_URL is unset
 const getBaseURL = () => {
   if (process.env.NEXT_PUBLIC_API_URL) {
-    const raw = process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, '');
-    return raw.endsWith('/api') ? raw : `${raw}/api`;
+    return process.env.NEXT_PUBLIC_API_URL;
   }
-  if (typeof window !== 'undefined') {
+  // In production browser environment where NEXT_PUBLIC_API_URL wasn't built in, default to relative /api
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     return '/api';
   }
   return 'http://localhost:5000/api';
 };
 
-const baseURL = getBaseURL();
-
 const API = axios.create({
-  baseURL,
-  timeout: 10000,
+  baseURL: getBaseURL(),
+  timeout: 5000,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -40,7 +36,7 @@ API.interceptors.request.use(async (config) => {
 
     // 2. Fallback to localStorage if Firebase isn't initialized/ready yet
     if (!token) {
-      const userJson = localStorage.getItem('warrior_gym_user');
+      const userJson = localStorage.getItem('alpha_zone_user');
       if (userJson) {
         const user = JSON.parse(userJson);
         token = user.token;

@@ -2,49 +2,13 @@ import { Request, Response } from 'express';
 import { db, admin, isFirebaseInitialized } from '../firebase';
 import { triggerWelcomeEmail, triggerPaymentEmail, triggerPtWelcomeEmail } from '../services/automation.service';
 import { resolveStaleRenewalFollowups } from '../services/followupAutomation.service';
-
-export function sanitizeMemberResponse(m: any) {
-  if (!m) return m;
-  const isHold = String(m.status || m.membershipStatus || '').trim().toUpperCase() === 'HOLD' || m.activationStatus === 'PENDING_ACTIVATION';
-  if (isHold) {
-    return {
-      ...m,
-      status: 'HOLD',
-      membershipStatus: 'HOLD',
-      activationStatus: 'PENDING_ACTIVATION',
-      plan: null,
-      packageName: null,
-      membershipPlan: null,
-      originalPackageName: null,
-      startDate: null,
-      expiryDate: null,
-      membershipStartDate: null,
-      membershipExpiryDate: null,
-      daysLeft: null,
-      totalPackageAmount: 0,
-      totalBilled: 0,
-      price: 0,
-      amount: 0,
-      totalPaid: 0,
-      amountPaid: 0,
-      paid: 0,
-      balance: 0,
-      balanceAmount: 0,
-      outstandingBalance: 0,
-      pendingBalance: 0,
-      paymentStatus: 'NOT_BILLED',
-      billingHistory: [],
-      membershipHistory: [],
-    };
-  }
-  return m;
-}
+import { isHikvisionProvider, queueHikvisionMemberSync } from '../services/biometricQueue.service';
+import { getNextAvailableBiometricId, isDeviceBiometricIdInUse, isValidDeviceBiometricId } from '../services/biometricId.service';
 
 export const getMembers = async (req: Request, res: Response) => {
   try {
     const list = await db.getMembers();
-    const sanitized = Array.isArray(list) ? list.map(sanitizeMemberResponse) : list;
-    res.json(sanitized);
+    res.json(list);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -59,9 +23,6 @@ export const getMembersPaginated = async (req: Request, res: Response) => {
       search: typeof search === 'string' ? search : '',
       status: typeof status === 'string' ? status : 'all'
     });
-    if (result && Array.isArray(result.members)) {
-      result.members = result.members.map(sanitizeMemberResponse);
-    }
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -75,7 +36,7 @@ export const getMemberById = async (req: Request, res: Response) => {
     if (!member) {
       return res.status(404).json({ error: 'Member not found' });
     }
-    res.json(sanitizeMemberResponse(member));
+    res.json(member);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -154,7 +115,7 @@ export const createMember = async (req: Request, res: Response) => {
     const { 
       name, phone, email, plan, branch, trainer, gender, age, weight, height, bmi, 
       joinDate, expiryDate, bloodGroup, emergencyContact, maritalStatus, anniversaryDate, 
-      birthdayDate, medicalConditions, fitnessGoal, occupation, address, password, avatarUrl, photo,
+      birthdayDate, medicalConditions, fitnessGoal, occupation, address, password, avatarUrl,
       biometricId,
       paymentStatus, paymentMethod,
       price, amount, totalBilled, totalPaid
@@ -164,18 +125,38 @@ export const createMember = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name and Phone are required' });
     }
 
-    // Face capture can finish just before or after this request. Prefer the
-    // agent's terminal portrait if it has already synced for this biometric ID.
-    let capturedFacePhotoUrl = '';
-    if (biometricId && isFirebaseInitialized && admin) {
+    const requestedBioId = String(biometricId ?? '').trim();
+    let assignedBioId = requestedBioId || String(req.body.memberId || '').trim();
+    if (requestedBioId && !isValidDeviceBiometricId(requestedBioId)) {
+      return res.status(400).json({ error: 'Biometric ID must be a whole number between 1 and 65535.' });
+    }
+    if (!isValidDeviceBiometricId(assignedBioId)) {
       try {
-        const photoSnap = await admin.firestore().collection('biometric_photos').doc(String(biometricId).trim()).get();
+        assignedBioId = String(await getNextAvailableBiometricId());
+      } catch (allocationError: any) {
+        return res.status(503).json({ error: `Could not assign a valid EasyBio ID: ${allocationError.message}` });
+      }
+    }
+    try {
+      if (await isDeviceBiometricIdInUse(assignedBioId, Boolean(req.body.fingerprintDeviceId) || isHikvisionProvider())) {
+        return res.status(409).json({ error: `Biometric ID ${assignedBioId} is already assigned. Choose another ID or use Next available.` });
+      }
+    } catch (availabilityError: any) {
+      return res.status(503).json({ error: `Could not verify EasyBio ID availability: ${availabilityError.message}` });
+    }
+
+    // Face capture can finish just before or after this request. Prefer the agent's terminal
+    // portrait if it has already synced for this biometric ID.
+    let capturedFacePhotoUrl = '';
+    if (isFirebaseInitialized && admin) {
+      try {
+        const photoSnap = await admin.firestore().collection('biometric_photos').doc(String(assignedBioId).trim()).get();
         capturedFacePhotoUrl = String(photoSnap.data()?.photoUrl || '').trim();
       } catch (photoErr: any) {
         console.warn('[Member Photo] Could not read synced biometric portrait:', photoErr.message);
       }
     }
-    const memberPhotoUrl = capturedFacePhotoUrl || String(photo || avatarUrl || req.body.photoUrl || req.body.avatar || req.body.profilePhotoUrl || '');
+    const memberPhotoUrl = capturedFacePhotoUrl || String(req.body.photo || avatarUrl || req.body.photoUrl || req.body.avatar || req.body.profilePhotoUrl || '');
 
     let uid = 'm' + Date.now();
     const loginEmail = email || `${phone}@thewarriorgym.in`;
@@ -184,41 +165,38 @@ export const createMember = async (req: Request, res: Response) => {
       const authAdmin = admin.auth();
       const firestoreAdmin = admin.firestore();
       
+      let userRecord;
       try {
-        let userRecord;
-        try {
-          userRecord = await authAdmin.getUserByEmail(loginEmail);
+        userRecord = await authAdmin.getUserByEmail(loginEmail);
+        uid = userRecord.uid;
+      } catch (err: any) {
+        if (err.code === 'auth/user-not-found') {
+          userRecord = await authAdmin.createUser({
+            email: loginEmail,
+            password: password || '1234567',
+            displayName: name,
+            emailVerified: true
+          });
           uid = userRecord.uid;
-        } catch (err: any) {
-          if (err.code === 'auth/user-not-found') {
-            userRecord = await authAdmin.createUser({
-              email: loginEmail,
-              password: password || '1234567',
-              displayName: name,
-              emailVerified: true
-            });
-            uid = userRecord.uid;
-          } else {
-            console.warn('[Firebase Auth Warning] Auth lookup skipped:', err.message);
-          }
+        } else {
+          throw err;
         }
-
-        // Ensure profile exists in users collection
-        await firestoreAdmin.collection('users').doc(uid).set({
-          uid,
-          name,
-          email: loginEmail,
-          role: 'member',
-          branch: branch || 'Mohali, Punjab',
-          gymId: 'gym_001',
-          createdAt: new Date().toISOString()
-        }, { merge: true }).catch(() => {});
-      } catch (authErr: any) {
-        console.warn('[Firebase Auth Warning] User provisioning skipped:', authErr.message);
       }
+
+      // Ensure profile exists in users collection
+      await firestoreAdmin.collection('users').doc(uid).set({
+        uid,
+        name,
+        email: loginEmail,
+        role: 'member',
+        branch: branch || 'Mohali, Punjab',
+        gymId: 'gym_001',
+        createdAt: new Date().toISOString()
+      }, { merge: true });
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
+    const invoiceDate = req.body.invoiceDate || req.body.billingDate || req.body.date || todayStr;
     const startJoinDate = joinDate || todayStr;
     const memStartDate = req.body.startDate || startJoinDate;
     const plansList = await db.getPlans();
@@ -228,26 +206,46 @@ export const createMember = async (req: Request, res: Response) => {
       finalExpiry = calculateBackendPlanExpiry(plan || 'Monthly', memStartDate, plansList);
     }
 
+    const reqPlanId = String(req.body.planId || req.body.packageId || '').trim().toLowerCase();
+    const reqPlanName = String(plan || req.body.packageName || '').trim().toLowerCase();
+
     const matchedPlan = plansList.find(p => {
-      const dbName = String(p.name || '').toLowerCase();
-      const dbId = String(p.id || '').toLowerCase();
-      const reqName = String(plan || '').toLowerCase();
-      return dbName === reqName || dbId === reqName;
+      const dbName = String(p.name || '').trim().toLowerCase();
+      const dbId = String(p.id || '').trim().toLowerCase();
+      return (reqPlanId && dbId === reqPlanId) ||
+             (reqPlanName && (dbName === reqPlanName || dbId === reqPlanName));
     });
 
-    const origAmount = Number(req.body.originalAmount !== undefined ? req.body.originalAmount : (price || amount || (matchedPlan ? matchedPlan.price : 2500)));
-    const discAmount = Number(req.body.discountAmount !== undefined ? req.body.discountAmount : (req.body.discount || 0));
-    const taxAmount = Number(req.body.taxAmount !== undefined ? req.body.taxAmount : (req.body.tax || req.body.gst || 0));
-    const othCharges = Number(req.body.otherCharges || 0);
+    // Authoritative package catalog price: Single source of truth from package catalog
+    let origAmount: number;
+    if (matchedPlan && typeof matchedPlan.price === 'number') {
+      origAmount = Number(matchedPlan.price);
+    } else {
+      // Fallback only if plan is not configured in catalog
+      origAmount = Number(req.body.originalAmount !== undefined ? req.body.originalAmount : (price || amount || 2500));
+    }
 
+    const discType = req.body.discountType || 'amount';
+    const discVal = Number(req.body.discountValue !== undefined ? req.body.discountValue : (req.body.discountAmount !== undefined ? req.body.discountAmount : (req.body.discount || 0)));
+    let discAmount = 0;
+    if (discType === 'percentage') {
+      discAmount = Math.min(origAmount, (origAmount * discVal) / 100);
+    } else {
+      discAmount = Math.min(origAmount, discVal);
+    }
+    const taxAmount = Math.max(0, Number(req.body.taxAmount !== undefined ? req.body.taxAmount : (req.body.tax || req.body.gst || 0)));
+    const othCharges = Math.max(0, Number(req.body.otherCharges || 0));
+
+    // Authoritative calculation: baseAmount - discount + tax = finalPayable
     const calculatedNet = Math.max(0, origAmount - discAmount + taxAmount + othCharges);
-    const netPayable = Number(req.body.netPayable !== undefined ? req.body.netPayable : (req.body.totalBilled !== undefined ? req.body.totalBilled : calculatedNet));
-    const amountPaid = Number(totalPaid !== undefined ? totalPaid : (req.body.paid !== undefined ? req.body.paid : netPayable));
+    const netPayable = calculatedNet; // Client-provided baseAmount / netPayable is NEVER trusted
+    const rawPaid = totalPaid !== undefined ? totalPaid : (req.body.paid !== undefined ? req.body.paid : (req.body.amountPaid !== undefined ? req.body.amountPaid : netPayable));
+    const amountPaid = Math.min(netPayable, Math.max(0, Number(rawPaid)));
     const outstandingAmount = Math.max(0, netPayable - amountPaid);
     const finalPaymentStatus = paymentStatus || (outstandingAmount <= 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'));
     const initialStatus = memStartDate > todayStr ? 'upcoming' : (req.body.status || 'active');
 
-    const idempotencyKey = req.body.idempotencyKey || `mem_${phone}_${plan || 'Monthly'}_${startJoinDate}`;
+    const idempotencyKey = req.body.idempotencyKey || `mem_${phone}_${plan || 'Monthly'}_${invoiceDate}`;
 
     const member = await db.addMember({
       uid, // align document ID with Auth UID
@@ -255,12 +253,17 @@ export const createMember = async (req: Request, res: Response) => {
       price: origAmount,
       amount: netPayable,
       originalAmount: origAmount,
+      discountType: discType,
+      discountValue: discVal,
       discountAmount: discAmount,
       discount: discAmount,
+      taxAmount: taxAmount,
+      tax: taxAmount,
       netPayable: netPayable,
       totalBilled: netPayable,
       totalPaid: amountPaid,
       outstandingBalance: outstandingAmount,
+      invoiceDate: invoiceDate,
       joinDate: startJoinDate,
       startDate: memStartDate,
       createdAt: new Date().toISOString(),
@@ -286,16 +289,24 @@ export const createMember = async (req: Request, res: Response) => {
       photoSource: capturedFacePhotoUrl ? 'HIKVISION' : (req.body.photoSource || ''),
       facePhotoAvailable: Boolean(capturedFacePhotoUrl || req.body.facePhotoAvailable),
       facePhotoSource: capturedFacePhotoUrl ? 'HIKVISION' : (req.body.facePhotoSource || ''),
-      biometricId: biometricId || '',
-      biometricUserId: req.body.biometricUserId || biometricId || '',
-      faceEnrollmentStatus: req.body.faceEnrollmentStatus || 'PENDING',
-      fingerprintEnrollmentStatus: req.body.fingerprintEnrollmentStatus || 'PENDING',
+      biometricUserId: req.body.biometricUserId || assignedBioId,
+      faceEnrollmentStatus: req.body.faceEnrollmentStatus || (req.body.faceEnrolled === true ? 'ENROLLED' : 'PENDING'),
+      fingerprintEnrollmentStatus: req.body.fingerprintEnrollmentStatus || (req.body.fingerprintEnrolled === true ? 'ENROLLED' : 'PENDING'),
       faceEnrolledAt: req.body.faceEnrolledAt || null,
+      biometricDeviceId: isHikvisionProvider() ? 'hikvision-main-gate' : (req.body.biometricDeviceId || ''),
+      biometricDeviceType: isHikvisionProvider() ? 'Hikvision DS-K1T320EFWX' : (req.body.biometricDeviceType || ''),
+      biometricId: assignedBioId,
+      deviceUserId: assignedBioId,
+      fingerprintStatus: req.body.fingerprintStatus || (req.body.fingerprintEnrolled ? 'ENROLLED' : 'NOT_ENROLLED'),
+      fingerprintEnrolled: req.body.fingerprintEnrolled === true || req.body.fingerprintStatus === 'ENROLLED',
+      fingerprintDeviceId: req.body.fingerprintDeviceId || null,
       fingerprintEnrolledAt: req.body.fingerprintEnrolledAt || null,
-      biometricDeviceId: 'hikvision-main-gate',
-      biometricDeviceType: 'Hikvision DS-K1T320EFWX',
+      fingerprintTemplateId: req.body.fingerprintTemplateId || null,
+      faceStatus: req.body.faceStatus || 'NOT_ENROLLED',
+      faceEnrolled: req.body.faceEnrolled === true,
       paymentStatus: finalPaymentStatus
     });
+    db.invalidateMembersCache();
 
     // 1. Generate ONE authoritative MEMBERSHIP invoice for new member
     const invoiceNumber = req.body.invoiceNumber || `INV-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -309,6 +320,8 @@ export const createMember = async (req: Request, res: Response) => {
       packageName: plan || 'Monthly Standard',
       packagePrice: origAmount,
       originalAmount: origAmount,
+      discountType: discType,
+      discountValue: discVal,
       discountAmount: discAmount,
       discount: discAmount,
       taxAmount: taxAmount,
@@ -326,12 +339,12 @@ export const createMember = async (req: Request, res: Response) => {
       transactionType: 'membership_payment',
       isHistorical: false,
       imported: false,
-      paymentDate: startJoinDate,
+      paymentDate: invoiceDate,
       status: finalPaymentStatus,
       invoiceNumber: invoiceNumber,
       invoice: invoiceNumber,
-      billingDate: startJoinDate,
-      date: startJoinDate,
+      billingDate: invoiceDate,
+      date: invoiceDate,
       startDate: memStartDate,
       endDate: finalExpiry,
       expiryDate: finalExpiry,
@@ -393,89 +406,7 @@ export const createMember = async (req: Request, res: Response) => {
       });
     }
 
-    // Link Canonical Transactions to Member Profile
-    const canonicalBillingHistory: any[] = [];
-    const canonicalMembershipHistory: any[] = [];
-
-    if (payment) {
-      canonicalBillingHistory.push({
-        transactionId: payment.id,
-        memberId: member.id,
-        memberCode: member.memberId || '',
-        biometricId: member.biometricId || member.deviceUserId || '',
-        invoiceId: payment.id,
-        invoiceNumber: payment.invoiceNumber || invoiceNumber,
-        packageId: payment.packageId || 'p_mon',
-        packageName: plan || 'Monthly Standard',
-        billingDate: startJoinDate,
-        paymentDate: startJoinDate,
-        startDate: memStartDate,
-        expiryDate: finalExpiry,
-        originalAmount: origAmount,
-        discount: discAmount,
-        tax: taxAmount,
-        otherCharges: othCharges,
-        netPayable: netPayable,
-        amountPaid: amountPaid,
-        pendingAmount: outstandingAmount,
-        paymentMethod: paymentMethod || 'UPI',
-        paymentStatus: outstandingAmount <= 0 ? 'PAID' : (amountPaid > 0 ? 'PARTIAL' : 'UNPAID'),
-        billingType: 'MEMBERSHIP',
-        isHistorical: false,
-        createdAt: payment.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-
-      canonicalMembershipHistory.push({
-        transactionId: payment.id,
-        plan: plan || 'Monthly Standard',
-        startDate: memStartDate,
-        expiryDate: finalExpiry,
-        amount: netPayable,
-        paid: amountPaid,
-        invoiceId: invoiceNumber,
-        createdAt: payment.createdAt || new Date().toISOString()
-      });
-    }
-
-    if (ptPayment) {
-      canonicalBillingHistory.push({
-        transactionId: ptPayment.id,
-        memberId: member.id,
-        memberCode: member.memberId || '',
-        biometricId: member.biometricId || member.deviceUserId || '',
-        invoiceId: ptPayment.id,
-        invoiceNumber: ptPayment.invoiceNumber,
-        packageId: ptPayment.packageId,
-        packageName: ptPayment.packageName,
-        billingDate: ptPayment.billingDate,
-        paymentDate: ptPayment.paymentDate,
-        startDate: ptPayment.startDate,
-        expiryDate: ptPayment.expiryDate,
-        originalAmount: ptPayment.originalAmount,
-        discount: ptPayment.discountAmount,
-        tax: ptPayment.taxAmount,
-        otherCharges: 0,
-        netPayable: ptPayment.netPayable,
-        amountPaid: ptPayment.amountPaid,
-        pendingAmount: ptPayment.pendingAmount,
-        paymentMethod: ptPayment.paymentMethod,
-        paymentStatus: ptPayment.pendingAmount <= 0 ? 'PAID' : (ptPayment.amountPaid > 0 ? 'PARTIAL' : 'UNPAID'),
-        billingType: 'PT',
-        isHistorical: false,
-        createdAt: ptPayment.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-    }
-
-    await db.updateMember(member.id, {
-      billingHistory: canonicalBillingHistory,
-      payments: canonicalBillingHistory,
-      membershipHistory: canonicalMembershipHistory,
-      updatedAt: new Date().toISOString()
-    });
-
-    console.log(`[Credentials Notification] Sent credentials to ${name} (${loginEmail}) via simulated SMS & WhatsApp. Password: ${password || '1234567'}`);
+    console.log(`[Credentials Notification] Credentials prepared for ${name} (${loginEmail}) via simulated SMS & WhatsApp.`);
 
     // Trigger Automated Emails
     triggerWelcomeEmail(member).catch(err => console.error('[Automation] Welcome email failed:', err));
@@ -483,7 +414,23 @@ export const createMember = async (req: Request, res: Response) => {
       triggerPaymentEmail(payment).catch(err => console.error('[Automation] Payment email failed:', err));
     }
 
-    res.status(201).json({ ...member, billingHistory: canonicalBillingHistory, membershipHistory: canonicalMembershipHistory, invoice: payment, ptInvoice: ptPayment });
+    // Server-side biometric fallback: whether the UI skipped or only partly finished face/fingerprint
+    // enrollment, the server provisions the terminal user itself (user + photo-as-face) via the agent queue.
+    let biometricSync: any = null;
+    try {
+      biometricSync = await queueHikvisionMemberSync({
+        collection: 'members',
+        recordId: String(member.id),
+        biometricId: assignedBioId,
+        name: String(name),
+        source: (req.body.skipBiometric === true || req.body.biometricSetup === 'skipped') ? 'create_member_skipped' : 'create_member_server_fallback',
+      });
+    } catch (syncErr: any) {
+      console.warn('[Biometric Sync] Could not queue server-side sync:', syncErr.message);
+      biometricSync = { queued: false, reason: syncErr.message };
+    }
+
+    res.status(201).json({ ...member, invoice: payment, ptInvoice: ptPayment, biometricSync });
   } catch (error: any) {
     console.error('Failed to create member:', error);
     res.status(500).json({ error: error.message });
@@ -599,9 +546,9 @@ export const resetMemberPassword = async (req: Request, res: Response) => {
     
     if (isFirebaseInitialized && admin) {
       await admin.auth().updateUser(id, { password });
-      console.log(`[Credentials Notification] Reset password for member uid ${id} to ${password}`);
+      console.log(`[Credentials Notification] Password reset for member uid ${id}.`);
     } else {
-      console.log(`[Mock Mode] Reset password for member ${id} to ${password}`);
+      console.log(`[Mock Mode] Password reset for member ${id}.`);
     }
 
     res.json({ success: true, message: 'Password reset successful' });
@@ -626,6 +573,493 @@ export const sendMemberCredentials = async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Credentials sent successfully' });
   } catch (error: any) {
     console.error('Failed to send credentials:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+/**
+ * POST /members/:id/renew
+ * Atomic membership renewal: writes billing record FIRST, then updates member.
+ * If billing write fails, the member record is never touched → no half-state.
+ * invoiceDate is the staff-selected business date (≠ createdAt which is DB timestamp).
+ */
+export const renewMembership = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      plan,
+      startDate,
+      expiryDate,
+      packagePrice,
+      baseAmount,
+      discountType,
+      discountValue,
+      discountAmount,
+      taxAmount,
+      netPayable,
+      amountPaidToday,
+      amountPaid,
+      pendingAmount,
+      paymentMethod,
+      paymentStatus,
+      invoiceDate,
+      notes,
+      invoiceNumber: providedInvoiceNumber,
+    } = req.body;
+
+    // ── Validation ──────────────────────────────────────────────
+    if (!plan) return res.status(400).json({ error: 'Plan is required' });
+    if (!startDate) return res.status(400).json({ error: 'Start date is required' });
+    if (!expiryDate) return res.status(400).json({ error: 'Expiry date is required' });
+    if (!paymentMethod) return res.status(400).json({ error: 'Payment method is required' });
+    if (expiryDate <= startDate) return res.status(400).json({ error: 'Expiry date must be after start date' });
+
+    const numPkgPrice = Math.max(0, Number(packagePrice !== undefined ? packagePrice : baseAmount) || 0);
+    const rawDiscountType = String(discountType || 'fixed').toLowerCase() === 'percentage' ? 'percentage' : 'fixed';
+    const numDiscountValue = Number(discountValue !== undefined ? discountValue : (discountAmount !== undefined ? discountAmount : 0)) || 0;
+
+    // Strict Validation
+    if (numDiscountValue < 0) {
+      return res.status(400).json({ error: 'Discount cannot be negative.' });
+    }
+
+    if (rawDiscountType === 'fixed' && numDiscountValue > numPkgPrice) {
+      return res.status(400).json({ error: 'Discount cannot exceed package amount.' });
+    }
+
+    if (rawDiscountType === 'percentage' && numDiscountValue > 100) {
+      return res.status(400).json({ error: 'Discount percentage cannot exceed 100%.' });
+    }
+
+    let numDiscountAmount = 0;
+    if (rawDiscountType === 'percentage') {
+      const clampedPercent = Math.min(100, Math.max(0, numDiscountValue));
+      numDiscountAmount = Math.round((numPkgPrice * clampedPercent) / 100);
+    } else {
+      numDiscountAmount = Math.min(numPkgPrice, Math.max(0, numDiscountValue));
+    }
+
+    const numTax = Math.max(0, Number(taxAmount) || 0);
+    const numNetPayable = Math.max(0, numPkgPrice - numDiscountAmount + numTax);
+
+    const rawAmountPaid = Number(amountPaidToday !== undefined ? amountPaidToday : (amountPaid !== undefined ? amountPaid : numNetPayable));
+    if (rawAmountPaid < 0) {
+      return res.status(400).json({ error: 'Amount paid today cannot be negative.' });
+    }
+
+    const numAmountPaid = Math.max(0, isNaN(rawAmountPaid) ? 0 : rawAmountPaid);
+    if (numAmountPaid > numNetPayable) {
+      return res.status(400).json({ error: 'Amount paid today cannot exceed Net Payable.' });
+    }
+
+    const numPending = Math.max(0, numNetPayable - numAmountPaid);
+    const calculatedPaymentStatus = numPending <= 0 ? 'paid' : (numAmountPaid > 0 ? 'partial' : 'pending');
+
+    const canonicalInvoiceDate = invoiceDate || new Date().toISOString().split('T')[0];
+    const invoiceNumber = providedInvoiceNumber || `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+    const nowIso = new Date().toISOString();
+
+    // ── Fetch existing member ────────────────────────────────────
+    const existingMember = await db.getMemberById(id);
+    if (!existingMember) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    // ── STEP 1: Create billing/payment record ────────────────────
+    // This MUST succeed before we touch the member record.
+    let paymentRecord: any;
+    try {
+      paymentRecord = await db.addPayment({
+        memberId: id,
+        memberName: existingMember.name,
+        memberPhone: existingMember.phone || '',
+        invoiceType: 'MEMBERSHIP',
+        billingType: 'MEMBERSHIP',
+        transactionType: 'membership_renewal',
+        plan,
+        packageName: plan,
+        originalAmount: numPkgPrice,
+        packagePrice: numPkgPrice,
+        baseAmount: numPkgPrice,
+        discountType: rawDiscountType,
+        discountValue: numDiscountValue,
+        discountAmount: numDiscountAmount,
+        discount: numDiscountAmount,
+        taxAmount: numTax,
+        tax: numTax,
+        netPayable: numNetPayable,
+        amount: numPkgPrice,
+        amountPaidToday: numAmountPaid,
+        // Crucial for Today's Collection: amountPaid is ONLY actual cash received
+        amountPaid: numAmountPaid,
+        paid: numAmountPaid,
+        pendingAmount: numPending,
+        outstandingAmount: numPending,
+        remainingBalance: numPending,
+        paymentMethod,
+        method: paymentMethod,
+        paymentStatus: calculatedPaymentStatus,
+        status: calculatedPaymentStatus,
+        // Canonical date fields — invoiceDate is the business date
+        invoiceDate: canonicalInvoiceDate,
+        billingDate: canonicalInvoiceDate,
+        date: canonicalInvoiceDate,
+        paymentDate: canonicalInvoiceDate,
+        transactionDate: canonicalInvoiceDate,
+        membershipStartDate: startDate,
+        startDate,
+        membershipExpiryDate: expiryDate,
+        expiryDate,
+        invoiceNumber,
+        invoice: invoiceNumber,
+        notes: notes || '',
+        isHistorical: false,
+        imported: false,
+        isRenewal: true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    } catch (billingErr: any) {
+      console.error('[Renewal] Billing write failed — member NOT updated:', billingErr.message);
+      return res.status(500).json({
+        error: 'Renewal could not be completed. No changes were saved. (Billing write failed: ' + billingErr.message + ')',
+      });
+    }
+
+    // ── STEP 2: Update member record (only runs if billing succeeded) ──
+    const existingHistory = Array.isArray(existingMember.membershipHistory)
+      ? existingMember.membershipHistory
+      : [];
+
+    const historyEntry = {
+      packageName: plan,
+      startDate,
+      expiryDate,
+      amount: numNetPayable,
+      amountPaid: numAmountPaid,
+      pendingAmount: numPending,
+      paymentMethod,
+      paymentStatus: calculatedPaymentStatus,
+      discount: numDiscountAmount,
+      tax: numTax,
+      invoiceNumber,
+      invoiceDate: canonicalInvoiceDate,
+      renewedAt: nowIso,
+      notes: notes || '',
+    };
+
+    const updatedHistory = [historyEntry, ...existingHistory];
+
+    let updatedMember: any;
+    try {
+      updatedMember = await db.updateMember(id, {
+        plan,
+        price: numPkgPrice,
+        amount: numNetPayable,
+        totalBilled: (Number(existingMember.totalBilled) || 0) + numNetPayable,
+        totalPaid: (Number(existingMember.totalPaid) || 0) + numAmountPaid,
+        outstandingBalance: numPending,
+        startDate,
+        expiryDate,
+        status: 'active',
+        paymentStatus: calculatedPaymentStatus,
+        membershipHistory: updatedHistory,
+        updatedAt: nowIso,
+      });
+    } catch (memberErr: any) {
+      // Billing was written but member update failed — log for manual reconciliation
+      console.error('[Renewal] Member update failed after billing write. Invoice:', invoiceNumber, memberErr.message);
+      return res.status(500).json({
+        error: 'Billing record was created but member profile update failed. Please contact support. Invoice: ' + invoiceNumber,
+        invoiceNumber,
+        partialSuccess: true,
+      });
+    }
+
+    // ── STEP 3: Side-effects (non-blocking) ──────────────────────
+    resolveStaleRenewalFollowups(id, 'MEMBERSHIP', expiryDate).catch(() => {});
+    if (numPending <= 0) {
+      resolveStaleRenewalFollowups(id, 'BALANCE').catch(() => {});
+    }
+    triggerPaymentEmail(paymentRecord).catch((err: any) => {
+      console.error('[Renewal] Payment email trigger failed:', err.message);
+    });
+
+    res.json({
+      success: true,
+      member: updatedMember,
+      payment: paymentRecord,
+      invoiceNumber,
+    });
+  } catch (error: any) {
+    console.error('[Renewal] Unexpected error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const upgradeMembership = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const {
+      plan,
+      startDate,
+      expiryDate,
+      packagePrice,
+      previousInvoiceId,
+      previousInvoiceNumber,
+      previousInvoiceDate,
+      previousPlan,
+      previousPaidAmount,
+      adjustedAmount,
+      discountType,
+      discountValue,
+      discountAmount,
+      additionalAmountDue,
+      additionalAmountPaid,
+      paymentMethod,
+      paymentStatus,
+      invoiceDate,
+      notes,
+      invoiceNumber: providedInvoiceNumber,
+    } = req.body;
+
+    // Validation
+    if (!plan) return res.status(400).json({ error: 'New plan is required' });
+    if (!startDate) return res.status(400).json({ error: 'Start date is required' });
+    if (!expiryDate) return res.status(400).json({ error: 'Expiry date is required' });
+    if (!paymentMethod) return res.status(400).json({ error: 'Payment method is required' });
+
+    const numPkgPrice = Math.max(0, Number(packagePrice) || 0);
+    const numPrevPaid = Math.max(0, Number(previousPaidAmount) || 0);
+    const numAdjusted = Math.max(0, Number(adjustedAmount !== undefined ? adjustedAmount : numPrevPaid));
+
+    // 1. Authoritative base upgrade amount before discount
+    const upgradeBaseAmount = Math.max(0, numPkgPrice - numAdjusted);
+
+    // 2. Authoritative discount calculation & validation
+    const rawDiscountType = String(discountType || 'fixed').toLowerCase() === 'percentage' ? 'percentage' : 'fixed';
+    const numDiscountValue = Number(discountValue) || 0;
+
+    if (numDiscountValue < 0) {
+      return res.status(400).json({ error: 'Discount cannot be negative.' });
+    }
+
+    if (rawDiscountType === 'fixed' && numDiscountValue > upgradeBaseAmount) {
+      return res.status(400).json({ error: 'Discount cannot exceed upgrade amount.' });
+    }
+
+    if (rawDiscountType === 'percentage' && numDiscountValue > 100) {
+      return res.status(400).json({ error: 'Discount percentage cannot exceed 100%.' });
+    }
+
+    let numDiscountAmount = 0;
+    if (rawDiscountType === 'percentage') {
+      const clampedPercent = Math.min(100, Math.max(0, numDiscountValue));
+      numDiscountAmount = Math.round((upgradeBaseAmount * clampedPercent) / 100);
+    } else {
+      numDiscountAmount = Math.min(upgradeBaseAmount, Math.max(0, numDiscountValue));
+    }
+
+    // 3. Authoritative net upgrade payable
+    const netUpgradePayable = Math.max(0, upgradeBaseAmount - numDiscountAmount);
+
+    // 4. Authoritative amount paid today & remaining balance
+    const rawAddPaid = Number(additionalAmountPaid !== undefined ? additionalAmountPaid : netUpgradePayable);
+    if (rawAddPaid < 0) {
+      return res.status(400).json({ error: 'Amount Paid Today cannot be negative.' });
+    }
+
+    const numAddPaid = Math.max(0, isNaN(rawAddPaid) ? 0 : rawAddPaid);
+    if (numAddPaid > netUpgradePayable) {
+      return res.status(400).json({ error: 'Amount Paid Today cannot exceed Net Payable.' });
+    }
+
+    // Never allow remaining balance to become negative
+    const numPending = Math.max(0, netUpgradePayable - numAddPaid);
+    const calculatedStatus = numPending <= 0 ? 'paid' : (numAddPaid > 0 ? 'partial' : 'pending');
+
+    const canonicalInvoiceDate = invoiceDate || new Date().toISOString().split('T')[0];
+    const invoiceNumber = providedInvoiceNumber || `INV-UPG-${Math.floor(100000 + Math.random() * 900000)}`;
+    const nowIso = new Date().toISOString();
+
+    const existingMember = await db.getMemberById(id);
+    if (!existingMember) {
+      return res.status(404).json({ error: 'Member not found' });
+    }
+
+    // Step 1: Create the Upgraded Payment record in `payments` collection
+    let paymentRecord: any;
+    try {
+      paymentRecord = await db.addPayment({
+        memberId: id,
+        memberName: existingMember.name,
+        memberPhone: existingMember.phone || '',
+        invoiceType: 'MEMBERSHIP',
+        billingType: 'MEMBERSHIP',
+        transactionType: 'membership_upgrade',
+        isUpgrade: true,
+        plan,
+        packageName: plan,
+        previousPlan: previousPlan || existingMember.plan || '',
+        previousBillId: previousInvoiceId || '',
+        oldInvoiceId: previousInvoiceId || '',
+        previousInvoiceId: previousInvoiceId || '',
+        previousInvoiceNumber: previousInvoiceNumber || '',
+        previousInvoiceDate: previousInvoiceDate || '',
+        previousPaidAmount: numPrevPaid,
+        previousAdjustedAmount: numAdjusted,
+        adjustedAmount: numAdjusted,
+        originalAmount: numPkgPrice,
+        packagePrice: numPkgPrice,
+        baseAmount: numPkgPrice,
+        amountBeforeDiscount: upgradeBaseAmount,
+        upgradeDifference: upgradeBaseAmount,
+        upgradeBaseAmount: upgradeBaseAmount,
+        discountType: rawDiscountType,
+        discountValue: numDiscountValue,
+        discountAmount: numDiscountAmount,
+        discount: numDiscountAmount,
+        netPayable: netUpgradePayable,
+        additionalAmountDue: netUpgradePayable,
+        amount: numPkgPrice,
+        additionalAmountPaid: numAddPaid,
+        amountPaidToday: numAddPaid,
+        // Crucial for Today's Collection: amountPaid is the actual additional cash collected today
+        amountPaid: numAddPaid,
+        paid: numAddPaid,
+        totalAmountPaid: numAdjusted + numAddPaid,
+        pendingAmount: numPending,
+        outstandingAmount: numPending,
+        remainingBalance: numPending,
+        paymentMethod,
+        method: paymentMethod,
+        paymentStatus: calculatedStatus,
+        status: calculatedStatus,
+        invoiceDate: canonicalInvoiceDate,
+        billingDate: canonicalInvoiceDate,
+        date: canonicalInvoiceDate,
+        paymentDate: canonicalInvoiceDate,
+        transactionDate: canonicalInvoiceDate,
+        membershipStartDate: startDate,
+        startDate,
+        membershipExpiryDate: expiryDate,
+        expiryDate,
+        invoiceNumber,
+        invoice: invoiceNumber,
+        notes: notes || `Membership Upgrade from ${previousPlan || existingMember.plan || 'previous package'} (${previousInvoiceNumber || 'INV-PREV'}). Adjusted: ₹${numAdjusted}, Discount: ₹${numDiscountAmount}, Additional Paid: ₹${numAddPaid}`,
+        isHistorical: false,
+        imported: false,
+        createdAt: nowIso,
+      });
+    } catch (billingErr: any) {
+      console.error('[Upgrade] Billing write failed:', billingErr.message);
+      return res.status(500).json({
+        error: 'Upgrade could not be completed. No changes were saved. (Billing write failed: ' + billingErr.message + ')',
+      });
+    }
+
+    // Step 2: Mark previous invoice as upgraded if previousInvoiceId or previousInvoiceNumber is provided
+    if (previousInvoiceId || previousInvoiceNumber) {
+      try {
+        const payments = await db.getPayments({ memberId: id });
+        const targetOld = payments.find((p: any) => 
+          (previousInvoiceId && (p.id === previousInvoiceId || p.invoice === previousInvoiceId || p.invoiceNumber === previousInvoiceId)) ||
+          (previousInvoiceNumber && (p.invoiceNumber === previousInvoiceNumber || p.invoice === previousInvoiceNumber))
+        );
+        if (targetOld && targetOld.id) {
+          await db.updatePayment(targetOld.id, {
+            isUpgraded: true,
+            upgradedToInvoice: invoiceNumber,
+            upgradedAt: nowIso,
+            // Keep original date, paymentDate, amount, and paid intact!
+          });
+        }
+      } catch (oldInvErr: any) {
+        console.warn('[Upgrade] Note: Link to previous invoice updated with warning:', oldInvErr.message);
+      }
+    }
+
+    // Step 3: Update member profile
+    const existingHistory = Array.isArray(existingMember.membershipHistory)
+      ? existingMember.membershipHistory
+      : [];
+
+    const historyEntry = {
+      packageName: plan,
+      previousPackageName: previousPlan || existingMember.plan || '',
+      type: 'UPGRADE',
+      startDate,
+      expiryDate,
+      amount: numPkgPrice,
+      packagePrice: numPkgPrice,
+      previousPaidAdjusted: numAdjusted,
+      upgradeBaseAmount,
+      discountType: rawDiscountType,
+      discountValue: numDiscountValue,
+      discountAmount: numDiscountAmount,
+      discount: numDiscountAmount,
+      netPayable: netUpgradePayable,
+      additionalAmountPaid: numAddPaid,
+      pendingAmount: numPending,
+      paymentMethod,
+      paymentStatus: calculatedStatus,
+      invoiceNumber,
+      previousInvoiceNumber: previousInvoiceNumber || '',
+      invoiceDate: canonicalInvoiceDate,
+      upgradedAt: nowIso,
+      notes: notes || '',
+    };
+
+    const updatedHistory = [historyEntry, ...existingHistory];
+
+    const currentTotalBilled = Number(existingMember.totalBilled) || Number(existingMember.amount) || numPrevPaid;
+    const currentTotalPaid = Number(existingMember.totalPaid) || Number(existingMember.paid) || numPrevPaid;
+
+    const newTotalBilled = currentTotalBilled + netUpgradePayable;
+    const newTotalPaid = currentTotalPaid + numAddPaid;
+
+    let updatedMember: any;
+    try {
+      updatedMember = await db.updateMember(id, {
+        plan,
+        packageName: plan,
+        price: numPkgPrice,
+        amount: numPkgPrice,
+        totalBilled: newTotalBilled,
+        totalPaid: newTotalPaid,
+        outstandingBalance: numPending,
+        startDate,
+        expiryDate,
+        status: 'active',
+        paymentStatus: calculatedStatus,
+        membershipHistory: updatedHistory,
+        updatedAt: nowIso,
+      });
+    } catch (memberErr: any) {
+      console.error('[Upgrade] Member update failed after billing write. Invoice:', invoiceNumber, memberErr.message);
+      return res.status(500).json({
+        error: 'Billing record was created but member profile update failed. Invoice: ' + invoiceNumber,
+        invoiceNumber,
+        partialSuccess: true,
+      });
+    }
+
+    // Step 4: Side effects (non-blocking)
+    resolveStaleRenewalFollowups(id, 'MEMBERSHIP', expiryDate).catch(() => {});
+    if (numPending <= 0) {
+      resolveStaleRenewalFollowups(id, 'BALANCE').catch(() => {});
+    }
+    triggerPaymentEmail(paymentRecord).catch(() => {});
+
+    res.json({
+      success: true,
+      member: updatedMember,
+      payment: paymentRecord,
+      invoiceNumber,
+    });
+  } catch (error: any) {
+    console.error('[Upgrade] Unexpected error:', error.message);
     res.status(500).json({ error: error.message });
   }
 };

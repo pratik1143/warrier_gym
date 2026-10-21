@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 /**
- * Global Premium Toast System — Warrior Gym OS
+ * Global Premium Toast System — The Warrior Gym OS
  * Features:
  * - Pixel-perfect layout with no clipped text or awkward overflows
  * - Clean status badges with dedicated icons

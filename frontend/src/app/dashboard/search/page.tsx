@@ -90,8 +90,8 @@ function SearchPageContent() {
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
-      case 'member': return <Users size={16} className="text-[#EA580C]" />;
-      case 'employee': return <Briefcase size={16} className="text-indigo-600" />;
+      case 'member': return <Users size={16} className="text-orange-600" />;
+      case 'employee': return <Briefcase size={16} className="text-orange-600" />;
       case 'trainer': return <Dumbbell size={16} className="text-purple-600" />;
       case 'enquiry': return <MessageSquare size={16} className="text-amber-600" />;
       case 'followup': return <Phone size={16} className="text-emerald-600" />;
@@ -102,9 +102,9 @@ function SearchPageContent() {
   const getCategoryBadge = (category: string) => {
     switch (category) {
       case 'member':
-        return 'bg-[#FFF7ED] text-[#C2410C] border-[#FED7AA]';
+        return 'bg-orange-50 text-orange-700 border-orange-200';
       case 'employee':
-        return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+        return 'bg-orange-50 text-orange-700 border-orange-200';
       case 'trainer':
         return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'enquiry':
@@ -121,14 +121,14 @@ function SearchPageContent() {
       
       {/* ── 1. HEADER ── */}
       <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div className="space-y-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="px-3 py-1 bg-gradient-to-r from-[#EA580C] to-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-2xs">
+            <span className="px-3 py-1 bg-gradient-to-r from-[#EA580C] to-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-2xs">
               Universal Search
             </span>
-            <span className="text-xs text-slate-400 font-mono font-bold">TWG-OS-v4.0</span>
+            <span className="text-xs text-slate-400 font-mono font-bold">AZ-OS-v4.0</span>
           </div>
           <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 font-display">
             {searchTerm ? `Search Results for "${searchTerm}"` : 'Global OS Search'}
@@ -146,7 +146,7 @@ function SearchPageContent() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search Name, Phone, ID, Email..."
-            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 text-xs font-bold text-slate-800 rounded-2xl border border-slate-200 outline-none focus:border-[#F97316] focus:bg-white transition-all shadow-2xs"
+            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 text-xs font-bold text-slate-800 rounded-2xl border border-slate-200 outline-none focus:border-orange-600 focus:bg-white transition-all shadow-2xs"
           />
         </div>
       </div>
@@ -169,7 +169,7 @@ function SearchPageContent() {
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 border-none cursor-pointer shrink-0 ${
                 isActive
-                  ? 'bg-[#EA580C] text-white shadow-sm'
+                  ? 'bg-orange-600 text-white shadow-sm'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -188,8 +188,8 @@ function SearchPageContent() {
       {/* ── 3. RESULTS GRID ── */}
       {loading ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80 shadow-xs space-y-3">
-          <RefreshCw size={24} className="animate-spin text-[#EA580C] mx-auto" />
-          <h3 className="text-sm font-bold text-slate-800">Searching Warrior Gym OS...</h3>
+          <RefreshCw size={24} className="animate-spin text-orange-600 mx-auto" />
+          <h3 className="text-sm font-bold text-slate-800">Searching The Warrior Gym OS...</h3>
           <p className="text-xs text-slate-400">Scanning Members, Staff, Inquiries and Follow-up records</p>
         </div>
       ) : displayedItems.length === 0 ? (
@@ -199,7 +199,7 @@ function SearchPageContent() {
           </div>
           <h3 className="text-base font-bold text-slate-800">No results found for "{searchTerm}"</h3>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Try searching by: <strong>Full Name</strong>, <strong>10-digit Phone Number</strong>, <strong>Member ID</strong> (e.g. TWG-2026-0012), <strong>Employee ID</strong> (EMP-10011), <strong>Biometric ID</strong> (#10011), or <strong>Enquiry ID</strong> (ENQ-2054).
+            Try searching by: <strong>Full Name</strong>, <strong>10-digit Phone Number</strong>, <strong>Member ID</strong> (e.g. AZ-2026-0012), <strong>Employee ID</strong> (EMP-10011), <strong>Biometric ID</strong> (#10011), or <strong>Enquiry ID</strong> (ENQ-2054).
           </p>
         </div>
       ) : (
@@ -212,7 +212,7 @@ function SearchPageContent() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               onClick={() => handleItemClick(item)}
-              className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#EA580C] transition-all cursor-pointer flex flex-col justify-between group text-left relative overflow-hidden"
+              className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-orange-300 transition-all cursor-pointer flex flex-col justify-between group text-left relative overflow-hidden"
             >
               <div className="space-y-3">
                 {/* Header: Category Badge + Status */}
@@ -231,11 +231,11 @@ function SearchPageContent() {
 
                 {/* Avatar & Title */}
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 text-xs shrink-0 shadow-2xs group-hover:bg-orange-50 group-hover:text-[#C2410C] transition-colors">
+                  <div className="w-11 h-11 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center font-black text-slate-700 text-xs shrink-0 shadow-2xs group-hover:bg-orange-50 group-hover:text-orange-700 transition-colors">
                     {item.avatarText || 'AZ'}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-black text-slate-900 truncate group-hover:text-[#EA580C] transition-colors">
+                    <h3 className="text-sm font-black text-slate-900 truncate group-hover:text-orange-600 transition-colors">
                       {item.title}
                     </h3>
                     <p className="text-xs font-semibold text-slate-500 truncate mt-0.5">
@@ -259,8 +259,8 @@ function SearchPageContent() {
                     </div>
                   )}
                   {item.meta && (
-                    <div className="flex items-center gap-2 font-medium text-[#C2410C]">
-                      <Calendar size={12} className="text-[#F97316] shrink-0" />
+                    <div className="flex items-center gap-2 font-medium text-orange-700">
+                      <Calendar size={12} className="text-orange-500 shrink-0" />
                       <span>{item.meta}</span>
                     </div>
                   )}
@@ -268,7 +268,7 @@ function SearchPageContent() {
               </div>
 
               {/* Bottom Action Indicator */}
-              <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-[#EA580C] group-hover:text-[#C2410C]">
+              <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-orange-600 group-hover:text-orange-700">
                 <span>Open {item.categoryLabel} Record</span>
                 <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
               </div>

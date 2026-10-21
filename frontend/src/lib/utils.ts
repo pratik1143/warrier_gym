@@ -6,6 +6,19 @@ export const formatCurrency = (value: number): string => {
   }).format(value);
 };
 
+export const formatPhoneNumber = (phone?: string | null): string => {
+  if (!phone || typeof phone !== 'string') return 'No Phone';
+  const cleaned = phone.replace(/\D/g, '');
+  if (!cleaned) return 'No Phone';
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `+91 ${cleaned.slice(2)}`;
+  }
+  return phone.trim();
+};
+
 export const formatDate = (dateString: string): string => {
   if (!dateString) return '—';
   const d = new Date(dateString);

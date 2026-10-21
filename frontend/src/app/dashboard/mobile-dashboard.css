@@ -1,0 +1,134 @@
+@media (max-width: 767px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .crm-app-frame {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .crm-main {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0 0 calc(5rem + env(safe-area-inset-bottom, 0px));
+    gap: 0;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .crm-main-content {
+    width: 100%;
+    min-width: 0;
+    gap: 0;
+  }
+
+  .crm-mobile-topbar {
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+    min-height: 66px;
+    align-items: center;
+    overflow: visible;
+  }
+
+  .crm-mobile-topbar > a {
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .crm-mobile-logo {
+    width: 40px;
+    height: 40px;
+    display: block;
+    object-fit: contain;
+    flex: 0 0 40px;
+    background: #fff;
+  }
+
+  .crm-mobile-topbar > div,
+  .crm-mobile-topbar button {
+    flex-shrink: 0;
+  }
+
+  .crm-mobile-search {
+    padding: 10px 12px 12px;
+    background: #fff;
+    border-bottom: 1px solid #F5F5F4;
+  }
+
+  .crm-page-slot {
+    width: 100%;
+    min-width: 0;
+    padding: 12px 12px 20px;
+    overflow-x: clip;
+  }
+
+  .crm-page-slot > * {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .crm-page-slot h1 {
+    font-size: clamp(1.35rem, 6vw, 1.9rem);
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .crm-page-slot table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .crm-page-slot :where(input, select, textarea) {
+    max-width: 100%;
+    font-size: max(16px, 1em);
+  }
+
+  .crm-page-slot :where(button, [role="button"]) {
+    touch-action: manipulation;
+  }
+
+  .crm-desktop-footer {
+    display: none;
+  }
+
+  .crm-bottom-nav {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .crm-bottom-nav > div {
+    height: 66px;
+  }
+}
+
+@media (max-width: 380px) {
+  .crm-page-slot {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+
+  .crm-mobile-topbar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .crm-bottom-nav > div {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}

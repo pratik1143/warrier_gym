@@ -26,65 +26,52 @@ interface AuthStore {
   logout: () => Promise<void>;
 }
 
+const readStoredAuthUser = (): User | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = localStorage.getItem('alpha_zone_user');
+    if (!raw) return null;
+
+    const user = JSON.parse(raw) as User;
+    // Local demo sessions have no Firebase ID token and cannot authorize
+    // protected production API calls. Clear them so the owner signs in again
+    // through Firebase after the production frontend is deployed.
+    if (process.env.NODE_ENV === 'production' && (!user?.token || user.uid?.startsWith('demo_'))) {
+      localStorage.removeItem('alpha_zone_user');
+      return null;
+    }
+
+    return user;
+  } catch {
+    localStorage.removeItem('alpha_zone_user');
+    return null;
+  }
+};
+
+const initialAuthUser = readStoredAuthUser();
+
 export const useAuthStore = create<AuthStore>((set) => ({
-  user: typeof window !== 'undefined' && localStorage.getItem('warrior_gym_user') 
-    ? JSON.parse(localStorage.getItem('warrior_gym_user')!) 
-    : null,
+  user: initialAuthUser,
   isLoading: false,
-  isAuthenticated: typeof window !== 'undefined' && !!localStorage.getItem('warrior_gym_user'),
+  isAuthenticated: !!initialAuthUser,
   setUser: (user) => {
     if (user) {
-      localStorage.setItem('warrior_gym_user', JSON.stringify(user));
+      localStorage.setItem('alpha_zone_user', JSON.stringify(user));
     } else {
-      localStorage.removeItem('warrior_gym_user');
+      localStorage.removeItem('alpha_zone_user');
     }
     set({ user, isAuthenticated: !!user });
   },
   login: async (credentials) => {
     set({ isLoading: true });
     try {
-      // Step 1: Authenticate with Firebase for real accounts
-      let userCredential = null;
-      let idToken = '';
-      try {
-        userCredential = await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
-        idToken = await userCredential.user.getIdToken();
-      } catch (fbAuthErr: any) {
-        console.warn('Direct Firebase Auth failed, checking demo credentials fallback:', fbAuthErr.message);
-      }
-
-      if (userCredential && userCredential.user) {
-        // Step 2: Send Firebase ID token to backend to get user profile if reachable
-        try {
-          const res = await API.post('/auth/login', { idToken, email: credentials.email });
-          const user = res.data;
-          localStorage.setItem('warrior_gym_user', JSON.stringify(user));
-          set({ user, isAuthenticated: true, isLoading: false });
-          return user;
-        } catch (backendErr) {
-          // Backend unavailable — build user from Firebase token claims
-          const fbUser = userCredential.user;
-          const user: User = {
-            uid: fbUser.uid,
-            name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Gym Owner',
-            email: fbUser.email || credentials.email,
-            role: 'gym_owner' as const,
-            branch: 'Mohali, Punjab',
-            gymId: 'gym_001',
-            token: idToken,
-          };
-          localStorage.setItem('warrior_gym_user', JSON.stringify(user));
-          set({ user, isAuthenticated: true, isLoading: false });
-          return user;
-        }
-      }
-
-      // ── Demo Account Bypass Fallback ──────────────
+      // ── Demo Account Bypass (no Firebase account needed) ──────────────
       const DEMO_ACCOUNTS: Record<string, { password: string; user: User }> = {
         'owner@thewarriorgym.in': {
           password: '1234567',
           user: {
-            uid: 'kr5wJHZdf7TnfbzB5CuKLRY2tFq2',
+            uid: 'demo_owner_warrior',
             name: 'Gym Owner',
             email: 'owner@thewarriorgym.in',
             role: 'gym_owner',
@@ -95,10 +82,43 @@ export const useAuthStore = create<AuthStore>((set) => ({
         'admin@thewarriorgym.in': {
           password: '1234567',
           user: {
-            uid: 'demo_admin_001',
-            name: 'Admin',
+            uid: 'demo_admin_warrior',
+            name: 'Admin Desk',
             email: 'admin@thewarriorgym.in',
             role: 'gym_owner',
+            branch: 'Mohali, Punjab',
+            gymId: 'gym_001',
+          }
+        },
+        'superadmin@thewarriorgym.in': {
+          password: '1234567',
+          user: {
+            uid: 'demo_superadmin_warrior',
+            name: 'Super Admin',
+            email: 'superadmin@thewarriorgym.in',
+            role: 'super_admin',
+            branch: 'Mohali, Punjab',
+            gymId: 'gym_001',
+          }
+        },
+        'manager@thewarriorgym.in': {
+          password: '1234567',
+          user: {
+            uid: 'demo_manager_warrior',
+            name: 'Branch Manager',
+            email: 'manager@thewarriorgym.in',
+            role: 'branch_manager',
+            branch: 'Mohali, Punjab',
+            gymId: 'gym_001',
+          }
+        },
+        'trainer@thewarriorgym.in': {
+          password: '1234567',
+          user: {
+            uid: 'demo_trainer_warrior',
+            name: 'Fitness Trainer',
+            email: 'trainer@thewarriorgym.in',
+            role: 'trainer',
             branch: 'Mohali, Punjab',
             gymId: 'gym_001',
           }
@@ -107,15 +127,42 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
       const demoMatch = DEMO_ACCOUNTS[credentials.email.toLowerCase()];
       if (demoMatch && demoMatch.password === credentials.password) {
-        localStorage.setItem('warrior_gym_user', JSON.stringify(demoMatch.user));
+        localStorage.setItem('alpha_zone_user', JSON.stringify(demoMatch.user));
         set({ user: demoMatch.user, isAuthenticated: true, isLoading: false });
         return demoMatch.user;
       }
-      
-      throw new Error('Invalid Email or Password');
+      // ─────────────────────────────────────────────────────────────────
+
+      // Step 1: Authenticate with Firebase for real accounts
+      const userCredential = await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
+      const idToken = await userCredential.user.getIdToken();
+
+      // Step 2: Send Firebase ID token to backend to get user profile
+      try {
+        const res = await API.post('/auth/login', { idToken, email: credentials.email });
+        const user = res.data;
+        localStorage.setItem('alpha_zone_user', JSON.stringify(user));
+        set({ user, isAuthenticated: true, isLoading: false });
+        return user;
+      } catch (backendErr) {
+        // Backend unavailable — build user from Firebase token claims
+        const fbUser = userCredential.user;
+        const user: User = {
+          uid: fbUser.uid,
+          name: fbUser.displayName || fbUser.email?.split('@')[0] || 'Admin',
+          email: fbUser.email || credentials.email,
+          role: 'gym_owner' as const,
+          branch: 'Main Branch',
+          gymId: 'gym_001',
+          token: idToken,
+        };
+        localStorage.setItem('alpha_zone_user', JSON.stringify(user));
+        set({ user, isAuthenticated: true, isLoading: false });
+        return user;
+      }
     } catch (firebaseErr: any) {
       set({ isLoading: false });
-      throw new Error(firebaseErr.message || 'Invalid Email or Password');
+      throw new Error('Invalid Email or Password');
     }
   },
   logout: async () => {
@@ -124,7 +171,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
     } catch (fbErr) {
       console.warn('Firebase client signout failed:', fbErr);
     }
-    localStorage.removeItem('warrior_gym_user');
+    localStorage.removeItem('alpha_zone_user');
     set({ user: null, isAuthenticated: false });
   }
 }));
@@ -226,6 +273,7 @@ interface GymStore {
   isLoading: boolean;
   
   fetchMembers: (force?: boolean) => Promise<void>;
+  fetchNextBiometricId: () => Promise<string>;
   addMember: (member: any) => Promise<void>;
   updateMember: (id: string, updates: any) => Promise<void>;
   deleteMember: (id: string) => Promise<void>;
@@ -288,27 +336,31 @@ export const useGymStore = create<GymStore>((set, get) => ({
         return;
       }
     } catch (err) {
-      console.warn('API fetch dashboard analytics fallback to Firestore:', err);
+      console.warn('API fetch analytics failed/unreachable, calculating from store:', err);
     }
-    try {
-      const { db } = await import('@/lib/firebase');
-      const { collection, getDocs } = await import('firebase/firestore');
-      const mSnap = await getDocs(collection(db, 'members'));
-      const activeMembers = mSnap.docs.filter(d => {
-        const data = d.data();
-        return !data.isDeleted && data.status !== 'HOLD' && data.activationStatus !== 'PENDING_ACTIVATION';
-      }).length;
-      set({
-        dashboardAnalytics: {
-          totalMembers: mSnap.size,
-          activeMembers: activeMembers,
-          todayAttendance: 0,
-          revenue: 0
-        }
-      });
-    } catch (e) {
-      console.error('Failed to compute analytics from Firestore:', e);
-    }
+
+    // Fallback calculation using members store state
+    const members = get().members;
+    const totalMembers = members.length;
+    const activeMembers = members.filter((m: any) => {
+      const st = String(m.status || '').toLowerCase();
+      return st === 'active' || st === 'expiring soon' || st === 'expiring';
+    }).length;
+    
+    let totalRevenue = 0;
+    const payments = get().payments;
+    payments.forEach((p: any) => {
+      if (p.amount) totalRevenue += Number(p.amount) || 0;
+    });
+
+    set({
+      dashboardAnalytics: {
+        totalMembers,
+        todayAttendance: get().attendance.length || 0,
+        activeMembers,
+        revenue: totalRevenue
+      }
+    });
   },
 
   fetchAttendanceSummary: async (memberId: string) => {
@@ -327,71 +379,137 @@ export const useGymStore = create<GymStore>((set, get) => ({
 
   fetchMembers: async (force = false) => {
     const now = Date.now();
-    if (!force && get().members.length > 0 && (now - _membersCacheTs) < STALE_MS) return;
-
-    // 1. Fetch via Next.js Server API (bypasses Firestore client security rules & QUIC errors via Admin SDK)
+    if (!force && get().members.length > 1 && (now - _membersCacheTs) < STALE_MS) return;
     try {
       const res = await API.get('/members');
       const rawData = (res.data && Array.isArray(res.data)) ? res.data : [];
       if (rawData.length > 0) {
+        const seenIds = new Set<string>();
         const seen = new Set<string>();
         const unique = (rawData as any[]).filter(m => {
-          const key = m.id
-            ? `id_${String(m.id).trim()}`
-            : (m.clientId
-              ? `cid_${String(m.clientId).trim()}`
-              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-                ? `mid_${String(m.memberId).trim()}`
-                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
+          if (!m) return false;
+          if (m.id) {
+            const idKey = String(m.id).trim();
+            if (idKey) {
+              if (seenIds.has(idKey)) return false;
+              seenIds.add(idKey);
+            }
+          }
+          const key = (m.memberId && m.memberId !== 'AZ-2026-0000')
+            ? `mid_${m.memberId.trim()}`
+            : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `id_${m.id}`);
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
         });
+
+        const getMemberSortTime = (m: any): number => {
+          if (m?.createdAt) {
+            const t = typeof m.createdAt === 'object' && m.createdAt.seconds
+              ? m.createdAt.seconds * 1000
+              : new Date(m.createdAt).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          if (m?.joinDate) {
+            const t = new Date(m.joinDate).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          if (m?.startDate) {
+            const t = new Date(m.startDate).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          return 0;
+        };
+        unique.sort((a: any, b: any) => getMemberSortTime(b) - getMemberSortTime(a));
+
         set({ members: unique });
         _membersCacheTs = Date.now();
         return;
       }
-    } catch (apiErr) {
-      console.warn('API fetchMembers fallback to direct Firestore:', apiErr);
+    } catch (err) {
+      console.warn('API fetch members failed or unreachable, attempting direct Firestore fallback:', err);
     }
 
-    // 2. Direct Firestore Client SDK fallback
+    // Direct Firestore Fallback for production Vercel / serverless deployments
     try {
-      const { db } = await import('@/lib/firebase');
+      const { db: fDb } = await import('../lib/firebase');
       const { collection, getDocs } = await import('firebase/firestore');
-      const snap = await getDocs(collection(db, 'members'));
-      if (!snap.empty) {
-        const list: any[] = [];
-        snap.forEach(docSnap => {
-          const d = docSnap.data();
-          if (!d.isDeleted && !d.deletedAt) {
-            list.push({ id: docSnap.id, ...d });
-          }
+      const querySnapshot = await getDocs(collection(fDb, 'members'));
+      if (!querySnapshot.empty) {
+        const fsMembers: any[] = [];
+        querySnapshot.forEach((docSnap) => {
+          fsMembers.push({ id: docSnap.id, ...docSnap.data() });
         });
+        const seenIds = new Set<string>();
         const seen = new Set<string>();
-        const unique = list.filter(m => {
-          const key = m.id
-            ? `id_${String(m.id).trim()}`
-            : (m.clientId
-              ? `cid_${String(m.clientId).trim()}`
-              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-                ? `mid_${String(m.memberId).trim()}`
-                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
+        const unique = fsMembers.filter(m => {
+          if (!m) return false;
+          if (m.id) {
+            const idKey = String(m.id).trim();
+            if (idKey) {
+              if (seenIds.has(idKey)) return false;
+              seenIds.add(idKey);
+            }
+          }
+          const key = (m.memberId && m.memberId !== 'AZ-2026-0000')
+            ? `mid_${m.memberId.trim()}`
+            : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `id_${m.id}`);
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
         });
+
+        const getMemberSortTime = (m: any): number => {
+          if (m?.createdAt) {
+            const t = typeof m.createdAt === 'object' && m.createdAt.seconds
+              ? m.createdAt.seconds * 1000
+              : new Date(m.createdAt).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          if (m?.joinDate) {
+            const t = new Date(m.joinDate).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          if (m?.startDate) {
+            const t = new Date(m.startDate).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          return 0;
+        };
+        unique.sort((a: any, b: any) => getMemberSortTime(b) - getMemberSortTime(a));
+
         set({ members: unique });
         _membersCacheTs = Date.now();
+        // Recalculate dashboard analytics with fetched members
+        get().fetchDashboardAnalytics();
+        return;
       }
-    } catch (firestoreErr) {
-      console.warn('Direct Firestore fetch members error:', firestoreErr);
+    } catch (fsErr) {
+      console.error('Direct Firestore members fetch failed:', fsErr);
+    }
+
+    if (get().members.length === 0) {
+      set({ members: [] });
     }
   },
+  fetchNextBiometricId: async () => {
+    try {
+      const res = await API.get('/members/next-biometric-id', { timeout: 15000 });
+      if (res.data && (res.data.nextBiometricId || res.data.nextId)) {
+        return String(res.data.nextBiometricId || res.data.nextId);
+      }
+    } catch (err) {
+      console.warn('API fetch next biometric ID notice:', err);
+    }
+    // Do not guess from a partial browser cache: employee and device IDs also
+    // occupy the same EasyBio namespace. The create-member API can allocate
+    // authoritatively if this preview request is unavailable.
+    return '';
+  },
   addMember: async (member) => {
-    const res = await API.post('/members', member);
-    // Always re-fetch from server to avoid duplicates from optimistic local appends
-    await get().fetchMembers();
+    const res = await API.post('/members', member, { timeout: 30000 });
+    // Always force re-fetch from server to ensure immediate top placement
+    await get().fetchMembers(true);
     get().fetchPayments(); // refresh invoices ledger
     return res.data;
   },
@@ -441,20 +559,28 @@ export const useGymStore = create<GymStore>((set, get) => ({
     if (!force && get().attendance.length > 0 && (now - _attendanceCacheTs) < STALE_MS) return;
     try {
       const res = await API.get('/attendance');
-      set({ attendance: res.data });
-      _attendanceCacheTs = Date.now();
-      return;
+      if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+        set({ attendance: res.data });
+        _attendanceCacheTs = Date.now();
+        return;
+      }
     } catch (err) {
-      console.warn('API fetch attendance failed, trying Firestore fallback:', err);
+      console.warn('API fetch attendance failed, trying direct Firestore fallback:', err);
     }
+
     try {
-      const { db } = await import('@/lib/firebase');
-      const { collection, getDocs, limit, query, orderBy } = await import('firebase/firestore');
-      const snap = await getDocs(query(collection(db, 'attendance_logs'), orderBy('timestamp', 'desc'), limit(100)));
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      set({ attendance: list });
-      _attendanceCacheTs = Date.now();
-    } catch (e) {}
+      const { db: fDb } = await import('../lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      const snap = await getDocs(collection(fDb, 'attendance'));
+      if (!snap.empty) {
+        const attendance: any[] = [];
+        snap.forEach(d => attendance.push({ id: d.id, ...d.data() }));
+        set({ attendance });
+        _attendanceCacheTs = Date.now();
+      }
+    } catch (fsErr) {
+      console.error('Direct Firestore attendance fetch failed:', fsErr);
+    }
   },
   triggerCheckIn: async (payload) => {
     await API.post('/attendance/checkin', payload);
@@ -504,10 +630,10 @@ export const useGymStore = create<GymStore>((set, get) => ({
         }
       } else {
         // Fallback default ID if collection is empty
-        await updateDoc(doc(db, 'devices', 'dev_k90_main'), {
+        await updateDoc(doc(db, 'devices', 'hikvision-main-gate'), {
           unlockPending: true
         });
-        console.log('Direct Firestore unlock flag set for default device: dev_k90_main');
+        console.log('Direct Firestore unlock flag set for default device: hikvision-main-gate');
       }
     } catch (firestoreErr) {
       console.error("Direct Firestore gate unlock failed:", firestoreErr);
@@ -525,18 +651,22 @@ export const useGymStore = create<GymStore>((set, get) => ({
         return;
       }
     } catch (err) {
-      console.warn('API fetch payments failed, trying direct Firestore:', err);
+      console.warn('API fetch payments failed, trying direct Firestore fallback:', err);
     }
+
     try {
-      const { db } = await import('@/lib/firebase');
+      const { db: fDb } = await import('../lib/firebase');
       const { collection, getDocs } = await import('firebase/firestore');
-      const snap = await getDocs(collection(db, 'payments'));
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
-      set({ payments: list });
-      _paymentsCacheTs = Date.now();
-    } catch (e) {
-      console.error('Failed to fetch payments from Firestore:', e);
+      const snap = await getDocs(collection(fDb, 'payments'));
+      if (!snap.empty) {
+        const payments: any[] = [];
+        snap.forEach(d => payments.push({ id: d.id, ...d.data() }));
+        set({ payments });
+        _paymentsCacheTs = Date.now();
+        get().fetchDashboardAnalytics();
+      }
+    } catch (fsErr) {
+      console.error('Direct Firestore payments fetch failed:', fsErr);
     }
   },
   addPayment: async (payment) => {
@@ -561,16 +691,20 @@ export const useGymStore = create<GymStore>((set, get) => ({
         return;
       }
     } catch (err) {
-      console.warn('API fetch plans failed, trying direct Firestore:', err);
+      console.warn('API fetch plans failed, trying direct Firestore fallback:', err);
     }
+
     try {
-      const { db } = await import('@/lib/firebase');
+      const { db: fDb } = await import('../lib/firebase');
       const { collection, getDocs } = await import('firebase/firestore');
-      const snap = await getDocs(collection(db, 'plans'));
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      set({ plans: list });
-    } catch (e) {
-      console.error('Failed to fetch plans from Firestore:', e);
+      const snap = await getDocs(collection(fDb, 'plans'));
+      if (!snap.empty) {
+        const plans: any[] = [];
+        snap.forEach(d => plans.push({ id: d.id, ...d.data() }));
+        set({ plans });
+      }
+    } catch (fsErr) {
+      console.error('Direct Firestore plans fetch failed:', fsErr);
     }
   },
   addPlan: async (plan) => {

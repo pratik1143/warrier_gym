@@ -7,7 +7,7 @@ import {
   Users, Search, Plus, Filter, UserCheck, Briefcase, 
   Trash2, Edit, X, Check, ArrowRight, UserPlus, Phone, 
   Mail, MapPin, Shield, Cpu, RefreshCw, Eye, Sparkles, Clock, AlertCircle,
-  MoreHorizontal, Fingerprint, MessageSquare
+  MoreHorizontal, Fingerprint, MessageSquare, Lock, Unlock, ScanFace
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, addDoc, updateDoc, deleteDoc, where, getDocs } from 'firebase/firestore';
@@ -18,7 +18,10 @@ import toast from '@/lib/toast';
 import SmartPhotoCapture from '../components/SmartPhotoCapture';
 import SendWhatsAppModal from '../components/SendWhatsAppModal';
 import { z } from 'zod';
-import staffDirectoryService, { BASELINE_MANAGER } from '@/services/staff.service';
+import {
+  queueHikvisionEnrollment, waitForHikvisionEnrollment, setBiometricAccess, queueTerminalSync, EnrollmentType
+} from '@/lib/employeeBiometric';
+import staffDirectoryService, { BASELINE_REAL_TRAINERS } from '@/services/staff.service';
 
 function deduplicateAllEmployees(rawList: any[]) {
   const map = new Map<string, any>();
@@ -140,7 +143,7 @@ export default function EmployeesPage() {
     };
   }, []);
 
-  const rawEmployeesList = employees && employees.length > 0 ? employees : [BASELINE_MANAGER];
+  const rawEmployeesList = employees && employees.length > 0 ? employees : BASELINE_REAL_TRAINERS;
   const activeEmployeesList = deduplicateAllEmployees(rawEmployeesList);
 
   // Stats
@@ -222,10 +225,49 @@ export default function EmployeesPage() {
     }
   };
 
+  // Block / unblock this employee's gate access on the Hikvision terminal (queued to the on-site agent)
+  const handleBiometricAccess = async (emp: any) => {
+    const bio = String(emp.biometricId ?? emp.deviceUserId ?? '').trim();
+    if (!emp.id || !/^\d+$/.test(bio)) {
+      toast.error('This employee has no numeric biometric ID yet.');
+      return;
+    }
+    const enable = emp.biometricBlocked === true;
+    const toastId = `bio-access-${emp.id}`;
+    toast.loading(enable ? 'Unblocking gate access - waiting for the terminal...' : 'Blocking gate access - waiting for the terminal...', { id: toastId });
+    try {
+      const out = await setBiometricAccess({ memberId: emp.id, biometricId: bio, enabled: enable, isEmployee: true });
+      if (out.ok) {
+        toast.success(`${emp.name}: ${out.message}`, { id: toastId });
+      } else if (out.pending) {
+        toast(out.message, { id: toastId });
+      } else {
+        toast.error(out.message, { id: toastId });
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Could not queue the access change.', { id: toastId });
+    }
+  };
+
+  // Re-sync this employee to the Hikvision terminal (creates the user there if missing)
+  const handleTerminalSync = async (emp: any) => {
+    const bio = String(emp.biometricId ?? emp.deviceUserId ?? '').trim();
+    if (!emp.id || !/^\d+$/.test(bio)) {
+      toast.error('This employee has no numeric biometric ID yet.');
+      return;
+    }
+    try {
+      await queueTerminalSync({ memberId: emp.id, memberName: emp.name || 'Employee', biometricId: bio, isEmployee: true });
+      toast.success(`${emp.name || 'Employee'} queued for sync to the terminal.`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Sync could not be queued.');
+    }
+  };
+
   const getRoleBadgeStyle = (role: string) => {
     const r = (role || '').toLowerCase();
-    if (r.includes('manager')) return 'bg-indigo-50 text-indigo-700 border-indigo-200/60';
-    if (r.includes('trainer')) return 'bg-[#FFF7ED] text-[#C2410C] border-orange-200/60';
+    if (r.includes('manager')) return 'bg-orange-50 text-orange-700 border-orange-200/60';
+    if (r.includes('trainer')) return 'bg-orange-50 text-orange-700 border-orange-200/60';
     if (r.includes('reception')) return 'bg-emerald-50 text-emerald-700 border-emerald-200/60';
     if (r.includes('owner')) return 'bg-purple-50 text-purple-700 border-purple-200/60';
     return 'bg-slate-100 text-slate-700 border-slate-200';
@@ -236,11 +278,11 @@ export default function EmployeesPage() {
       
       {/* Page Header */}
       <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div>
           <div className="flex items-center gap-2.5 mb-2">
-            <span className="px-3 py-1 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
+            <span className="px-3 py-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
               Staff Management Engine
             </span>
             <span className="text-xs text-slate-400 font-mono font-bold">TWG-EMP-v4.0</span>
@@ -251,7 +293,7 @@ export default function EmployeesPage() {
         
         <button 
           onClick={() => setShowAddWizard(true)}
-          className="px-6 py-3.5 bg-gradient-to-r from-[#EA580C] to-[#FB923C] hover:from-[#C2410C] hover:to-[#EA580C] text-white rounded-2xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(234,88,12,0.25)] transition-all hover:scale-[1.02] active:scale-95 shrink-0"
+          className="px-6 py-3.5 bg-gradient-to-r from-[#EA580C] to-[#F97316] hover:from-[#C2410C] hover:to-[#EA580C] text-white rounded-2xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(234, 88, 12,0.25)] transition-all hover:scale-[1.02] active:scale-95 shrink-0"
         >
           <Plus size={16} /> Register New Employee
         </button>
@@ -265,7 +307,7 @@ export default function EmployeesPage() {
           { label: 'Absent Today', value: absentToday, sub: 'Not Punched Yet', icon: AlertCircle },
           { label: 'Currently Inside', value: currentlyInside, sub: 'Active inside Gym', icon: Shield }
         ].map((stat, i) => (
-          <div key={i} className="bg-white border border-[#FED7AA] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234,88,12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
+          <div key={i} className="bg-white border border-[#FFEDD5] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234, 88, 12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{stat.label}</span>
               <div className="p-2.5 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] text-[#EA580C]">
@@ -281,7 +323,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* Filter and Search Bar (Cleaned: All Roles & All Statuses, No All Branches) */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234,88,12,0.02)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234, 88, 12,0.02)]">
         <div className="relative flex-1 min-w-[240px]">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input 
@@ -289,7 +331,7 @@ export default function EmployeesPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search staff by name, phone, email or biometric ID..."
-            className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
+            className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
           />
         </div>
 
@@ -297,7 +339,7 @@ export default function EmployeesPage() {
           <select 
             value={roleFilter}
             onChange={e => setRoleFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="all">All Roles</option>
             {['Trainer', 'Reception', 'Manager', 'Owner', 'Cleaner', 'Security', 'Nutritionist', 'Sales', 'Custom'].map(r => (
@@ -308,7 +350,7 @@ export default function EmployeesPage() {
           <select 
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="all">All Statuses</option>
             <option value="Active">Active</option>
@@ -318,7 +360,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* Redesigned Employee Table Grid (Members Table Visual Language) */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234,88,12,0.03)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234, 88, 12,0.03)]">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs whitespace-nowrap">
             <thead className="bg-[#EA580C] text-[#fdfdfd] font-extrabold uppercase tracking-wider text-[9.5px] border-b border-[#C2410C]">
@@ -395,6 +437,9 @@ export default function EmployeesPage() {
                       <span className="font-mono font-black text-slate-900 bg-slate-50 border border-slate-200/60 px-2.5 py-1 rounded-xl text-xs">
                         {emp.biometricId ? `#${emp.biometricId}` : '—'}
                       </span>
+                      {emp.biometricBlocked === true && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 border border-rose-200 text-[8.5px] font-black uppercase tracking-wider">Blocked</span>
+                      )}
                     </td>
 
                     {/* 5. Account Status */}
@@ -494,9 +539,9 @@ export default function EmployeesPage() {
               setActionsMenu(null);
               setEditingEmployee(emp);
             }}
-            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
           >
-            <Edit size={14} className="text-[#EA580C]" />
+            <Edit size={14} className="text-orange-600" />
             <span>Edit Employee</span>
           </button>
 
@@ -508,10 +553,40 @@ export default function EmployeesPage() {
               setActionsMenu(null);
               setActiveProfile(emp);
             }}
-            className="w-full px-3.5 py-2 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
           >
-            <Clock size={14} className="text-indigo-600" />
+            <Clock size={14} className="text-orange-600" />
             <span>Attendance History</span>
+          </button>
+
+          {/* Gate access on the terminal (block / unblock) */}
+          <button
+            type="button"
+            onClick={() => {
+              const emp = actionsMenu.employee;
+              setActionsMenu(null);
+              handleBiometricAccess(emp);
+            }}
+            className="w-full px-3.5 py-2 hover:bg-rose-50 hover:text-rose-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+          >
+            {actionsMenu.employee.biometricBlocked === true
+              ? <Unlock size={14} className="text-emerald-600" />
+              : <Lock size={14} className="text-rose-600" />}
+            <span>{actionsMenu.employee.biometricBlocked === true ? 'Unblock Gate Access' : 'Block Gate Access'}</span>
+          </button>
+
+          {/* Re-sync to the Hikvision terminal */}
+          <button
+            type="button"
+            onClick={() => {
+              const emp = actionsMenu.employee;
+              setActionsMenu(null);
+              handleTerminalSync(emp);
+            }}
+            className="w-full px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+          >
+            <RefreshCw size={14} className="text-slate-500" />
+            <span>Sync to Terminal</span>
           </button>
 
           {/* Call Staff */}
@@ -718,7 +793,10 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
   const [device, setDevice] = useState('Hikvision DS-K1T320EFWX');
   const [biometricIdType, setBiometricIdType] = useState<'auto' | 'manual'>('auto');
   const [manualBiometricId, setManualBiometricId] = useState('');
-  const [enrollStatus, setEnrollStatus] = useState<'idle' | 'scanning' | 'success'>('idle');
+  const [savedRecord, setSavedRecord] = useState<{ id: string; biometricId: string; existing: boolean; viaApi: boolean } | null>(null);
+  const [faceState, setFaceState] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
+  const [fingerState, setFingerState] = useState<'idle' | 'working' | 'done' | 'failed'>('idle');
+  const [enrollMsg, setEnrollMsg] = useState('');
 
   const validateForm = () => {
     if (role === 'Trainer') {
@@ -754,79 +832,134 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
     }
   };
 
-  const handleEnrollFingerprint = () => {
-    setEnrollStatus('scanning');
-    setTimeout(() => {
-      setEnrollStatus('success');
-      toast.success('Fingerprint enrolled successfully!');
-    }, 2500);
+  const buildPayload = () => ({
+    name,
+    phone,
+    email,
+    role,
+    type: role.toLowerCase(),
+    branch,
+    emergencyContact,
+    address,
+    avatarUrl,
+    device,
+    specialization: role === 'Trainer' ? specialization : '',
+    experience: role === 'Trainer' ? experience : '',
+    certifications: role === 'Trainer' ? certifications : '',
+    bio: role === 'Trainer' ? bio : '',
+    biometricId: biometricIdType === 'auto' ? 'auto' : manualBiometricId,
+    deviceUserId: biometricIdType === 'auto' ? '' : manualBiometricId,
+    todayStatus: 'Absent',
+    currentStatus: 'Outside',
+    lastPunch: null
+  });
+
+  // Saves the employee exactly once (so enrolling first and then finishing never creates a duplicate)
+  const ensureEmployeeRecord = async () => {
+    if (savedRecord) return savedRecord;
+    const payload: any = buildPayload();
+
+    let existingDocId: string | null = null;
+    let existingBio = '';
+    try {
+      if (phone) {
+        const snapPhone = await getDocs(query(collection(db, 'employees'), where('phone', '==', phone)));
+        if (!snapPhone.empty) {
+          existingDocId = snapPhone.docs[0].id;
+          existingBio = String(snapPhone.docs[0].data().biometricId ?? '');
+        }
+      }
+      if (!existingDocId && email) {
+        const snapEmail = await getDocs(query(collection(db, 'employees'), where('email', '==', email)));
+        if (!snapEmail.empty) {
+          existingDocId = snapEmail.docs[0].id;
+          existingBio = String(snapEmail.docs[0].data().biometricId ?? '');
+        }
+      }
+    } catch (checkErr) {
+      console.warn('Error checking existing employee doc:', checkErr);
+    }
+
+    let rec: { id: string; biometricId: string; existing: boolean; viaApi: boolean };
+    if (existingDocId) {
+      if (existingBio && payload.biometricId === 'auto') {
+        payload.biometricId = existingBio;
+        payload.deviceUserId = existingBio;
+      }
+      await updateDoc(doc(db, 'employees', existingDocId), { ...payload, updatedAt: new Date().toISOString() });
+      rec = { id: existingDocId, biometricId: payload.biometricId === 'auto' ? '' : String(payload.biometricId), existing: true, viaApi: false };
+    } else {
+      let created: any = null;
+      try {
+        const res = await API.post('/employees', payload);
+        created = res.data;
+      } catch (apiErr) {
+        console.warn('API employee creation failed:', apiErr);
+      }
+      if (created?.id) {
+        rec = { id: created.id, biometricId: String(created.biometricId ?? ''), existing: false, viaApi: true };
+      } else {
+        // API unavailable: save directly so the employee is not lost
+        const ref = await addDoc(collection(db, 'employees'), { ...payload, createdAt: new Date().toISOString() });
+        rec = { id: ref.id, biometricId: payload.biometricId === 'auto' ? '' : String(payload.biometricId), existing: false, viaApi: false };
+      }
+    }
+    setSavedRecord(rec);
+    return rec;
+  };
+
+  // Real enrollment on the Hikvision terminal via the on-site agent (no simulation)
+  const handleEnroll = async (type: EnrollmentType) => {
+    if (!validateForm()) {
+      setStep(1);
+      return;
+    }
+    const setState = type === 'FACE' ? setFaceState : setFingerState;
+    setState('working');
+    setEnrollMsg('');
+    try {
+      const rec = await ensureEmployeeRecord();
+      if (!rec.biometricId || !/^\d+$/.test(rec.biometricId)) {
+        throw new Error('No numeric biometric ID is assigned yet. Enter a manual ID or retry.');
+      }
+      await queueHikvisionEnrollment({ memberId: rec.id, memberName: name, biometricId: rec.biometricId, enrollmentType: type });
+      setEnrollMsg(type === 'FACE'
+        ? 'Command sent. Ask the staff member to look at the terminal camera now...'
+        : 'Command sent. Place the finger on the terminal reader when prompted...');
+      const outcome = await waitForHikvisionEnrollment(rec.biometricId, type);
+      setState(outcome.ok ? 'done' : 'failed');
+      setEnrollMsg(outcome.message);
+      if (outcome.ok) toast.success(outcome.message);
+      else toast.error(outcome.message);
+    } catch (err: any) {
+      setState('failed');
+      const msg = err.response?.data?.error || err.message || 'Enrollment failed';
+      setEnrollMsg(msg);
+      toast.error(msg);
+    }
   };
 
   const handleSubmit = async () => {
     if (step === 1 && !validateForm()) return;
     setSubmitting(true);
     try {
-      const payload = {
-        name,
-        phone,
-        email,
-        role,
-        type: role.toLowerCase(),
-        branch,
-        emergencyContact,
-        address,
-        avatarUrl,
-        device,
-        specialization: role === 'Trainer' ? specialization : '',
-        experience: role === 'Trainer' ? experience : '',
-        certifications: role === 'Trainer' ? certifications : '',
-        bio: role === 'Trainer' ? bio : '',
-        biometricId: biometricIdType === 'auto' ? 'auto' : manualBiometricId,
-        deviceUserId: biometricIdType === 'auto' ? '' : manualBiometricId,
-        todayStatus: 'Absent',
-        currentStatus: 'Outside',
-        lastPunch: null
-      };
+      const rec = await ensureEmployeeRecord();
+      const enrolled = faceState === 'done' || fingerState === 'done';
 
-      let existingDocId: string | null = null;
-      try {
-        if (phone) {
-          const qPhone = query(collection(db, 'employees'), where('phone', '==', phone));
-          const snapPhone = await getDocs(qPhone);
-          if (!snapPhone.empty) existingDocId = snapPhone.docs[0].id;
+      // Skipped / unfinished enrollment: the server still puts the user on the terminal.
+      // (The API already queues this when it created the record; queue it here for the other paths.)
+      if (!enrolled && !rec.viaApi && /^\d+$/.test(rec.biometricId)) {
+        try {
+          await queueTerminalSync({ memberId: rec.id, memberName: name, biometricId: rec.biometricId, isEmployee: true });
+        } catch (syncErr) {
+          console.warn('Terminal sync could not be queued:', syncErr);
         }
-        if (!existingDocId && email) {
-          const qEmail = query(collection(db, 'employees'), where('email', '==', email));
-          const snapEmail = await getDocs(qEmail);
-          if (!snapEmail.empty) existingDocId = snapEmail.docs[0].id;
-        }
-      } catch (checkErr) {
-        console.warn('Error checking existing employee doc:', checkErr);
       }
 
-      try {
-        await API.post('/employees', payload);
-      } catch (apiErr) {
-        console.warn('API employee creation failed:', apiErr);
+      toast.success(rec.existing ? 'Employee updated successfully!' : 'Employee created successfully!');
+      if (!enrolled) {
+        toast('Biometric not enrolled yet - the server will create this user on the terminal. Enroll face/finger later from Actions.', { icon: 'ℹ️' });
       }
-
-      try {
-        if (existingDocId) {
-          await updateDoc(doc(db, 'employees', existingDocId), {
-            ...payload,
-            updatedAt: new Date().toISOString()
-          });
-        } else {
-          await addDoc(collection(db, 'employees'), {
-            ...payload,
-            createdAt: new Date().toISOString()
-          });
-        }
-      } catch (fsErr) {
-        console.warn('Direct Firestore employee save failed:', fsErr);
-      }
-
-      toast.success(existingDocId ? 'Employee updated successfully!' : 'Employee created successfully!');
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {
@@ -842,7 +975,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
       
       <div className="relative w-full max-w-lg bg-white rounded-3xl z-10 shadow-[0_30px_70px_rgba(0,0,0,0.12)] overflow-hidden border border-slate-100 flex flex-col max-h-[85vh] text-slate-800 text-left font-display">
         {/* Top Accent bar */}
-        <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 to-[#d4ff00] shrink-0" />
+        <div className="h-1.5 w-full bg-gradient-to-r from-orange-600 to-[#d4ff00] shrink-0" />
 
         {/* Close button */}
         <button onClick={onClose} className="absolute top-4 right-4 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 border border-slate-250 flex items-center justify-center cursor-pointer z-20">
@@ -858,8 +991,8 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
             </div>
             {/* Progress indicators */}
             <div className="flex gap-1.5">
-              <span className={`w-4 h-1.5 rounded-full ${step >= 1 ? 'bg-[#EA580C]' : 'bg-slate-200'}`} />
-              <span className={`w-4 h-1.5 rounded-full ${step >= 2 ? 'bg-[#EA580C]' : 'bg-slate-200'}`} />
+              <span className={`w-4 h-1.5 rounded-full ${step >= 1 ? 'bg-orange-600' : 'bg-slate-200'}`} />
+              <span className={`w-4 h-1.5 rounded-full ${step >= 2 ? 'bg-orange-600' : 'bg-slate-200'}`} />
             </div>
           </div>
         </div>
@@ -891,7 +1024,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                       if (errors.name) setErrors(prev => ({ ...prev, name: '' }));
                     }}
                     className={`w-full text-xs bg-slate-50 border rounded-xl px-3 py-2.5 focus:outline-none transition-all text-slate-800 font-medium ${
-                      errors.name ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-indigo-500 focus:bg-white'
+                      errors.name ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-orange-500 focus:bg-white'
                     }`}
                   />
                   {errors.name && (
@@ -912,7 +1045,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                       if (errors.phone) setErrors(prev => ({ ...prev, phone: '' }));
                     }}
                     className={`w-full text-xs bg-slate-50 border rounded-xl px-3 py-2.5 focus:outline-none transition-all text-slate-800 font-medium ${
-                      errors.phone ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-indigo-500 focus:bg-white'
+                      errors.phone ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-orange-500 focus:bg-white'
                     }`}
                   />
                   {errors.phone && (
@@ -935,7 +1068,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                       if (errors.email) setErrors(prev => ({ ...prev, email: '' }));
                     }}
                     className={`w-full text-xs bg-slate-50 border rounded-xl px-3 py-2.5 focus:outline-none transition-all text-slate-800 font-medium ${
-                      errors.email ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-indigo-500 focus:bg-white'
+                      errors.email ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-orange-500 focus:bg-white'
                     }`}
                   />
                   {errors.email && (
@@ -950,7 +1083,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                   <select 
                     value={role} 
                     onChange={e => setRole(e.target.value)}
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-800 font-semibold cursor-pointer"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-800 font-semibold cursor-pointer"
                   >
                     {['Reception', 'Manager', 'Accountant', 'Cleaner', 'Security', 'Staff', 'Other', 'Trainer'].map(r => (
                       <option key={r} value={r}>{r}</option>
@@ -961,12 +1094,12 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
 
               {/* TRAINER SEPARATION REDIRECT NOTICE */}
               {role === 'Trainer' && (
-                <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-2xl p-4 space-y-2 text-blue-900">
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-2 text-orange-900">
                   <div className="flex items-center gap-2 text-xs font-black">
-                    <Sparkles size={16} className="text-[#EA580C] shrink-0" />
+                    <Sparkles size={16} className="text-orange-600 shrink-0" />
                     <span>Trainers are managed from the Trainers Module</span>
                   </div>
-                  <p className="text-[11px] text-[#C2410C] font-medium leading-relaxed">
+                  <p className="text-[11px] text-orange-700 font-medium leading-relaxed">
                     To maintain clean records, create trainer profiles with specializations and client limits in the Trainers module. They will automatically sync to Employees.
                   </p>
                   <button
@@ -985,7 +1118,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                   <select 
                     value={branch} 
                     onChange={e => setBranch(e.target.value)}
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-800 font-semibold cursor-pointer"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-800 font-semibold cursor-pointer"
                   >
                     <option value="Mohali, Punjab">Mohali, Punjab</option>
                     <option value="Chandigarh">Chandigarh</option>
@@ -1004,7 +1137,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                       if (errors.emergencyContact) setErrors(prev => ({ ...prev, emergencyContact: '' }));
                     }}
                     className={`w-full text-xs bg-slate-50 border rounded-xl px-3 py-2.5 focus:outline-none transition-all text-slate-800 font-medium ${
-                      errors.emergencyContact ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-indigo-500 focus:bg-white'
+                      errors.emergencyContact ? 'border-red-500 bg-red-50/20' : 'border-slate-200 focus:border-orange-500 focus:bg-white'
                     }`}
                   />
                   {errors.emergencyContact && (
@@ -1022,7 +1155,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                   placeholder="e.g. H.No 1234, Phase 3B2, Mohali" 
                   value={address}
                   onChange={e => setAddress(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all text-slate-800 font-medium"
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-800 font-medium"
                 />
               </div>
             </div>
@@ -1030,7 +1163,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
             <div className="space-y-4 text-xs font-semibold">
               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3">
                 <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <Cpu size={13} className="text-[#EA580C] animate-pulse" /> Hikvision Biometric Integration
+                  <Cpu size={13} className="text-orange-600 animate-pulse" /> Hikvision Biometric Integration
                 </h4>
                 <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
                   Connect employee account directly to the physical biometric lock. Employees punch biometric ID to log attendance and unlock the gate.
@@ -1043,7 +1176,7 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                   <select 
                     value={device} 
                     onChange={e => setDevice(e.target.value)}
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-800 font-semibold cursor-pointer"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-800 font-semibold cursor-pointer"
                   >
                     <option value="Hikvision DS-K1T320EFWX">Hikvision DS-K1T320EFWX (Mohali Front Gate)</option>
                   </select>
@@ -1055,14 +1188,14 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                     <button 
                       type="button" 
                       onClick={() => setBiometricIdType('auto')}
-                      className={`flex-1 py-2 text-center rounded-xl border text-[10px] font-extrabold cursor-pointer transition-all ${biometricIdType === 'auto' ? 'bg-[#EA580C] text-white border-[#EA580C] shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100'}`}
+                      className={`flex-1 py-2 text-center rounded-xl border text-[10px] font-extrabold cursor-pointer transition-all ${biometricIdType === 'auto' ? 'bg-orange-600 text-white border-orange-600 shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100'}`}
                     >
                       Auto Generate
                     </button>
                     <button 
                       type="button" 
                       onClick={() => setBiometricIdType('manual')}
-                      className={`flex-1 py-2 text-center rounded-xl border text-[10px] font-extrabold cursor-pointer transition-all ${biometricIdType === 'manual' ? 'bg-[#EA580C] text-white border-[#EA580C] shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100'}`}
+                      className={`flex-1 py-2 text-center rounded-xl border text-[10px] font-extrabold cursor-pointer transition-all ${biometricIdType === 'manual' ? 'bg-orange-600 text-white border-orange-600 shadow-xs' : 'bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100'}`}
                     >
                       Manual ID
                     </button>
@@ -1078,37 +1211,49 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
                     placeholder="Enter device user slot (e.g. 501)" 
                     value={manualBiometricId}
                     onChange={e => setManualBiometricId(e.target.value)}
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all text-slate-800 font-medium"
+                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-800 font-medium"
                   />
                 </div>
               )}
 
-              {/* Fingerprint Enrollment Simulation */}
-              <div className="border border-slate-150 rounded-2xl p-4 flex justify-between items-center bg-slate-50/50">
-                <div>
-                  <h4 className="text-[10px] font-extrabold text-slate-800 uppercase tracking-wider">Enroll Fingerprint</h4>
-                  <p className="text-[9px] text-slate-400 font-semibold mt-0.5">Initialize biometric hardware enrollment scan</p>
-                </div>
-                {enrollStatus === 'idle' && (
-                  <button 
-                    type="button" 
-                    onClick={handleEnrollFingerprint}
-                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-300 rounded-xl text-[10px] font-bold cursor-pointer"
-                  >
-                    Start Scan
-                  </button>
-                )}
-                {enrollStatus === 'scanning' && (
-                  <div className="flex items-center gap-2 text-[10px] font-extrabold text-[#EA580C]">
-                    <div className="w-4 h-4 border-2 border-[#EA580C] border-t-transparent rounded-full animate-spin" />
-                    Scanning Finger...
+              {/* Hikvision enrollment - queued to the on-site agent, status polled from the terminal */}
+              <div className="border border-slate-150 rounded-2xl p-4 space-y-3 bg-slate-50/50">
+                {([
+                  { type: 'FACE' as EnrollmentType, label: 'Enroll Face', hint: 'Staff member looks at the terminal camera', state: faceState },
+                  { type: 'FINGERPRINT' as EnrollmentType, label: 'Enroll Fingerprint', hint: 'Staff member places a finger on the terminal reader', state: fingerState },
+                ]).map(item => (
+                  <div key={item.type} className="flex justify-between items-center gap-3">
+                    <div>
+                      <h4 className="text-[10px] font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        {item.type === 'FACE' ? <ScanFace size={12} /> : <Fingerprint size={12} />} {item.label}
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{item.hint}</p>
+                    </div>
+                    {item.state === 'working' ? (
+                      <div className="flex items-center gap-2 text-[10px] font-extrabold text-orange-600">
+                        <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                        Waiting for terminal...
+                      </div>
+                    ) : item.state === 'done' ? (
+                      <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                        ✓ Enrolled
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleEnroll(item.type)}
+                        disabled={faceState === 'working' || fingerState === 'working'}
+                        className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-300 rounded-xl text-[10px] font-bold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {item.state === 'failed' ? 'Retry' : 'Start Enrollment'}
+                      </button>
+                    )}
                   </div>
-                )}
-                {enrollStatus === 'success' && (
-                  <span className="text-[9px] font-black text-emerald-600 uppercase bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full flex items-center gap-1">
-                    ✓ Enrolled
-                  </span>
-                )}
+                ))}
+                {enrollMsg && <p className="text-[10px] font-semibold text-slate-600 leading-relaxed">{enrollMsg}</p>}
+                <p className="text-[9px] text-slate-400 font-medium leading-relaxed">
+                  Skipping is fine: the server creates this employee on the Hikvision terminal automatically, and face/finger can be enrolled later.
+                </p>
               </div>
             </div>
           )}
@@ -1132,14 +1277,15 @@ function AddEmployeeWizard({ onClose, onSuccess }: { onClose: () => void; onSucc
               <div className="flex gap-2">
                 <button 
                   onClick={handleSubmit}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider border border-slate-300 cursor-pointer"
+                  disabled={submitting || faceState === 'working' || fingerState === 'working'}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-black uppercase tracking-wider border border-slate-300 cursor-pointer disabled:opacity-50"
                 >
                   Skip Biometric
                 </button>
                 <button 
                   onClick={handleSubmit}
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center gap-1 shadow-md shadow-orange-500/20 active:scale-95 transition-all disabled:opacity-50"
+                  className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center gap-1 shadow-md shadow-orange-600/10 active:scale-95 transition-all disabled:opacity-50"
                 >
                   {submitting ? 'Registering...' : 'Finish Registration'}
                 </button>
@@ -1221,7 +1367,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
         onSubmit={handleSubmit} 
         className="relative w-full max-w-lg bg-white rounded-3xl z-10 shadow-[0_30px_70px_rgba(0,0,0,0.15)] overflow-hidden border border-slate-100 flex flex-col max-h-[90vh] sm:max-h-[85vh] text-slate-800 text-left font-display"
       >
-        <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 to-[#d4ff00] shrink-0" />
+        <div className="h-1.5 w-full bg-gradient-to-r from-orange-600 to-[#d4ff00] shrink-0" />
         
         {/* Sticky Header */}
         <div className="sticky top-0 bg-white z-20 px-5 sm:px-6 py-4 border-b border-slate-100 shrink-0 flex items-center justify-between">
@@ -1261,7 +1407,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 value={name} 
                 onChange={e => setName(e.target.value)} 
                 required 
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
 
@@ -1287,7 +1433,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 value={phone} 
                 onChange={e => setPhone(e.target.value)} 
                 required 
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
             <div>
@@ -1297,7 +1443,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 value={email} 
                 onChange={e => setEmail(e.target.value)} 
                 required 
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
           </div>
@@ -1322,7 +1468,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 value={department} 
                 onChange={e => setDepartment(e.target.value)} 
                 placeholder="e.g. Fitness & Training"
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
           </div>
@@ -1334,7 +1480,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 type="date" 
                 value={joiningDate} 
                 onChange={e => setJoiningDate(e.target.value)} 
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
             <div>
@@ -1344,7 +1490,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 value={salary} 
                 onChange={e => setSalary(e.target.value)} 
                 placeholder="₹ Amount"
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
             <div>
@@ -1368,7 +1514,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
                 value={biometricId} 
                 onChange={e => setBiometricId(Number(e.target.value))} 
                 required 
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-700" 
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 focus:bg-white text-slate-700" 
               />
             </div>
             <div>
@@ -1421,7 +1567,7 @@ function EditEmployeeModal({ employee, onClose, onSuccess }: { employee: any, on
           <button 
             type="submit" 
             disabled={submitting} 
-            className="px-5 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center gap-1 shadow-md shadow-orange-500/20 active:scale-95 transition-all disabled:opacity-50"
+            className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center gap-1 shadow-md shadow-orange-600/10 active:scale-95 transition-all disabled:opacity-50"
           >
             {submitting ? 'Saving...' : 'Save Profile Changes'}
           </button>
@@ -1513,7 +1659,7 @@ function TrainerProfileCard({ employee }: { employee: any }) {
         </div>
         <div className="bg-white p-3 rounded-2xl border border-amber-200 shadow-sm">
           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Active PT Clients</span>
-          <span className="text-lg font-black text-indigo-600">{activePtClients.length}</span>
+          <span className="text-lg font-black text-orange-600">{activePtClients.length}</span>
         </div>
         <div className="bg-white p-3 rounded-2xl border border-amber-200 shadow-sm">
           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Total PT Revenue</span>
@@ -1547,7 +1693,7 @@ function TrainerProfileCard({ employee }: { employee: any }) {
                   <div className="text-[10px] text-slate-400 font-mono">Plan: {m.plan || 'Standard'}</div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                  <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
                     View Profile →
                   </span>
                 </div>
@@ -1583,7 +1729,7 @@ function EmployeeProfileDrawer({ employee, attendance, onClose, onWhatsApp }: { 
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5">
-              <Briefcase size={14} className="text-[#EA580C]" /> Employee Profile
+              <Briefcase size={14} className="text-orange-600" /> Employee Profile
             </h3>
             <button onClick={onClose} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 border border-slate-250 flex items-center justify-center cursor-pointer">
               <X size={12} />

@@ -4,7 +4,7 @@ import * as fs from 'fs';
 
 async function main() {
   console.log('===============================================================');
-  console.log('  WARRIOR GYM OS — PRODUCTION REAL ENQUIRY EXCEL IMPORT');
+  console.log('  THE WARRIOR GYM OS — PRODUCTION REAL ENQUIRY EXCEL IMPORT');
   console.log('===============================================================\n');
 
   const defaultPath = 'C:\\Users\\HP CONNECT\\Downloads\\inquiries 230826.xlsx';

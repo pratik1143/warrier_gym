@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getFirestoreDb } from '../firebase';
+import { db, getFirestoreDb } from '../firebase';
 import { generateAutomatedFollowups } from '../services/followupAutomation.service';
 
 export const getFollowups = async (req: Request, res: Response) => {
@@ -10,7 +10,8 @@ export const getFollowups = async (req: Request, res: Response) => {
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       return res.json(list);
     }
-    return res.json([]);
+    const list = await db.getFollowups();
+    return res.json(list);
   } catch (error: any) {
     console.error('Error fetching followups:', error);
     return res.json([]);
@@ -28,6 +29,7 @@ export const createFollowup = async (req: Request, res: Response) => {
 
     const payload = {
       memberId: data.memberId || null,
+      invoiceId: data.invoiceId || null,
       enquiryId: data.enquiryId || null,
       employeeId: data.employeeId || null,
       memberName: data.memberName || data.name || '',
@@ -38,6 +40,7 @@ export const createFollowup = async (req: Request, res: Response) => {
       reason: data.reason || data.title || data.notes || 'Follow-up Task',
       description: data.description || data.notes || '',
       notes: data.notes || data.description || '',
+      lastNote: data.lastNote || data.notes || data.description || '',
       type: data.type || 'General',
       priority: data.priority || 'Medium',
       assignedTo: data.assignedTo || 'Receptionist',
@@ -50,6 +53,12 @@ export const createFollowup = async (req: Request, res: Response) => {
       automationKey: data.automationKey || null,
       plan: data.plan || '',
       pendingAmount: data.pendingAmount !== undefined ? data.pendingAmount : null,
+      history: Array.isArray(data.history) ? data.history : (data.notes ? [{
+        eventType: 'CREATED',
+        timestamp: new Date().toISOString(),
+        performedBy: data.assignedTo || 'Staff',
+        note: data.notes
+      }] : []),
       createdAt: data.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -64,6 +73,8 @@ export const createFollowup = async (req: Request, res: Response) => {
         const docRef = await firestore.collection('followups').add(payload);
         createdId = docRef.id;
       }
+    } else {
+      await db.addFollowup({ id: createdId, ...payload });
     }
 
     return res.status(201).json({
@@ -88,6 +99,8 @@ export const updateFollowup = async (req: Request, res: Response) => {
         ...updates,
         updatedAt: new Date().toISOString()
       });
+    } else {
+      await db.updateFollowup(id, updates);
     }
 
     return res.json({ success: true, message: 'Follow-up updated successfully' });

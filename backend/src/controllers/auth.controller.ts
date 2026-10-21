@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as admin from 'firebase-admin';
 import { isFirebaseInitialized } from '../firebase';
+import { KNOWN_OWNER_EMAILS } from '../middleware/auth';
 
 export const loginUser = async (req: Request, res: Response) => {
   try {
@@ -8,21 +9,28 @@ export const loginUser = async (req: Request, res: Response) => {
 
     // Fallback mode if Firebase is not active
     if (!isFirebaseInitialized) {
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(503).json({ error: 'Authentication service is unavailable.' });
+      }
       console.log('Firebase fallback login requested.');
       // Find role by email
       const roleMap: Record<string, string> = {
         'superadmin@thewarriorgym.in': 'super_admin',
         'owner@thewarriorgym.in': 'gym_owner',
+        'owner@warrier.com': 'gym_owner',
+        'admin@thewarriorgym.in': 'gym_owner',
         'manager@thewarriorgym.in': 'branch_manager',
         'trainer@thewarriorgym.in': 'trainer',
         'reception@thewarriorgym.in': 'receptionist',
       };
       const nameMap: Record<string, string> = {
         'superadmin@thewarriorgym.in': 'Super Admin',
-        'owner@thewarriorgym.in': 'Rajesh Malhotra',
-        'manager@thewarriorgym.in': 'Priya Patel',
-        'trainer@thewarriorgym.in': 'Karan Verma',
-        'reception@thewarriorgym.in': 'Ravi Kumar',
+        'owner@thewarriorgym.in': 'Warrior Gym Owner',
+        'owner@warrier.com': 'The Warrior Gym Owner',
+        'admin@thewarriorgym.in': 'Admin Desk',
+        'manager@thewarriorgym.in': 'Branch Manager',
+        'trainer@thewarriorgym.in': 'Fitness Trainer',
+        'reception@thewarriorgym.in': 'Reception Desk',
       };
       
       const role = roleMap[email] || 'member';
@@ -57,7 +65,7 @@ export const loginUser = async (req: Request, res: Response) => {
         uid,
         email: decodedToken.email || '',
         name: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
-        role: 'member', // Default role
+        role: KNOWN_OWNER_EMAILS.includes(String(decodedToken.email || '').toLowerCase()) ? 'gym_owner' : 'member', // Default role
         branch: 'Mohali, Punjab',
         gymId: 'gym_001',
         createdAt: new Date().toISOString()

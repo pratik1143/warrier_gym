@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Camera, Edit2, MapPin, Phone, Mail, Droplet, Activity, User, Briefcase, HeartPulse, CreditCard, Calendar, Clock, Star, Dumbbell, Shield, BadgeCheck, CheckCircle2, AlertCircle, Snowflake, Repeat, Sparkles, Fingerprint, Cpu, XCircle, Plus } from 'lucide-react';
+import { Camera, Edit2, MapPin, Phone, Mail, Droplet, Activity, User, Briefcase, HeartPulse, CreditCard, Calendar, Clock, Star, Dumbbell, Shield, BadgeCheck, CheckCircle2, AlertCircle, Snowflake, Repeat, Sparkles, Fingerprint, Ban } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { cleanPlanName, parsePlanSegments } from '@/lib/utils';
@@ -10,10 +10,9 @@ import { doc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import { useGymStore } from '@/store';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { resolveAvatarUrl, MALE_DEFAULT_AVATAR } from '@/lib/avatar';
+import API from '@/services/api';
 import toast from '@/lib/toast';
 import { z } from 'zod';
-
-import CreateNewBillModal from '../../components/CreateNewBillModal';
 
 // ── Production-grade Zod schema for Edit Personal Info ─────────────────────
 // Rules aligned with Indian gym member data requirements.
@@ -110,21 +109,10 @@ const healthSchema = z.object({
   medicalNotes: z.string().optional(),
 });
 
-export default function ProfileTab({ member, onOpenCreateBill }: { member: any; onOpenCreateBill?: () => void }) {
+export default function ProfileTab({ member, onOpenRenewModal }: { member: any; onOpenRenewModal?: () => void }) {
   const router = useRouter();
   const { fetchMembers } = useGymStore();
   const plans = useGymStore(s => s.plans);
-
-  const [showCreateBillModal, setShowCreateBillModal] = useState(false);
-  const handleOpenBill = () => {
-    if (onOpenCreateBill) {
-      onOpenCreateBill();
-    } else {
-      setShowCreateBillModal(true);
-    }
-  };
-
-  const isHold = String(member?.status || member?.membershipStatus || '').trim().toUpperCase() === 'HOLD' || member?.activationStatus === 'PENDING_ACTIVATION';
 
   const [showEditExpiryModal, setShowEditExpiryModal] = useState(false);
   const [customExpiryDate, setCustomExpiryDate] = useState(member.expiryDate || new Date().toISOString().split('T')[0]);
@@ -147,6 +135,7 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
   const [freezeDays, setFreezeDays] = useState(7);
   const [freezeReason, setFreezeReason] = useState('Travel / Vacation');
   const [savingFreeze, setSavingFreeze] = useState(false);
+  const [savingBioBlock, setSavingBioBlock] = useState(false);
 
   const hasTrainer = Boolean(
     member?.trainerId &&
@@ -154,6 +143,20 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
     member?.trainer !== 'Unassigned' &&
     member?.trainerName !== 'Unassigned'
   );
+
+  // Realtime Firestore listener for live biometric updates
+  React.useEffect(() => {
+    if (!member?.id) return;
+    try {
+      const { onSnapshot, doc } = require('firebase/firestore');
+      const unsub = onSnapshot(doc(db, 'members', member.id), (snap: any) => {
+        if (snap.exists()) {
+          fetchMembers(true);
+        }
+      });
+      return () => unsub();
+    } catch (_) {}
+  }, [member?.id, fetchMembers]);
 
   const handleUpdateExpiry = async (targetDateStr: string) => {
     setSavingExpiry(true);
@@ -259,195 +262,68 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
     }
   };
 
+  const handleBioBlockToggle = async () => {
+    if (!member?.id || savingBioBlock) return;
+    const retryingBlock = member.biometricBlocked === true && member.biometricBlockPending === true && member.biometricBlockAction === 'block';
+    const nextBlocked = retryingBlock || member.biometricBlocked !== true;
+    setSavingBioBlock(true);
+    try {
+      const biometricId = String(member.biometricId || member.deviceUserId || '').trim();
+      if (!biometricId) throw new Error('This member has no mapped biometric ID.');
+      const queued = await API.post('/devices/biometric/access', {
+        memberId: member.id,
+        biometricId: Number(biometricId),
+        enabled: !nextBlocked,
+        isEmployee: false,
+      }, { timeout: 20000 });
+      const commandId = queued.data?.enrollmentDocId;
+      if (!commandId) throw new Error('Device access command was not queued.');
+      member.biometricBlocked = nextBlocked;
+      member.biometricBlockPending = true;
+      member.biometricBlockAction = nextBlocked ? 'block' : 'unblock';
+      member.biometricBlockCommandId = commandId;
+
+      const deadline = Date.now() + 120000;
+      while (Date.now() < deadline) {
+        const result = await API.get(`/devices/biometric/command/${encodeURIComponent(commandId)}`, { timeout: 10000 });
+        if (result.data?.status === 'success') {
+          toast.success(nextBlocked
+            ? 'Access blocked on the terminal. Fingerprint data remains saved.'
+            : 'Access restored on the terminal. The existing fingerprint remains active.');
+          await fetchMembers(true);
+          return;
+        }
+        if (result.data?.status === 'failed') throw new Error(result.data?.message || 'The terminal rejected the access change.');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      throw new Error('Terminal has not confirmed the access change yet. Check its connection, then retry.');
+
+    } catch (error: any) {
+      toast.error('Could not update biometric access: ' + (error?.message || 'Please retry.'));
+    } finally {
+      setSavingBioBlock(false);
+    }
+  };
+
   return (
-    <div className="space-y-6 text-slate-800 text-left font-display">
-      {isHold ? (
-        <div className="space-y-6">
-          {/* Top Row: Section 1 (MEMBERSHIP - HOLD) & Section 2 (PERSONAL INFORMATION) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* 1. MEMBERSHIP CARD (HOLD STATE) */}
-            <div className="bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-600/10 border-2 border-dashed border-amber-300 rounded-[32px] p-8 relative overflow-hidden flex flex-col justify-between shadow-xs">
-              <div className="space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest block mb-1">
-                      Membership Status
-                    </span>
-                    <h2 className="text-2xl font-black text-amber-950 tracking-tight">
-                      HOLD (No Active Plan)
-                    </h2>
-                  </div>
-                  <span className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider bg-amber-200 text-amber-900 border border-amber-300 shadow-xs">
-                    Pending Activation
-                  </span>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-white/80 border border-amber-200/80 space-y-2">
-                  <p className="text-xs font-bold text-amber-950 flex items-center gap-2">
-                    <AlertCircle size={16} className="text-amber-600 shrink-0" />
-                    No active membership
-                  </p>
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                    This member was imported from biometric records and is waiting for membership billing. No active plan or billing records exist yet.
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-6">
-                <button
-                  type="button"
-                  onClick={handleOpenBill}
-                  className="w-full py-3.5 px-5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2 active:scale-98"
-                >
-                  <CreditCard size={16} /> + Create Membership &amp; Bill
-                </button>
-              </div>
-            </div>
-
-            {/* 2. PERSONAL INFORMATION */}
-            <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-200 p-8 relative">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                  <User size={18} className="text-[#F97316]" /> Personal Information
-                </h3>
-                <button
-                  onClick={() => setShowEditPersonalInfoModal(true)}
-                  className="p-2 text-slate-400 hover:text-[#EA580C] hover:bg-orange-50 rounded-xl transition-all border-none bg-transparent cursor-pointer"
-                  title="Edit Personal Info"
-                >
-                  <Edit2 size={16} />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                <Field icon={User} label="Member Name" value={member.name || '—'} />
-                <Field icon={Phone} label="Phone Number" value={member.phone || '—'} />
-                <Field icon={Mail} label="Email Address" value={member.email || '—'} />
-                <Field icon={Calendar} label="Date of Birth" value={member.dob ? new Date(member.dob).toLocaleDateString() : '—'} />
-                <Field icon={User} label="Gender" value={member.gender || '—'} />
-                <Field icon={Briefcase} label="Occupation" value={member.occupation || '—'} />
-                <Field icon={HeartPulse} label="Emergency Contact" value={member.emergencyContact || '—'} />
-                <Field icon={MapPin} label="Address" value={member.address || '—'} />
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom Row: Section 3 (BIOMETRIC / IMPORT INFO) & Section 4 (BILLING OVERVIEW) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* 3. BIOMETRIC / IMPORT INFO */}
-            <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-200 p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                  <Fingerprint size={18} className="text-[#EA580C]" /> Biometric &amp; Machine Mapping
-                </h3>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
-                  <BadgeCheck size={12} /> Biometric Linked
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                    Biometric / Device ID
-                  </span>
-                  <span className="text-base font-black text-slate-900 font-mono">
-                    {member.biometricId || member.bioId || member.enrollmentId || member.deviceUserId || '—'}
-                  </span>
-                </div>
-
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                    Machine Mapping
-                  </span>
-                  <span className="text-xs font-black text-emerald-700 flex items-center gap-1 mt-0.5">
-                    <CheckCircle2 size={13} className="text-emerald-600" />
-                    Hikvision MinMoe Terminal
-                  </span>
-                </div>
-
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                    Import Source
-                  </span>
-                  <span className="text-xs font-bold text-slate-700">
-                    Biometric / Excel Import
-                  </span>
-                </div>
-
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-                    Attendance Ready
-                  </span>
-                  <span className="text-xs font-bold text-emerald-600 flex items-center gap-1">
-                    <Sparkles size={12} /> Yes (Syncs to Bio ID)
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* 4. BILLING OVERVIEW */}
-            <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-200 p-8 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                    <CreditCard size={18} className="text-[#EA580C]" /> Billing &amp; Invoices
-                  </h3>
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
-                    NOT BILLED
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 mb-6">
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Billed</span>
-                    <span className="text-lg font-black text-slate-900 font-mono">₹0</span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Paid</span>
-                    <span className="text-lg font-black text-emerald-600 font-mono">₹0</span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-center">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Balance</span>
-                    <span className="text-lg font-black text-slate-400 font-mono">₹0</span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-500 font-medium mb-4">
-                  No invoices yet. Create an official membership bill to record payment and generate an invoice.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleOpenBill}
-                className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Plus size={15} /> + Create Bill
-              </button>
-            </div>
-
-          </div>
-        </div>
-      ) : (
-        <>
-          {/* TOP ROW: Membership Card & Personal Info */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Active Membership Card (Brand Deep Blue Gradient) */}
-            <div className="bg-gradient-to-br from-[#083f82] via-[#EA580C] to-[#9A3412] rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between border border-orange-400/30">
+    <div className="member-profile-tab space-y-6 text-slate-800 text-left font-display">
+      
+      {/* TOP ROW: Membership Card & Personal Info */}
+      <div className="member-profile-top-grid grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Active Membership Card (Brand Deep Blue Gradient) */}
+        <div className="member-active-membership bg-gradient-to-br from-[#9A3412] via-[#EA580C] to-[#C2410C] rounded-[32px] p-8 text-white shadow-2xl relative overflow-hidden flex flex-col justify-between border border-orange-400/30">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
           
           <div>
             <div className="flex justify-between items-start mb-6">
               <div>
-                <span className="text-[10px] font-black text-orange-100 uppercase tracking-widest block mb-1">Active Membership</span>
+                <span className="text-[10px] font-black text-orange-200 uppercase tracking-widest block mb-1">Active Membership</span>
                 <h2 className="text-2xl font-black tracking-tight">{cleanPlanName(member.plan || 'Standard Membership')}</h2>
               </div>
               <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${
                 member.status === 'active' ? 'bg-white/20 text-white border border-white/30 backdrop-blur-xs' :
-                member.status === 'frozen' ? 'bg-blue-300/20 text-orange-100 border border-blue-300/30 backdrop-blur-xs' :
+                member.status === 'frozen' ? 'bg-orange-300/20 text-orange-100 border border-orange-300/30 backdrop-blur-xs' :
                 'bg-rose-500/20 text-rose-200 border border-rose-500/30'
               }`}>
                 {member.status || 'Active'}
@@ -456,15 +332,15 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
 
             <div className="grid grid-cols-2 gap-4 mb-6 bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15">
               <div>
-                <span className="text-[10px] font-bold text-blue-200/80 uppercase tracking-wider block mb-1">Start Date</span>
+                <span className="text-[10px] font-bold text-orange-200/80 uppercase tracking-wider block mb-1">Start Date</span>
                 <span className="text-sm font-black text-white">{member.startDate || 'N/A'}</span>
               </div>
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-blue-200/80 uppercase tracking-wider block mb-1">Expiry Date</span>
+                  <span className="text-[10px] font-bold text-orange-200/80 uppercase tracking-wider block mb-1">Expiry Date</span>
                   <button
                     onClick={() => setShowEditExpiryModal(true)}
-                    className="p-1 hover:bg-white/10 rounded-lg text-orange-100 hover:text-white transition-all border-none bg-transparent cursor-pointer"
+                    className="p-1 hover:bg-white/10 rounded-lg text-orange-200 hover:text-white transition-all border-none bg-transparent cursor-pointer"
                     title="Edit Expiry Date"
                   >
                     <Edit2 size={12} />
@@ -493,12 +369,12 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
                     {historyList.map((h: any, idx: number) => (
                       <div key={idx} className="p-2.5 bg-white/10 backdrop-blur-md rounded-xl flex justify-between items-center text-xs">
                         <div>
-                          <div className="font-bold text-white">{h.packageName || h.plan || member.plan || 'Membership'}</div>
+                          <div className="font-bold text-white">{h.packageName}</div>
                           <div className="text-[10px] text-slate-300">{h.startDate} → {h.expiryDate || 'Active'}</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-black text-amber-400">₹{Number(h.paid !== undefined ? h.paid : (h.amount || 0)).toLocaleString('en-IN')}</div>
-                          <div className="text-[9px] uppercase font-bold text-slate-300">{h.invoiceNumber || h.invoiceId || 'PAID'}</div>
+                          <div className="font-black text-amber-400">₹{(h.amount || 0).toLocaleString('en-IN')}</div>
+                          <div className="text-[9px] uppercase font-bold text-slate-300">{h.invoiceNumber || 'Paid'}</div>
                         </div>
                       </div>
                     ))}
@@ -509,10 +385,12 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
 
             <div className="flex gap-3">
               <button 
-                onClick={() => router.push(`/dashboard/members/${encodeURIComponent(member.id)}/renew`)}
+                onClick={() => {
+                  router.push(`/dashboard/billing/create?mode=renew&id=${encodeURIComponent(member.id)}`);
+                }}
                 className="flex-1 py-3 bg-white text-slate-900 rounded-xl text-xs font-black transition-all hover:bg-slate-100 flex items-center justify-center gap-2 border-none cursor-pointer shadow-md active:scale-95"
               >
-                <CreditCard size={14} className="text-[#EA580C]" /> Renew Plan
+                <CreditCard size={14} className="text-orange-600" /> Renew Plan
               </button>
               <button 
                 onClick={() => member.status === 'frozen' ? handleFreezeSubmit() : setShowFreezeModal(true)}
@@ -524,26 +402,40 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
               >
                 <Snowflake size={14} /> {member.status === 'frozen' ? '⚡ Unfreeze' : 'Freeze'}
               </button>
+              <button
+                type="button"
+                onClick={handleBioBlockToggle}
+                disabled={savingBioBlock}
+                title={member.biometricBlocked ? 'Restore gate access; the saved fingerprint remains on the terminal' : 'Block gate access without deleting the saved fingerprint'}
+                className={`flex-1 py-3 border rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95 disabled:opacity-60 ${
+                  member.biometricBlocked
+                    ? 'bg-rose-100 border-rose-300 text-rose-800 hover:bg-rose-200'
+                    : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+                }`}
+              >
+                {member.biometricBlocked ? <Fingerprint size={14} /> : <Ban size={14} />}
+                {savingBioBlock ? 'Syncing…' : member.biometricBlocked ? (member.biometricBlockAction === 'block' && member.biometricBlockPending ? 'Retry Block' : 'Unblock Access') : 'Block Access'}
+              </button>
             </div>
           </div>
         </div>
 
         {/* Personal Details Card */}
-        <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8 relative group">
+        <div className="member-personal-info bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8 relative group">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <User size={18} className="text-[#F97316]" /> Personal Info
+              <User size={18} className="text-orange-500" /> Personal Info
             </h3>
             <button
               onClick={() => setShowEditPersonalInfoModal(true)}
-              className="p-2 text-slate-400 hover:text-[#EA580C] hover:bg-orange-50 rounded-xl transition-all border-none bg-transparent cursor-pointer"
+              className="p-2 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all border-none bg-transparent cursor-pointer"
               title="Edit Personal Info"
             >
               <Edit2 size={16} />
             </button>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+          <div className="member-personal-fields grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
             <Field icon={Phone} label="Phone Number" value={member.phone} />
             <Field icon={Mail} label="Email Address" value={member.email || 'No email provided'} />
             <Field icon={Calendar} label="Date of Birth" value={member.dob ? new Date(member.dob).toLocaleDateString() : 'N/A'} />
@@ -554,11 +446,98 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
         </div>
       </div>
 
+      {/* BIOMETRIC & HARDWARE ACCESS CARD */}
+      <div className="member-biometric-card bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8 space-y-4">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 text-orange-600 flex items-center justify-center">
+              <Shield size={18} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 tracking-tight">Biometric & Hardware Access</h3>
+              <p className="text-[11px] text-slate-500 font-medium">Permanent Hikvision Gate User Mapping</p>
+            </div>
+          </div>
+          <span className="px-3 py-1 bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-mono font-black uppercase tracking-wider rounded-full">
+            PERMANENT ID #{member.biometricId || member.memberId || 'N/A'}
+          </span>
+        </div>
+
+      <div className="member-biometric-grid grid grid-cols-1 sm:grid-cols-5 gap-4 pt-1">
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Biometric ID</span>
+            <span className="text-xl font-mono font-black text-orange-700">#{member.biometricId || member.memberId || 'N/A'}</span>
+          </div>
+
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Fingerprint Status</span>
+            <div>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider border ${
+                member.fingerprintStatus === 'ENROLLED' || member.fingerprintEnrolled
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${member.fingerprintStatus === 'ENROLLED' || member.fingerprintEnrolled ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                {member.fingerprintStatus === 'ENROLLED' || member.fingerprintEnrolled ? 'ENROLLED' : 'NOT ENROLLED'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Face Status</span>
+            <div>
+              {(() => {
+                const faceOk = String(member.faceEnrollmentStatus || '').toUpperCase() === 'ENROLLED' || member.faceEnrolled === true || member.hasFace === true;
+                return (
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black uppercase tracking-wider border ${faceOk ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    <span className={`w-2 h-2 rounded-full ${faceOk ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                    {faceOk ? 'ENROLLED' : 'NOT ENROLLED'}
+                  </span>
+                );
+              })()}
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Hardware Mapping</span>
+            <span className="text-xs font-bold text-slate-700">
+              {member.fingerprintStatus === 'ENROLLED' || member.fingerprintEnrolled || member.faceEnrolled || member.hikvisionMapped || String(member.biometricSyncStatus || '').toLowerCase() === 'synced'
+                ? `MAPPED (#${member.biometricId || member.memberId})`
+                : String(member.biometricSyncStatus || '').toLowerCase() === 'pending'
+                  ? 'SERVER SYNC PENDING'
+                  : 'NOT MAPPED (Pending Terminal)'}
+            </span>
+          </div>
+
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Target Device</span>
+            <span className="text-xs font-bold text-slate-700 font-mono">Hikvision DS-K1T320EFWX (192.168.1.45)</span>
+          </div>
+        </div>
+
+        {member.biometricBlocked !== true && member.fingerprintStatus !== 'ENROLLED' && member.fingerprintEnrolled !== true && member.faceEnrolled !== true && String(member.faceEnrollmentStatus || '').toUpperCase() !== 'ENROLLED' && (
+          <div className="member-biometric-warning sm:col-span-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div>
+              <p className="text-sm font-black text-amber-900">Access is unblocked, but no face or fingerprint is enrolled on the terminal yet.</p>
+              <p className="mt-1 text-xs text-amber-800">Enroll face/fingerprint from Gate Control. The server also keeps the user synced on the Hikvision terminal automatically.</p>
+            </div>
+            <a
+              href={`/gate-control?reenroll=${encodeURIComponent(String(member.biometricId || member.deviceUserId || ''))}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex shrink-0 items-center justify-center rounded-xl bg-amber-500 px-4 py-2.5 text-xs font-black text-slate-950 hover:bg-amber-400"
+            >
+              Re-enroll biometrics
+            </a>
+          </div>
+        )}
+      </div>
+
       {/* BOTTOM ROW: Health Measurements & Personal Trainer */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="member-health-row grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Physical & Medical Info (Adaptive width) */}
-        <div className={hasTrainer ? "lg:col-span-2 bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8" : "lg:col-span-3 bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8"}>
+        <div className={`member-health-card ${hasTrainer ? "lg:col-span-2" : "lg:col-span-3"} bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8`}>
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
               <Activity size={18} className="text-rose-500" /> Health & Measurements
@@ -572,7 +551,7 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
             </button>
           </div>
           
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+          <div className="member-health-metrics grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Weight</span>
               <span className="text-2xl font-black text-slate-900">{member.weight || '--'} <span className="text-sm font-bold text-slate-400">kg</span></span>
@@ -596,80 +575,9 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
           </div>
         </div>
 
-        {/* Biometric & Hikvision Machine Card */}
-        <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-slate-100 p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <Fingerprint size={18} className="text-[#EA580C]" /> Biometric & Terminal Info
-            </h3>
-            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
-              member.hikvisionMapped
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                : 'bg-slate-100 text-slate-500 border border-slate-200'
-            }`}>
-              {member.hikvisionMapped ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
-              {member.hikvisionMapped ? 'Connected' : 'Not Mapped'}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                Biometric User ID
-              </span>
-              <span className="text-xl font-black text-slate-900 font-mono">
-                {member.biometricId || member.biometricUserId || member.deviceUserId || '—'}
-              </span>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                Face Template
-              </span>
-              <div className="flex items-center gap-1.5 mt-1">
-                {member.hasFace ? (
-                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
-                    <CheckCircle2 size={12} /> Enrolled
-                  </span>
-                ) : (
-                  <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-1">
-                    <XCircle size={12} /> None
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                Fingerprint
-              </span>
-              <div className="flex items-center gap-1.5 mt-1">
-                {member.hasFingerprint ? (
-                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1">
-                    <CheckCircle2 size={12} /> Enrolled
-                  </span>
-                ) : (
-                  <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 flex items-center gap-1">
-                    <XCircle size={12} /> None
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                Mapping Source
-              </span>
-              <span className="text-xs font-black text-slate-700 bg-orange-50/70 border border-orange-200 px-2.5 py-1 rounded-lg inline-block mt-1 font-mono">
-                {member.mappingSource || (member.hikvisionMapped ? 'AUTO' : '—')}
-              </span>
-            </div>
-          </div>
-        </div>
-
         {/* Assigned Trainer Card (ONLY RENDERED IF TRAINER IS ASSIGNED) */}
         {hasTrainer && (
-          <div className="bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-[#FED7AA] p-8 flex flex-col items-center text-center justify-between">
+          <div className="member-trainer-card bg-white rounded-[32px] shadow-[0_2px_20px_rgba(0,0,0,0.02)] border border-[#FFEDD5] p-8 flex flex-col items-center text-center justify-between">
             <div className="flex flex-col items-center w-full">
               <div className="w-12 h-12 bg-[#FFF7ED] rounded-2xl flex items-center justify-center text-[#EA580C] mb-3 border border-[#FED7AA]">
                 <Dumbbell size={22} />
@@ -697,12 +605,12 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
               </div>
 
               <h4 className="text-lg font-black text-slate-900 leading-tight">{member.trainerName || member.trainer}</h4>
-              <span className="text-[10px] font-bold text-slate-500 bg-[#FFF7ED] px-2.5 py-0.5 rounded-full mt-1 border border-[#FED7AA]">
+              <span className="text-[10px] font-bold text-slate-500 bg-[#FFFAF5] px-2.5 py-0.5 rounded-full mt-1 border border-[#FFEDD5]">
                 {member.trainerRole || member.pt?.trainerRole || 'Personal Trainer & Strength'}
               </span>
 
               {/* PT Package & Validity Breakdown */}
-              <div className="w-full mt-4 p-3.5 bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl space-y-2 text-xs text-left">
+              <div className="w-full mt-4 p-3.5 bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl space-y-2 text-xs text-left">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black text-slate-400 uppercase">PT Package</span>
                   <span className="font-black text-slate-900">
@@ -724,7 +632,7 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
                 </div>
                 <div className="flex justify-between items-center pt-1 border-t border-slate-200">
                   <span className="text-[10px] font-black text-slate-400 uppercase">PT Amount</span>
-                  <span className="font-black font-mono text-[#0066FF]">
+                  <span className="font-black font-mono text-[#EA580C]">
                     {member?.ptMembership?.amount !== undefined || member?.pt?.amount !== undefined || member?.ptAmount !== undefined
                       ? `₹${Number(member?.ptMembership?.amount ?? member?.pt?.amount ?? member?.ptAmount ?? 0).toLocaleString('en-IN')}`
                       : '₹0'}
@@ -733,7 +641,7 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
                 {(member?.ptMembership?.invoiceNo || member?.pt?.invoiceNo || member?.pt?.billingId) && (
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black text-slate-400 uppercase">Invoice No</span>
-                    <span className="font-mono text-[10px] font-bold text-[#0066FF] bg-[#FFF7ED] px-1.5 py-0.5 rounded border border-[#FED7AA]">
+                    <span className="font-mono text-[10px] font-bold text-[#EA580C] bg-[#FFF7ED] px-1.5 py-0.5 rounded border border-[#FED7AA]">
                       {member?.ptMembership?.invoiceNo || member?.pt?.invoiceNo || member?.pt?.billingId}
                     </span>
                   </div>
@@ -758,9 +666,8 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
             </div>
           </div>
         )}
+
       </div>
-      </>
-      )}
 
       {/* ── EDIT PERSONAL INFO MODAL ── */}
       {showEditPersonalInfoModal && (
@@ -904,14 +811,6 @@ export default function ProfileTab({ member, onOpenCreateBill }: { member: any; 
         )}
       </AnimatePresence>
 
-      {/* ── CREATE NEW BILL MODAL ── */}
-      <CreateNewBillModal
-        isOpen={showCreateBillModal}
-        member={member}
-        onClose={() => setShowCreateBillModal(false)}
-        onSaved={() => fetchMembers()}
-      />
-
     </div>
   );
 }
@@ -956,7 +855,14 @@ function EditPersonalInfoModal({ member, onClose, onSave }: { member: any; onClo
   const handleSave = async () => {
     setSubmitError('');
     const parseRes = personalInfoSchema.safeParse({
-      name, phone, email: email || '', dob: dob || '', gender, occupation: occupation || '', emergencyContact: emergencyContact || '', address: address || '',
+      name,
+      phone,
+      email: email || '',
+      dob: dob || '',
+      gender,
+      occupation: occupation || '',
+      emergencyContact: emergencyContact || '',
+      address: address || '',
     });
 
     if (!parseRes.success) {
@@ -969,34 +875,60 @@ function EditPersonalInfoModal({ member, onClose, onSave }: { member: any; onClo
       return;
     }
 
-    // Normalize phone to bare 10 digits for storage consistency
     const normalized = parseRes.data;
-    const normalizedPhone = normalizeIndianPhone(phone) ?? phone.trim();
+    const cleanDigits = phone.trim().replace(/\D/g, '');
+    const normalizedPhone = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : phone.trim();
+    const cleanDob = (normalized.dob || '').trim();
 
     setSaving(true);
     try {
+      const targetMemberId = String(member.id || member.uid || member.docId || member.memberId || '').trim();
       const updatePayload: Record<string, any> = {
         name: normalized.name,
         phone: normalizedPhone,
-        email: normalized.email ?? '',
-        dob: normalized.dob ?? '',
-        gender: normalized.gender ?? 'Male',
-        occupation: normalized.occupation ?? '',
+        email: (normalized.email || '').trim().toLowerCase(),
+        dob: cleanDob || null,
+        gender: normalized.gender || 'Male',
+        occupation: (normalized.occupation || '').trim(),
         emergencyContact: (emergencyContact || '').trim(),
-        address: normalized.address ?? '',
+        address: (normalized.address || '').trim(),
         updatedAt: new Date().toISOString(),
       };
 
-      await updateDoc(doc(db, 'members', member.id), updatePayload);
+      let updatedRecord: any = null;
 
+      // 1. Try secure Backend API update (bypasses Firestore client security rules 100%)
+      try {
+        const res = await API.put(`/members/${encodeURIComponent(targetMemberId)}`, updatePayload);
+        if (res && res.data) {
+          updatedRecord = res.data;
+        }
+      } catch (apiErr: any) {
+        console.warn('[EditPersonalInfo] API update notice, trying client Firestore fallback:', apiErr?.response?.data || apiErr?.message);
+      }
+
+      // 2. Fallback to direct client Firestore update if API is unreachable
+      if (!updatedRecord) {
+        await updateDoc(doc(db, 'members', targetMemberId), updatePayload);
+      }
+
+      // 3. Mutate member object in place so UI updates immediately
       Object.assign(member, updatePayload);
+      if (updatedRecord) {
+        Object.assign(member, updatedRecord);
+      }
 
-      toast.success('Personal info updated successfully!');
+      // 4. Refresh global store for site-wide sync
+      useGymStore.getState().fetchMembers();
+
+      toast.success('✓ Personal info updated successfully!');
       onSave();
       onClose();
     } catch (err: any) {
-      console.error('[EditPersonalInfo] Firebase update error:', err);
-      setSubmitError('Unable to save changes. Please try again.');
+      console.error('[EditPersonalInfo] Detailed save error:', err);
+      const detailedMsg = err?.response?.data?.error || err?.message || 'Unable to save changes. Please try again.';
+      setSubmitError(detailedMsg);
+      toast.error(`Failed to update personal info: ${detailedMsg}`);
     } finally {
       setSaving(false);
     }
@@ -1006,7 +938,7 @@ function EditPersonalInfoModal({ member, onClose, onSave }: { member: any; onClo
     `w-full text-xs bg-slate-50 border rounded-xl px-3 py-2.5 focus:outline-none text-slate-800 font-medium transition-colors ${
       errors[field]
         ? 'border-red-400 bg-red-50/30 focus:border-red-500'
-        : 'border-slate-200 focus:border-[#F97316]'
+        : 'border-slate-200 focus:border-orange-500'
     }`;
 
   return (
@@ -1021,7 +953,7 @@ function EditPersonalInfoModal({ member, onClose, onSave }: { member: any; onClo
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
-            <User className="text-[#EA580C]" size={20} />
+            <User className="text-orange-600" size={20} />
             <h3 id="edit-personal-dialog-title" className="font-extrabold text-slate-900 text-lg">Edit Personal Info</h3>
           </div>
           <button
@@ -1125,7 +1057,7 @@ function EditPersonalInfoModal({ member, onClose, onSave }: { member: any; onClo
                 id="ep-gender"
                 value={gender}
                 onChange={e => setGender(e.target.value as any)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-[#F97316] text-slate-800 font-medium cursor-pointer transition-colors"
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-orange-500 text-slate-800 font-medium cursor-pointer transition-colors"
               >
                 <option value="Male">Male</option>
                 <option value="Female">Female</option>
@@ -1215,7 +1147,7 @@ function EditPersonalInfoModal({ member, onClose, onSave }: { member: any; onClo
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="px-5 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black uppercase border-none cursor-pointer shadow-md disabled:opacity-60 active:scale-95 transition-all flex items-center gap-1.5"
+            className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase border-none cursor-pointer shadow-md disabled:opacity-60 active:scale-95 transition-all flex items-center gap-1.5"
           >
             {saving ? (
               <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Saving...</>
@@ -1261,6 +1193,7 @@ function EditHealthModal({ member, onClose, onSave }: { member: any; onClose: ()
 
     setSaving(true);
     try {
+      const targetMemberId = String(member.id || member.uid || member.docId || member.memberId || '').trim();
       const updatePayload = {
         weight: wNum,
         height: hNum,
@@ -1270,15 +1203,30 @@ function EditHealthModal({ member, onClose, onSave }: { member: any; onClose: ()
         updatedAt: new Date().toISOString(),
       };
 
-      await updateDoc(doc(db, 'members', member.id), updatePayload);
+      let updatedRecord: any = null;
+      try {
+        const res = await API.put(`/members/${encodeURIComponent(targetMemberId)}`, updatePayload);
+        if (res && res.data) {
+          updatedRecord = res.data;
+        }
+      } catch (apiErr: any) {
+        console.warn('[EditHealthModal] API update notice, trying client fallback:', apiErr?.message);
+      }
+
+      if (!updatedRecord) {
+        await updateDoc(doc(db, 'members', targetMemberId), updatePayload);
+      }
 
       Object.assign(member, updatePayload);
+      if (updatedRecord) {
+        Object.assign(member, updatedRecord);
+      }
 
       toast.success('Health & Measurements updated successfully!');
       onSave();
       onClose();
     } catch (err: any) {
-      toast.error('Failed to update health info: ' + (err.message || err));
+      toast.error('Failed to update health info: ' + (err?.response?.data?.error || err?.message || err));
     } finally {
       setSaving(false);
     }

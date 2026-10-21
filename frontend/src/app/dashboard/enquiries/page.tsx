@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import './enquiries-mobile.css';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -14,9 +15,9 @@ import {
 import toast from '@/lib/toast';
 import confetti from 'canvas-confetti';
 import { z } from 'zod';
-import { enquiryService, EnquiryItem, EnquiryHistoryItem } from '@/services/enquiry.service';
+import { enquiryService, EnquiryItem, EnquiryHistoryItem, getEnquirySortTime } from '@/services/enquiry.service';
 import { followupService } from '@/services/followup.service';
-import { getTodayInIndia, isTodayInIndia, isOverdueInIndia, isUpcomingInIndia, formatIndianDate } from '@/lib/dateUtils';
+import { getTodayInIndia, getTomorrowInIndia, isTodayInIndia, isOverdueInIndia, isUpcomingInIndia, formatIndianDate } from '@/lib/dateUtils';
 import { resolveAvatarUrl, MALE_DEFAULT_AVATAR, FEMALE_DEFAULT_AVATAR } from '@/lib/avatar';
 import {
   createEnquirySchema,
@@ -33,7 +34,7 @@ type Enquiry = EnquiryItem;
 
 const SOURCES = ENQUIRY_SOURCES;
 const PLANS = ENQUIRY_PLANS;
-const DEFAULT_STAFF_LIST = ['Manager', 'Tanya Mehra', 'Ujjval Peet Kaur', 'Karan Verma', 'Dev Rana', 'Sneha Kapoor', 'Reception Desk'];
+const DEFAULT_STAFF_LIST = ['Veer Chand (manager)', 'Tanya Mehra', 'Ujjval Peet Kaur', 'Karan Verma', 'Dev Rana', 'Sneha Kapoor', 'Reception Desk'];
 
 export default function EnquiryGodLevelHub() {
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
@@ -91,8 +92,9 @@ export default function EnquiryGodLevelHub() {
   const [email, setEmail] = useState('');
   const [gender, setGender] = useState('Male');
   const [address, setAddress] = useState('');
-  const [followupDate, setFollowupDate] = useState(todayStr);
-  const [followupTime, setFollowupTime] = useState('11:00');
+  const [enquiryDate, setEnquiryDate] = useState(() => todayStr);
+  const [followupDate, setFollowupDate] = useState(() => getTomorrowInIndia());
+  const [followupTime, setFollowupTime] = useState('05:00');
   const [status, setStatus] = useState<'Pending' | 'Closed'>('Pending');
   const [attendedBy, setAttendedBy] = useState('');
   const [priority, setPriority] = useState<'Hot' | 'Warm' | 'Cold'>('Warm');
@@ -106,7 +108,7 @@ export default function EnquiryGodLevelHub() {
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPlan, setEditPlan] = useState('1 month');
-  const [editRep, setEditRep] = useState('Manager');
+  const [editRep, setEditRep] = useState('Veer Chand (manager)');
   const [editFollowupDate, setEditFollowupDate] = useState(todayStr);
   const [editRemarks, setEditRemarks] = useState('');
   const [editStatus, setEditStatus] = useState('Pending');
@@ -254,7 +256,7 @@ export default function EnquiryGodLevelHub() {
       const staffMatch = staffFilter === 'All' || item.assignedTo === staffFilter;
 
       return nameMatch && staffMatch;
-    });
+    }).sort((a, b) => getEnquirySortTime(b) - getEnquirySortTime(a));
   }, [enquiries, activeFilterTab, searchQuery, statusFilter, staffFilter, priorityFilter, planFilter]);
 
   // Validate individual field using Zod
@@ -302,6 +304,7 @@ export default function EnquiryGodLevelHub() {
       gender,
       address,
       inquiryFor,
+      enquiryDate,
       followupDate,
       followupTime,
       attendedBy,
@@ -344,8 +347,9 @@ export default function EnquiryGodLevelHub() {
     setEmail('');
     setGender('Male');
     setAddress('');
-    setFollowupDate(todayStr);
-    setFollowupTime('11:00');
+    setEnquiryDate(todayStr);
+    setFollowupDate(getTomorrowInIndia());
+    setFollowupTime('05:00');
     setStatus('Pending');
     setAttendedBy('');
     setPriority('Warm');
@@ -367,6 +371,7 @@ export default function EnquiryGodLevelHub() {
       lastName: true,
       contact: true,
       inquiryFor: true,
+      enquiryDate: true,
       followupDate: true,
       attendedBy: true,
       remarks: true
@@ -397,9 +402,10 @@ export default function EnquiryGodLevelHub() {
         email: data.email || '',
         gender: data.gender,
         address: data.address || '',
+        enquiryDate: data.enquiryDate || todayStr,
         nextFollowUpDate: data.followupDate,
         nextFollowUp: data.followupDate,
-        followUpTime: data.followupTime || '11:00',
+        followUpTime: data.followupTime || '05:00',
         status: 'Pending',
         assignedTo: data.attendedBy,
         priority: data.priority,
@@ -411,9 +417,11 @@ export default function EnquiryGodLevelHub() {
       };
 
       const created = await enquiryService.create(payload);
+      const newRecord = created || { id: payload.id || `enq_${Date.now()}`, ...payload } as EnquiryItem;
+
       if (data.followupDate) {
         const normDate = data.followupDate.trim().split('T')[0];
-        const enqId = created?.id || payload.id;
+        const enqId = newRecord.id;
         const followUpKey = `ENQUIRY_FOLLOWUP_${enqId}_${normDate}`;
         await followupService.create({
           id: followUpKey,
@@ -430,13 +438,16 @@ export default function EnquiryGodLevelHub() {
           priority: data.priority === 'Hot' ? 'High' : 'Medium',
           dueDate: normDate,
           scheduledDate: normDate,
-          scheduledTime: data.followupTime || '11:00',
+          scheduledTime: data.followupTime || '05:00',
           assignedTo: data.attendedBy || 'Reception Desk',
           status: 'Pending',
           source: 'manual',
           plan: data.inquiryFor
         });
       }
+
+      setEnquiries(prev => [newRecord, ...prev.filter(e => e.id !== newRecord.id)]);
+      setSelectedEnquiry(newRecord);
 
       toast.success('✓ Enquiry lead & follow-up created successfully');
       setShowCreateModal(false);
@@ -455,7 +466,7 @@ export default function EnquiryGodLevelHub() {
     setEditPhone(enq.phone || '');
     setEditEmail(enq.email || '');
     setEditPlan(enq.duration || enq.interestedPlan || '1 month');
-    setEditRep(enq.assignedTo || 'Manager');
+    setEditRep(enq.assignedTo || 'Veer Chand (manager)');
     setEditFollowupDate((enq.nextFollowUpDate || enq.nextFollowUp || todayStr).split('T')[0]);
     setEditRemarks(enq.remarks || '');
     setEditStatus(enq.status || 'Pending');
@@ -726,34 +737,36 @@ export default function EnquiryGodLevelHub() {
   const hasActiveMoreFilters = priorityFilter !== 'All' || planFilter !== 'All';
 
   return (
-    <div className="space-y-6 pb-12 w-full text-slate-800 text-left font-sans">
+    <div className="enquiry-page-root space-y-6 pb-12 w-full text-slate-800 text-left font-sans">
       
       {/* ── 1. HEADER (Design matching Members & Employees) ── */}
-      <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+      <div className="enquiry-hero bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div>
-          <div className="flex items-center gap-2.5 mb-2">
-            <span className="px-3 py-1 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
+          <div className="enquiry-hero-eyebrow flex items-center gap-2.5 mb-2">
+            <span className="px-3 py-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
               Leads & Inquiries Engine
             </span>
-            <span className="text-xs text-slate-400 font-mono font-bold">TWG-ENQ-v4.0</span>
+            <span className="text-xs text-slate-400 font-mono font-bold">AZ-ENQ-v4.0</span>
           </div>
-          <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 font-display">Enquiries & Leads Hub</h1>
-          <p className="text-xs text-slate-500 font-medium mt-1">Real client enquiries, automatic follow-up reminders & closed lead history.</p>
+          <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 font-display"><span className="hidden sm:inline">Enquiries & Leads Hub</span><span className="sm:hidden">Enquiries</span></h1>
+          <p className="enquiry-hero-description text-xs text-slate-500 font-medium mt-1">Real client enquiries, automatic follow-up reminders & closed lead history.</p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+        <div className="enquiry-hero-actions flex items-center gap-2.5 flex-wrap shrink-0">
           <button
             onClick={() => setShowImportModal(true)}
-            className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center gap-1.5 border border-slate-200 cursor-pointer shadow-2xs"
+            aria-label="Import enquiries from Excel"
+            title="Import Excel"
+            className="enquiry-import-button px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition-all flex items-center gap-1.5 border border-slate-200 cursor-pointer shadow-2xs"
           >
-            <Upload size={15} /> Import Excel (.xlsx)
+            <Upload size={15} /> <span>Import Excel (.xlsx)</span>
           </button>
 
           <button
             onClick={() => { resetForm(); setShowCreateModal(true); }}
-            className="px-6 py-3.5 bg-gradient-to-r from-[#EA580C] to-[#FB923C] hover:from-[#C2410C] hover:to-[#EA580C] text-white rounded-2xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(234,88,12,0.25)] transition-all hover:scale-[1.02] active:scale-95 shrink-0"
+            className="px-6 py-3.5 bg-gradient-to-r from-[#EA580C] to-[#F97316] hover:from-[#C2410C] hover:to-[#EA580C] text-white rounded-2xl text-xs font-black uppercase tracking-wider border-none cursor-pointer flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(234, 88, 12,0.25)] transition-all hover:scale-[1.02] active:scale-95 shrink-0"
           >
             <Plus size={16} /> New Enquiry
           </button>
@@ -761,13 +774,13 @@ export default function EnquiryGodLevelHub() {
       </div>
 
       {/* ── 2. DYNAMIC FILTER TABS ── */}
-      <div className="bg-white p-2 rounded-3xl border border-[#FED7AA] shadow-[0_4px_20px_rgba(234,88,12,0.02)] flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
+      <div className="enquiry-filter-tabs bg-white p-2 rounded-3xl border border-[#FFEDD5] shadow-[0_4px_20px_rgba(234, 88, 12,0.02)] flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
         {[
           { id: 'all', label: 'All', count: allCount, color: 'bg-slate-100 text-slate-800' },
           { id: 'pending', label: 'Pending', count: pendingCount, color: 'bg-amber-100 text-amber-800' },
-          { id: 'today', label: "Today's Follow-up", count: todayCount, color: 'bg-[#FFEDD5] text-[#9A3412]' },
+          { id: 'today', label: "Today's Follow-up", count: todayCount, color: 'bg-orange-100 text-orange-800' },
           { id: 'overdue', label: 'Overdue', count: overdueCount, color: 'bg-rose-100 text-rose-800' },
-          { id: 'upcoming', label: 'Upcoming', count: upcomingCount, color: 'bg-indigo-100 text-indigo-800' },
+          { id: 'upcoming', label: 'Upcoming', count: upcomingCount, color: 'bg-orange-100 text-orange-800' },
           { id: 'closed', label: 'Closed History', count: closedCount, color: 'bg-emerald-100 text-emerald-800' },
         ].map(tab => (
           <button
@@ -781,7 +794,7 @@ export default function EnquiryGodLevelHub() {
           >
             <span>{tab.label}</span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-              activeFilterTab === tab.id ? 'bg-blue-900 text-white' : tab.color
+              activeFilterTab === tab.id ? 'bg-orange-900 text-white' : tab.color
             }`}>
               {tab.count}
             </span>
@@ -790,25 +803,25 @@ export default function EnquiryGodLevelHub() {
       </div>
 
       {/* ── 3. FILTER & SEARCH BAR (Unified with Members & Employees) ── */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234,88,12,0.02)]">
+      <div className="enquiry-filter-panel bg-white border border-[#FFEDD5] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234, 88, 12,0.02)]">
         {/* Search by name, phone or enquiry ID */}
-        <div className="relative flex-1 min-w-[240px]">
+        <div className="enquiry-search relative flex-1 min-w-[240px]">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input 
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search by name, phone or enquiry ID..."
-            className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
+            className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
           />
         </div>
 
-        <div className="flex flex-wrap gap-2.5 items-center">
+        <div className="enquiry-filter-controls flex flex-wrap gap-2.5 items-center">
           {/* Dynamic Representatives Dropdown */}
           <select 
             value={staffFilter}
             onChange={e => setStaffFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Representatives</option>
             {dynamicStaffList.map(st => (
@@ -820,7 +833,7 @@ export default function EnquiryGodLevelHub() {
           <select 
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Statuses</option>
             <option value="Pending">Pending</option>
@@ -834,8 +847,8 @@ export default function EnquiryGodLevelHub() {
             onClick={() => setShowMoreFilters(prev => !prev)}
             className={`px-4 py-3 text-xs font-bold rounded-2xl border transition-all flex items-center gap-1.5 cursor-pointer ${
               showMoreFilters || hasActiveMoreFilters
-                ? 'bg-[#FFF7ED] text-[#EA580C] border-[#EA580C]'
-                : 'bg-[#fdfdfd] border-[#FED7AA] text-slate-700 hover:bg-slate-50'
+                ? 'bg-orange-50 text-[#EA580C] border-[#EA580C]'
+                : 'bg-[#fdfdfd] border-[#FFEDD5] text-slate-700 hover:bg-slate-50'
             }`}
           >
             <SlidersHorizontal size={14} />
@@ -878,13 +891,13 @@ export default function EnquiryGodLevelHub() {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="bg-white border border-[#FED7AA] rounded-3xl p-4 shadow-[0_4px_20px_rgba(234,88,12,0.02)] grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
+            <div className="bg-white border border-[#FFEDD5] rounded-3xl p-4 shadow-[0_4px_20px_rgba(234, 88, 12,0.02)] grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
               <div>
                 <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Priority</label>
                 <select
                   value={priorityFilter}
                   onChange={e => setPriorityFilter(e.target.value)}
-                  className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-3.5 py-2.5 text-[#10233f] font-bold outline-none cursor-pointer"
+                  className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-3.5 py-2.5 text-[#10233f] font-bold outline-none cursor-pointer"
                 >
                   <option value="All">All Priorities</option>
                   <option value="Hot">Hot 🔥</option>
@@ -898,7 +911,7 @@ export default function EnquiryGodLevelHub() {
                 <select
                   value={planFilter}
                   onChange={e => setPlanFilter(e.target.value)}
-                  className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-3.5 py-2.5 text-[#10233f] font-bold outline-none cursor-pointer"
+                  className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-3.5 py-2.5 text-[#10233f] font-bold outline-none cursor-pointer"
                 >
                   <option value="All">All Plans</option>
                   {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
@@ -937,19 +950,117 @@ export default function EnquiryGodLevelHub() {
         
         {/* Left Col(s): Leads Table/Board */}
         <div className={`${selectedEnquiry ? 'xl:col-span-2' : 'xl:col-span-3'} space-y-4`}>
+          <div className="enquiry-mobile-list md:hidden space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-black text-slate-900">Leads</h2>
+              <span className="text-[11px] font-bold text-slate-500">{filteredEnquiries.length} results</span>
+            </div>
+            {filteredEnquiries.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm font-semibold text-slate-500">
+                No matching enquiries. Try changing your search or filters.
+              </div>
+            ) : filteredEnquiries.map((enq) => {
+              const cleanDate = (enq.nextFollowUpDate || enq.nextFollowUp || '').split('T')[0];
+              const isDueToday = cleanDate === todayStr;
+              const isTaskOverdue = isOverdueInIndia(cleanDate);
+              const enqCode = String((enq as any).enquiryId || enq.id || '').slice(-4).toUpperCase();
+              const avatar = resolveAvatarUrl(enq);
+              const repName = formatRepInfo(enq.assignedTo).name;
+              const followUpLabel = cleanDate
+                ? (isDueToday ? 'Today' : formatIndianDate(cleanDate))
+                : 'Not scheduled';
+              return (
+                <article
+                  key={enq.id}
+                  onClick={() => setSelectedEnquiry(enq)}
+                  className="enquiry-mobile-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5 active:scale-[0.99] transition-transform"
+                >
+                  <div className="flex items-start gap-3">
+                    <img
+                      src={avatar}
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        const g = String(enq.gender || '').trim().toLowerCase();
+                        target.src = (g === 'female' || g === 'f') ? FEMALE_DEFAULT_AVATAR : MALE_DEFAULT_AVATAR;
+                      }}
+                      className="w-11 h-11 rounded-full bg-slate-100 border border-slate-200 object-cover shrink-0"
+                      alt=""
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h3 className="text-[15px] leading-tight font-extrabold text-slate-900 truncate">{enq.name || 'Unnamed lead'}</h3>
+                          <p className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">ENQ-{enqCode}</p>
+                        </div>
+                        <span className={`shrink-0 px-2 py-1 rounded-full border text-[9px] font-black uppercase tracking-wide ${
+                          enq.status === 'Converted' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          enq.status === 'Closed' ? 'bg-slate-100 text-slate-600 border-slate-200' :
+                          'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>{enq.status || 'Pending'}</span>
+                      </div>
+                      <a
+                        href={`tel:${enq.phone || ''}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="inline-flex items-center gap-1.5 mt-2 text-sm font-bold text-[#EA580C] no-underline"
+                      >
+                        <Phone size={14} /> {enq.phone || 'No phone number'}
+                      </a>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`More actions for ${enq.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setActionsMenu({ enquiry: enq, rect });
+                      }}
+                      className="w-9 h-9 -mr-1 -mt-1 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 flex items-center justify-center shrink-0"
+                    ><MoreHorizontal size={18} /></button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
+                    <div className={`rounded-xl px-2.5 py-2 ${isTaskOverdue && enq.status === 'Pending' ? 'bg-rose-50' : 'bg-slate-50'}`}>
+                      <span className="block text-[9px] uppercase tracking-wide font-extrabold text-slate-400">Follow-up</span>
+                      <span className={`block text-[11px] font-bold truncate ${isTaskOverdue && enq.status === 'Pending' ? 'text-rose-600' : 'text-slate-800'}`}>{followUpLabel}</span>
+                    </div>
+                    <div className="rounded-xl px-2.5 py-2 bg-slate-50 min-w-0">
+                      <span className="block text-[9px] uppercase tracking-wide font-extrabold text-slate-400">Plan · Representative</span>
+                      <span className="block text-[11px] font-bold text-slate-800 truncate">{enq.duration || enq.interestedPlan || 'Plan not set'} · {repName}</span>
+                    </div>
+                  </div>
+                  {(enq.remarks || (enq as any).remark) && (
+                    <p className="mt-2 text-[11px] leading-snug text-slate-600 line-clamp-2">{enq.remarks || (enq as any).remark}</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); handleOpenScheduleFollowup(enq); }}
+                      className="h-10 rounded-xl border border-orange-200 bg-orange-50 text-[#EA580C] text-xs font-extrabold flex items-center justify-center gap-1.5"
+                    ><Calendar size={14} /> Follow-up</button>
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); launchWhatsApp(enq); }}
+                      className="h-10 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-extrabold flex items-center justify-center gap-1.5"
+                    ><MessageSquare size={14} /> WhatsApp</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
           {viewMode === 'table' ? (
-            <div className="bg-white border border-[#FED7AA] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234,88,12,0.03)]">
+            <div className="enquiry-table bg-white border border-[#FFEDD5] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234, 88, 12,0.03)]">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs whitespace-nowrap">
                   <thead className="bg-[#EA580C] text-[#fdfdfd] font-extrabold uppercase tracking-wider text-[9.5px] border-b border-[#C2410C]">
                     <tr>
-                      <th className="px-5 py-4 w-[24%] text-[#fdfdfd]">LEAD</th>
+                      <th className="px-5 py-4 w-[26%] text-[#fdfdfd]">LEAD</th>
                       <th className="px-5 py-4 w-[18%] text-[#fdfdfd]">CONTACT</th>
-                      <th className="px-5 py-4 w-[14%] text-[#fdfdfd]">PLAN</th>
+                      <th className="px-5 py-4 w-[14%] text-[#fdfdfd]">ENQUIRY DATE</th>
                       <th className="px-5 py-4 w-[16%] text-[#fdfdfd]">REPRESENTATIVE</th>
                       <th className="px-5 py-4 w-[14%] text-[#fdfdfd]">FOLLOW-UP</th>
-                      <th className="px-5 py-4 w-[9%] text-center text-[#fdfdfd]">STATUS</th>
-                      <th className="px-5 py-4 w-[5%] text-right text-[#fdfdfd]">ACTIONS</th>
+                      <th className="px-5 py-4 w-[8%] text-center text-[#fdfdfd]">STATUS</th>
+                      <th className="px-5 py-4 w-[4%] text-right text-[#fdfdfd]">ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
@@ -972,19 +1083,20 @@ export default function EnquiryGodLevelHub() {
                         const repInfo = formatRepInfo(enq.assignedTo);
                         const avatar = resolveAvatarUrl(enq);
                         const enqCode = String((enq as any).enquiryId || enq.id || '').slice(-4).toUpperCase();
+                        const enqRemark = enq.remarks || (enq as any).remark || '';
 
                         return (
                           <tr
                             key={enq.id}
                             onClick={() => setSelectedEnquiry(enq)}
                             className={`hover:bg-slate-50/60 transition-colors cursor-pointer ${
-                              isSelected ? 'bg-orange-50/60' : ''
+                              isSelected ? 'bg-orange-50/40' : ''
                             }`}
                           >
-                            {/* 1. LEAD: Merged Avatar + Name + Enquiry ID */}
+                            {/* 1. LEAD: Merged Avatar + Name + Enquiry ID + Remark */}
                             <td className="px-5 py-3.5">
-                              <div className="flex items-center gap-3">
-                                <div className="relative shrink-0">
+                              <div className="flex items-start gap-3">
+                                <div className="relative shrink-0 mt-0.5">
                                   <img 
                                     src={avatar} 
                                     onError={(e) => {
@@ -992,17 +1104,23 @@ export default function EnquiryGodLevelHub() {
                                       const g = String(enq.gender || '').trim().toLowerCase();
                                       target.src = (g === 'female' || g === 'f') ? FEMALE_DEFAULT_AVATAR : MALE_DEFAULT_AVATAR;
                                     }}
-                                    className="w-11 h-11 rounded-full bg-slate-100 border-2 border-white shadow-xs object-cover" 
+                                    className="w-10 h-10 rounded-full bg-slate-100 border-2 border-white shadow-xs object-cover" 
                                     alt={enq.name} 
                                   />
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <div className="font-extrabold text-slate-900 text-sm leading-tight truncate">
                                     {enq.name}
                                   </div>
                                   <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">
                                     ENQ-{enqCode}
                                   </div>
+                                  {enqRemark && enqRemark.trim() !== '' && (
+                                    <div className="mt-1 text-[11px] text-slate-600 bg-amber-50/90 border border-amber-200/80 px-2 py-0.5 rounded-lg inline-flex items-center gap-1.5 max-w-[240px] truncate" title={enqRemark}>
+                                      <span className="font-bold text-amber-800 text-[9.5px] uppercase tracking-wider shrink-0">Remark:</span>
+                                      <span className="truncate italic text-slate-700 font-medium">{enqRemark}</span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
@@ -1019,10 +1137,11 @@ export default function EnquiryGodLevelHub() {
                               )}
                             </td>
 
-                            {/* 3. PLAN / DURATION */}
-                            <td className="px-5 py-3.5">
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-[#FFF7ED] text-[#EA580C] border border-orange-200/60 inline-block font-sans">
-                                {enq.duration || enq.interestedPlan || '1 MONTH'}
+                            {/* 3. ENQUIRY DATE */}
+                            <td className="px-5 py-3.5 font-bold text-slate-800 text-xs">
+                              <span className="inline-flex items-center gap-1 text-slate-700">
+                                <span>📅</span>
+                                <span>{formatIndianDate(enq.enquiryDate || enq.createdAt || todayStr)}</span>
                               </span>
                             </td>
 
@@ -1103,7 +1222,7 @@ export default function EnquiryGodLevelHub() {
             </div>
           ) : (
             /* Kanban Board Mode */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="enquiry-kanban grid grid-cols-1 md:grid-cols-2 gap-4">
               {(['Pending', 'Closed'] as const).map(colStatus => {
                 const colLeads = filteredEnquiries.filter(e => e.status === colStatus);
                 return (
@@ -1127,7 +1246,7 @@ export default function EnquiryGodLevelHub() {
                               <h4 className="font-extrabold text-slate-900 text-xs">{enq.name}</h4>
                               <p className="text-[10px] text-slate-500 font-bold mt-0.5">📞 {enq.phone}</p>
                             </div>
-                            <span className="text-[9px] font-black bg-[#FFF7ED] text-[#EA580C] border border-orange-200/60 px-2 py-0.5 rounded uppercase">
+                            <span className="text-[9px] font-black bg-orange-50 text-[#EA580C] border border-orange-200/60 px-2 py-0.5 rounded uppercase">
                               {enq.duration || '1 month'}
                             </span>
                           </div>
@@ -1153,9 +1272,10 @@ export default function EnquiryGodLevelHub() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className="xl:col-span-1"
+              onClick={() => setSelectedEnquiry(null)}
+              className="enquiry-inspector xl:col-span-1"
             >
-              <div className="bg-white rounded-3xl p-6 border border-[#FED7AA] shadow-[0_4px_20px_rgba(234,88,12,0.03)] sticky top-6 space-y-6">
+              <div onClick={(event) => event.stopPropagation()} className="bg-white rounded-3xl p-6 border border-[#FFEDD5] shadow-[0_4px_20px_rgba(234, 88, 12,0.03)] sticky top-6 space-y-6">
                 
                 {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -1189,7 +1309,7 @@ export default function EnquiryGodLevelHub() {
                     📞 {selectedEnquiry.phone}
                   </p>
                   <p className="text-[11px] text-slate-500 font-medium">
-                    Interested Plan: <span className="font-bold text-[#EA580C] bg-[#FFF7ED] px-2 py-0.5 rounded border border-orange-200/60">{selectedEnquiry.duration || selectedEnquiry.interestedPlan || '1 month'}</span>
+                    Interested Plan: <span className="font-bold text-[#EA580C] bg-orange-50 px-2 py-0.5 rounded border border-orange-200/50">{selectedEnquiry.duration || selectedEnquiry.interestedPlan || '1 month'}</span>
                   </p>
                 </div>
 
@@ -1216,13 +1336,25 @@ export default function EnquiryGodLevelHub() {
                 {/* Representative & Follow-Up Date */}
                 <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/70 space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-slate-500 font-medium">Representative:</span>
-                    <span className="font-bold text-slate-800">{selectedEnquiry.assignedTo || 'Manager'}</span>
+                    <span className="text-slate-500 font-medium">Enquiry Date:</span>
+                    <span className="font-bold text-slate-800">{formatIndianDate(selectedEnquiry.enquiryDate || selectedEnquiry.createdAt || '')}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-500 font-medium">Follow-up Date:</span>
                     <span className="font-bold text-[#EA580C]">{formatIndianDate(selectedEnquiry.nextFollowUpDate || selectedEnquiry.nextFollowUp || '')}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-medium">Representative:</span>
+                    <span className="font-bold text-slate-800">{selectedEnquiry.assignedTo || 'Veer Chand (manager)'}</span>
+                  </div>
+                  {(selectedEnquiry.remarks || (selectedEnquiry as any).remark) && (
+                    <div className="pt-2 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium block mb-0.5">Remark:</span>
+                      <p className="text-slate-800 font-semibold italic bg-amber-50/70 p-2 rounded-xl border border-amber-200/60 text-[11.5px]">
+                        {selectedEnquiry.remarks || (selectedEnquiry as any).remark}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Timeline History */}
@@ -1245,7 +1377,7 @@ export default function EnquiryGodLevelHub() {
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-slate-800">{hist.title || 'Enquiry Event'}</span>
                             {hist.source === 'excel_import' && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-[#FFEDD5] text-[#9A3412]">
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-orange-100 text-orange-800">
                                 Imported History
                               </span>
                             )}
@@ -1274,7 +1406,7 @@ export default function EnquiryGodLevelHub() {
 
                   <a
                     href={`tel:${selectedEnquiry.phone}`}
-                    className="flex-1 py-2.5 bg-[#FFF7ED] hover:bg-orange-100 text-[#C2410C] font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all border border-[#FED7AA] no-underline"
+                    className="flex-1 py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all border border-orange-200 no-underline"
                   >
                     <Phone size={13} /> Call
                   </a>
@@ -1321,9 +1453,9 @@ export default function EnquiryGodLevelHub() {
               setActionsMenu(null);
               handleOpenEdit(enq);
             }}
-            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
           >
-            <Edit size={14} className="text-[#EA580C]" />
+            <Edit size={14} className="text-orange-600" />
             <span>Edit</span>
           </button>
 
@@ -1364,9 +1496,9 @@ export default function EnquiryGodLevelHub() {
               setActionsMenu(null);
               handleOpenScheduleFollowup(enq);
             }}
-            className="w-full px-3.5 py-2 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
           >
-            <Calendar size={14} className="text-indigo-600" />
+            <Calendar size={14} className="text-orange-600" />
             <span>Follow-up</span>
           </button>
 
@@ -1724,7 +1856,7 @@ export default function EnquiryGodLevelHub() {
             >
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Upload className="text-[#EA580C]" size={18} /> Import Real Enquiries Excel
+                  <Upload className="text-[#EA580C]" size={18} /> Import Enquiries Excel
                 </h3>
                 <button onClick={() => setShowImportModal(false)} className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 border-none cursor-pointer">
                   <X size={18} />
@@ -1733,12 +1865,13 @@ export default function EnquiryGodLevelHub() {
 
               <div className="space-y-4 text-xs text-slate-600">
                 <p>
-                  Upload your master enquiry Excel spreadsheet (e.g. <code>inquiries 230826.xlsx</code>). The system will automatically:
+                  Upload an enquiry Excel spreadsheet with columns for name, phone number, interested plan, next follow-up, representative, and status. The system will automatically:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-700 font-medium">
-                  <li>Normalize and import all Sheet 1 master enquiry records (386 rows)</li>
-                  <li>Link Sheet 2 closed records as history timeline without duplicates</li>
-                  <li>Generate automated follow-ups for all pending enquiries</li>
+                  <li>Import the first sheet and preserve Pending, Closed, and Converted statuses</li>
+                  <li>Prevent duplicate records using normalized phone numbers</li>
+                  <li>Generate automated follow-ups for pending enquiries with a follow-up date</li>
+                  <li>Optionally link matching records from a second sheet to enquiry history</li>
                 </ul>
 
                 <div className="border-2 border-dashed border-slate-200 hover:border-[#EA580C] rounded-2xl p-6 text-center cursor-pointer transition-colors bg-slate-50">
@@ -1769,6 +1902,7 @@ export default function EnquiryGodLevelHub() {
                       <span>Master Imported: <b>{importReport.imported}</b></span>
                       <span>Pending: <b>{importReport.pending}</b></span>
                       <span>Closed: <b>{importReport.closed}</b></span>
+                      <span>Converted: <b>{importReport.converted || 0}</b></span>
                       <span>Duplicates Prevented: <b>{importReport.duplicatesPrevented}</b></span>
                       <span>Closed History Linked: <b>{importReport.historicalRecordsLinked}</b></span>
                     </div>
@@ -1802,7 +1936,7 @@ export default function EnquiryGodLevelHub() {
               {/* Modal Header */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] flex items-center justify-center text-[#EA580C] shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#EA580C] shrink-0">
                     <UserPlus size={20} />
                   </div>
                   <div>
@@ -1971,8 +2105,40 @@ export default function EnquiryGodLevelHub() {
                   </div>
                 </div>
 
-                {/* 3. Follow-up Date & Representative */}
+                {/* 3. Enquiry Date & Follow-up Date */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Enquiry Date <span className="text-rose-500 font-black">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={enquiryDate}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setEnquiryDate(val);
+                        if (touched.enquiryDate) {
+                          setFormErrors(prev => ({ ...prev, enquiryDate: validateField('enquiryDate', val) }));
+                        }
+                      }}
+                      onBlur={() => {
+                        setTouched(prev => ({ ...prev, enquiryDate: true }));
+                        setFormErrors(prev => ({ ...prev, enquiryDate: validateField('enquiryDate', enquiryDate) }));
+                      }}
+                      className={`w-full bg-[#fdfdfd] border ${
+                        touched.enquiryDate && formErrors.enquiryDate 
+                          ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20' 
+                          : 'border-slate-200 focus:border-[#EA580C]'
+                      } rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 outline-none transition-colors cursor-pointer`}
+                    />
+                    {touched.enquiryDate && formErrors.enquiryDate && (
+                      <p className="text-[10.5px] text-rose-600 font-bold mt-1 flex items-center gap-1">
+                        <AlertCircle size={11} className="shrink-0" />
+                        <span>{formErrors.enquiryDate}</span>
+                      </p>
+                    )}
+                  </div>
+
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">
                       Follow-up Date <span className="text-rose-500 font-black">*</span>
@@ -2003,6 +2169,21 @@ export default function EnquiryGodLevelHub() {
                         <span>{formErrors.followupDate}</span>
                       </p>
                     )}
+                  </div>
+                </div>
+
+                {/* 4. Follow-up Time & Representative */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Follow-up Time
+                    </label>
+                    <input
+                      type="time"
+                      value={followupTime}
+                      onChange={e => setFollowupTime(e.target.value)}
+                      className="w-full bg-[#fdfdfd] border border-slate-200 focus:border-[#EA580C] rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 outline-none transition-colors cursor-pointer"
+                    />
                   </div>
 
                   <div>

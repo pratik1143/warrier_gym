@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { User, ChevronDown, Search, Check, UserMinus, Sparkles, Shield, BadgeCheck, Dumbbell, AlertTriangle } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, getDocs, where } from 'firebase/firestore';
 import toast from '@/lib/toast';
 import API from '@/services/api';
 import PtBillingModal from './PtBillingModal';
@@ -142,6 +142,19 @@ export default function TrainerSelectorDropdown({
   const currentTrainerName = member?.trainerName || member?.trainer || 'Unassigned';
   const currentTrainerId = member?.trainerId || null;
   const isAssigned = currentTrainerId && currentTrainerId !== 'null' && currentTrainerName !== 'Unassigned';
+  const existingPtRecord = member?.ptMembership || member?.pt || {};
+  const existingPtInvoiceNo = existingPtRecord.invoiceNo || existingPtRecord.invoiceNumber || existingPtRecord.billingId || '';
+  const existingPtExpiry = String(existingPtRecord.expiryDate || member?.ptExpiryDate || '').slice(0, 10);
+  const localToday = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+  const hasActivePtBilling = Boolean(
+    existingPtInvoiceNo &&
+    String(existingPtRecord.status || 'ACTIVE').toLowerCase() !== 'inactive' &&
+    String(existingPtRecord.status || 'ACTIVE').toLowerCase() !== 'expired' &&
+    (!existingPtExpiry || existingPtExpiry >= localToday)
+  );
 
   const filteredTrainers = trainers.filter((t) => {
     const name = String(t.name || '').toLowerCase();
@@ -167,7 +180,11 @@ export default function TrainerSelectorDropdown({
         updatedAt: new Date().toISOString(),
       };
 
-      await updateDoc(doc(db, 'members', member.id), updateData);
+      try {
+        await updateDoc(doc(db, 'members', member.id), updateData);
+      } catch (memErr) {
+        await API.put(`/members/${member.id}`, updateData);
+      }
 
       member.trainerId = null;
       member.trainerName = 'Unassigned';
@@ -190,14 +207,23 @@ export default function TrainerSelectorDropdown({
   };
 
   // Direct Reassign Without New Bill (for trainer swap)
-  const handleKeepBillingReassign = async () => {
-    if (!member || !member.id || !pendingTrainer) return;
+  const handleKeepBillingReassign = async (trainerOverride: any = pendingTrainer) => {
+    if (!member || !member.id || !trainerOverride) return;
     setSaving(true);
     try {
-      const newTrainerId = pendingTrainer.employeeId || pendingTrainer.id;
-      const newTrainerName = pendingTrainer.name;
-      const newTrainerRole = pendingTrainer.specialization || pendingTrainer.role || 'Personal Trainer & Strength';
-      const newTrainerAvatar = pendingTrainer.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(newTrainerName)}`;
+      const newTrainerId = trainerOverride.employeeId || trainerOverride.id;
+      const newTrainerName = trainerOverride.name;
+      const newTrainerRole = trainerOverride.specialization || trainerOverride.role || 'Personal Trainer & Strength';
+      const newTrainerAvatar = trainerOverride.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(newTrainerName)}`;
+      const ptHistory = Array.isArray(member.ptHistory) ? member.ptHistory : [];
+      const updatedPtHistory = existingPtInvoiceNo
+        ? ptHistory.map((entry: any) => {
+            const entryInvoiceNo = entry.invoiceNo || entry.invoiceNumber || entry.invoice || '';
+            return entryInvoiceNo === existingPtInvoiceNo
+              ? { ...entry, trainerId: newTrainerId, trainerName: newTrainerName, trainerRole: newTrainerRole, trainerAvatar: newTrainerAvatar }
+              : entry;
+          })
+        : ptHistory;
 
       const updateData = {
         trainerId: newTrainerId,
@@ -209,15 +235,47 @@ export default function TrainerSelectorDropdown({
         'pt.trainerName': newTrainerName,
         'pt.trainerRole': newTrainerRole,
         'pt.trainerAvatar': newTrainerAvatar,
+        'ptMembership.trainerId': newTrainerId,
+        'ptMembership.trainerName': newTrainerName,
+        'ptMembership.trainerRole': newTrainerRole,
+        'ptMembership.trainerAvatar': newTrainerAvatar,
+        ...(existingPtInvoiceNo ? { ptHistory: updatedPtHistory } : {}),
         updatedAt: new Date().toISOString(),
       };
 
-      await updateDoc(doc(db, 'members', member.id), updateData);
+      try {
+        await updateDoc(doc(db, 'members', member.id), updateData);
+      } catch (memErr) {
+        await API.put(`/members/${member.id}`, updateData);
+      }
 
       Object.assign(member, updateData);
       if (member.pt) {
         member.pt.trainerId = newTrainerId;
         member.pt.trainerName = newTrainerName;
+        member.pt.trainerRole = newTrainerRole;
+        member.pt.trainerAvatar = newTrainerAvatar;
+      }
+      if (member.ptMembership) {
+        member.ptMembership.trainerId = newTrainerId;
+        member.ptMembership.trainerName = newTrainerName;
+        member.ptMembership.trainerRole = newTrainerRole;
+        member.ptMembership.trainerAvatar = newTrainerAvatar;
+      }
+      if (existingPtInvoiceNo) {
+        member.ptHistory = updatedPtHistory;
+        try {
+          const paymentSnap = await getDocs(query(collection(db, 'payments'), where('invoiceNumber', '==', existingPtInvoiceNo)));
+          await Promise.all(paymentSnap.docs.map(paymentDoc => updateDoc(paymentDoc.ref, {
+            trainerId: newTrainerId,
+            trainerName: newTrainerName,
+            trainerRole: newTrainerRole,
+            trainerAvatar: newTrainerAvatar,
+            updatedAt: new Date().toISOString(),
+          })));
+        } catch (paymentUpdateError) {
+          console.warn('Trainer assigned to active PT plan, but payment receipt trainer details could not be refreshed:', paymentUpdateError);
+        }
       }
 
       if (onTrainerUpdated) {
@@ -247,6 +305,9 @@ export default function TrainerSelectorDropdown({
     if (isAssigned) {
       // Member already has an assigned trainer -> Ask reassign confirmation
       setShowReassignConfirmModal(true);
+    } else if (hasActivePtBilling) {
+      // Existing active PT billing: assign its trainer without creating another bill.
+      void handleKeepBillingReassign(trainer);
     } else {
       // First-time trainer assignment -> Open PT Billing Modal
       setShowPtBillingModal(true);
@@ -267,11 +328,11 @@ export default function TrainerSelectorDropdown({
           onClick={handleToggleOpen}
           className={`px-3.5 py-2 border rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 ${
             isAssigned
-              ? 'bg-indigo-50 border-indigo-200 text-indigo-900 hover:bg-indigo-100'
+              ? 'bg-orange-50 border-orange-200 text-orange-900 hover:bg-orange-100'
               : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
           }`}
         >
-          <User size={15} className={isAssigned ? 'text-indigo-600' : 'text-slate-400'} />
+          <User size={15} className={isAssigned ? 'text-orange-600' : 'text-slate-400'} />
           <span>{saving ? 'Updating...' : currentTrainerName}</span>
           <ChevronDown size={14} className="text-slate-400" />
         </button>
@@ -297,7 +358,7 @@ export default function TrainerSelectorDropdown({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search trainer name, ID..."
-              className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-500"
+              className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-orange-500"
             />
           </div>
 
@@ -340,7 +401,7 @@ export default function TrainerSelectorDropdown({
                     type="button"
                     onClick={() => handleSelectTrainerOption(t)}
                     className={`w-full p-2.5 rounded-xl text-left transition-all border-none cursor-pointer flex items-center justify-between gap-2 ${
-                      isSelected ? 'bg-indigo-50/90 text-indigo-900 font-black border border-indigo-200' : 'hover:bg-slate-50 text-slate-800 font-bold'
+                      isSelected ? 'bg-orange-50/90 text-orange-900 font-black border border-orange-200' : 'hover:bg-slate-50 text-slate-800 font-bold'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -367,7 +428,7 @@ export default function TrainerSelectorDropdown({
                       </div>
                     </div>
 
-                    {isSelected && <Check size={15} className="text-indigo-600 shrink-0" />}
+                    {isSelected && <Check size={15} className="text-orange-600 shrink-0" />}
                   </button>
                 );
               })

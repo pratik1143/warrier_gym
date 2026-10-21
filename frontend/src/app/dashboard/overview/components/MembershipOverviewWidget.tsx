@@ -141,7 +141,7 @@ export default function MembershipOverviewWidget({ members, onRenewMember }: Mem
         <div className="h-3.5 w-full bg-stone-100 rounded-full flex overflow-hidden p-0.5 gap-0.5">
           <div style={{ width: `${activePct}%` }} className="h-full bg-[#16A34A] rounded-l-full transition-all" title={`Active: ${activeCount}`} />
           <div style={{ width: `${expiringPct}%` }} className="h-full bg-[#F59E0B] transition-all" title={`Expiring: ${expiringSoonCount}`} />
-          <div style={{ width: `${holdPct}%` }} className="h-full bg-[#3B82F6] transition-all" title={`Hold: ${holdCount}`} />
+          <div style={{ width: `${holdPct}%` }} className="h-full bg-[#F97316] transition-all" title={`Hold: ${holdCount}`} />
           <div style={{ width: `${expiredPct}%` }} className="h-full bg-[#DC2626] rounded-r-full transition-all" title={`Expired: ${expiredCount}`} />
         </div>
 
@@ -157,9 +157,9 @@ export default function MembershipOverviewWidget({ members, onRenewMember }: Mem
             <div className="text-lg font-black text-amber-950 font-sans mt-0.5">{expiringSoonCount}</div>
           </div>
 
-          <div className="p-2 rounded-xl bg-blue-50/70 border border-blue-100 text-left">
-            <div className="text-[9px] font-black uppercase text-blue-800 tracking-wider">Hold / Pending</div>
-            <div className="text-lg font-black text-blue-950 font-sans mt-0.5">{holdCount}</div>
+          <div className="p-2 rounded-xl bg-orange-50/70 border border-orange-100 text-left">
+            <div className="text-[9px] font-black uppercase text-orange-800 tracking-wider">Hold / Pending</div>
+            <div className="text-lg font-black text-orange-950 font-sans mt-0.5">{holdCount}</div>
           </div>
 
           <div className="p-2 rounded-xl bg-red-50/70 border border-red-100 text-left">

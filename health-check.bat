@@ -3,12 +3,15 @@ title THE WARRIOR GYM - Health Check Diagnostics
 color 0B
 cd /d "%~dp0"
 
-echo Running The Warrior Gym System Diagnostics...
+echo Running The Warrior Gym Hikvision diagnostics...
+echo.
 where py >nul 2>&1
 if %errorlevel%==0 (
-    py device-service\health_check.py
+    py warrior-biometric-agent\ping_hikvision.py
 ) else (
-    python device-service\health_check.py
+    python warrior-biometric-agent\ping_hikvision.py
 )
+echo.
+echo (Optional) Full agent diagnostics: py warrior-biometric-agent\test_diagnostics.py
 echo.
 pause

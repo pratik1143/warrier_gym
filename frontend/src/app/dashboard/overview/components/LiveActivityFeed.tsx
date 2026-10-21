@@ -17,11 +17,11 @@ import {
 const getIconForType = (type: string) => {
   switch (type?.toLowerCase()) {
     case 'attendance': return <Fingerprint size={16} className="text-emerald-500" />;
-    case 'payment': return <CreditCard size={16} className="text-[#F97316]" />;
+    case 'payment': return <CreditCard size={16} className="text-orange-500" />;
     case 'renewal': return <RefreshCw size={16} className="text-purple-500" />;
     case 'new_member': return <UserPlus size={16} className="text-amber-500" />;
     case 'followup': return <MessageSquare size={16} className="text-pink-500" />;
-    case 'enquiry': return <Search size={16} className="text-indigo-500" />;
+    case 'enquiry': return <Search size={16} className="text-orange-500" />;
     default: return <Activity size={16} className="text-slate-400" />;
   }
 };
@@ -29,11 +29,11 @@ const getIconForType = (type: string) => {
 const getBgForType = (type: string) => {
   switch (type?.toLowerCase()) {
     case 'attendance': return "bg-emerald-50 border-emerald-100";
-    case 'payment': return "bg-[#FFF7ED] border-[#FED7AA]";
+    case 'payment': return "bg-orange-50 border-orange-100";
     case 'renewal': return "bg-purple-50 border-purple-100";
     case 'new_member': return "bg-amber-50 border-amber-100";
     case 'followup': return "bg-pink-50 border-pink-100";
-    case 'enquiry': return "bg-indigo-50 border-indigo-100";
+    case 'enquiry': return "bg-orange-50 border-orange-100";
     default: return "bg-slate-50 border-slate-100";
   }
 };

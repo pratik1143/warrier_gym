@@ -79,7 +79,7 @@ export default function MemberAppPage() {
             plan: m.plan || 'Monthly Standard',
             phone: m.phone || '',
             appAccessEnabled: m.appAccessEnabled ?? (m.status === 'active'),
-            appEmail: m.appEmail || `${(m.name || 'member').toLowerCase().replace(/\s+/g, '')}@thewarriorgym.in`,
+            appEmail: m.appEmail || `${(m.name || 'member').toLowerCase().replace(/\s+/g, '')}@alpha.com`,
             expiryDate: m.expiryDate
           }));
           setMembers(list);
@@ -100,17 +100,17 @@ export default function MemberAppPage() {
             plan: m.plan || 'Monthly Standard',
             phone: m.phone || '',
             appAccessEnabled: m.appAccessEnabled ?? (m.status === 'active'),
-            appEmail: m.appEmail || `${(m.name || 'member').toLowerCase().replace(/\s+/g, '')}@thewarriorgym.in`,
+            appEmail: m.appEmail || `${(m.name || 'member').toLowerCase().replace(/\s+/g, '')}@alpha.com`,
             expiryDate: m.expiryDate
           }));
           setMembers(list);
         } else {
           // Pre-populated demo members if all sources offline
           setMembers([
-            { id: 'm1', name: 'Sahil Sharma', status: 'active', plan: 'Monthly Standard', phone: '9877466899', appAccessEnabled: true, appEmail: 'sahil@thewarriorgym.in', expiryDate: '2026-08-15', lastLoginAt: '2026-07-22T14:30:00Z', deviceInfo: 'iPhone 15 Pro' },
-            { id: 'm2', name: 'Arjun Mehta', status: 'active', plan: 'Quarterly Prime', phone: '9877407660', appAccessEnabled: true, appEmail: 'arjun@thewarriorgym.in', expiryDate: '2026-09-10', lastLoginAt: '2026-07-22T12:15:00Z', deviceInfo: 'Samsung Galaxy S24' },
-            { id: 'm3', name: 'Simran Kaur', status: 'active', plan: 'Monthly Standard', phone: '7814854830', appAccessEnabled: true, appEmail: 'simran@thewarriorgym.in', expiryDate: '2026-08-20', lastLoginAt: '2026-07-21T18:45:00Z', deviceInfo: 'OnePlus 12' },
-            { id: 'm4', name: 'Priya Sharma', status: 'expired', plan: 'Annual Premium', phone: '6239139878', appAccessEnabled: false, appEmail: 'priya@thewarriorgym.in', expiryDate: '2026-06-01', lastLoginAt: '2026-05-30T10:00:00Z', deviceInfo: 'iPhone 13' }
+            { id: 'm1', name: 'Sahil Sharma', status: 'active', plan: 'Monthly Standard', phone: '9877466899', appAccessEnabled: true, appEmail: 'sahil@alpha.com', expiryDate: '2026-08-15', lastLoginAt: '2026-07-22T14:30:00Z', deviceInfo: 'iPhone 15 Pro' },
+            { id: 'm2', name: 'Arjun Mehta', status: 'active', plan: 'Quarterly Prime', phone: '9877407660', appAccessEnabled: true, appEmail: 'arjun@alpha.com', expiryDate: '2026-09-10', lastLoginAt: '2026-07-22T12:15:00Z', deviceInfo: 'Samsung Galaxy S24' },
+            { id: 'm3', name: 'Simran Kaur', status: 'active', plan: 'Monthly Standard', phone: '7814854830', appAccessEnabled: true, appEmail: 'simran@alpha.com', expiryDate: '2026-08-20', lastLoginAt: '2026-07-21T18:45:00Z', deviceInfo: 'OnePlus 12' },
+            { id: 'm4', name: 'Priya Sharma', status: 'expired', plan: 'Annual Premium', phone: '6239139878', appAccessEnabled: false, appEmail: 'priya@alpha.com', expiryDate: '2026-06-01', lastLoginAt: '2026-05-30T10:00:00Z', deviceInfo: 'iPhone 13' }
           ]);
         }
         setLoading(false);
@@ -119,10 +119,10 @@ export default function MemberAppPage() {
 
     // Load initial login audit logs
     setLoginLogs([
-      { id: 'log_1', memberName: 'Sahil Sharma', memberPhone: '9877466899', appEmail: 'sahil@thewarriorgym.in', timestamp: new Date(Date.now() - 15 * 60000).toISOString(), device: 'iOS App', ipAddress: '103.24.18.42', status: 'SUCCESS' },
-      { id: 'log_2', memberName: 'Arjun Mehta', memberPhone: '9877407660', appEmail: 'arjun@thewarriorgym.in', timestamp: new Date(Date.now() - 45 * 60000).toISOString(), device: 'Android App', ipAddress: '115.99.20.14', status: 'SUCCESS' },
-      { id: 'log_3', memberName: 'Simran Kaur', memberPhone: '7814854830', appEmail: 'simran@thewarriorgym.in', timestamp: new Date(Date.now() - 120 * 60000).toISOString(), device: 'iOS App', ipAddress: '49.36.14.88', status: 'SUCCESS' },
-      { id: 'log_4', memberName: 'Priya Sharma', memberPhone: '6239139878', appEmail: 'priya@thewarriorgym.in', timestamp: new Date(Date.now() - 360 * 60000).toISOString(), device: 'Mobile Web', ipAddress: '106.210.4.19', status: 'FAILED' },
+      { id: 'log_1', memberName: 'Sahil Sharma', memberPhone: '9877466899', appEmail: 'sahil@alpha.com', timestamp: new Date(Date.now() - 15 * 60000).toISOString(), device: 'iOS App', ipAddress: '103.24.18.42', status: 'SUCCESS' },
+      { id: 'log_2', memberName: 'Arjun Mehta', memberPhone: '9877407660', appEmail: 'arjun@alpha.com', timestamp: new Date(Date.now() - 45 * 60000).toISOString(), device: 'Android App', ipAddress: '115.99.20.14', status: 'SUCCESS' },
+      { id: 'log_3', memberName: 'Simran Kaur', memberPhone: '7814854830', appEmail: 'simran@alpha.com', timestamp: new Date(Date.now() - 120 * 60000).toISOString(), device: 'iOS App', ipAddress: '49.36.14.88', status: 'SUCCESS' },
+      { id: 'log_4', memberName: 'Priya Sharma', memberPhone: '6239139878', appEmail: 'priya@alpha.com', timestamp: new Date(Date.now() - 360 * 60000).toISOString(), device: 'Mobile Web', ipAddress: '106.210.4.19', status: 'FAILED' },
     ]);
 
     if (isFirebaseReady && fDb) {
@@ -158,7 +158,7 @@ export default function MemberAppPage() {
   // Load Maintenance State from Local Storage
   useEffect(() => {
     try {
-      const savedMaint = localStorage.getItem('warrior_member_app_maintenance');
+      const savedMaint = localStorage.getItem('alpha_member_app_maintenance');
       if (savedMaint) {
         const parsed = JSON.parse(savedMaint);
         setUnderMaintenance(!!parsed.underMaintenance);
@@ -179,7 +179,7 @@ export default function MemberAppPage() {
       updatedAt: new Date().toISOString()
     };
     try {
-      localStorage.setItem('warrior_member_app_maintenance', JSON.stringify(payload));
+      localStorage.setItem('alpha_member_app_maintenance', JSON.stringify(payload));
     } catch (_) {}
     toast.success(maint ? '⚠️ Member App switched to Maintenance Mode!' : '✅ Member App is now Online and Live!');
   };
@@ -253,7 +253,7 @@ export default function MemberAppPage() {
   // Send WhatsApp Login Credentials
   const sendWhatsAppCredentials = (member: MemberAppData) => {
     const phone = member.phone.replace(/\D/g, '');
-    const email = member.appEmail || `${member.name.toLowerCase().replace(/\s+/g, '')}@thewarriorgym.in`;
+    const email = member.appEmail || `${member.name.toLowerCase().replace(/\s+/g, '')}@alpha.com`;
     const text = encodeURIComponent(
       `🏋️ The Warrior Gym Mobile App Login Credentials\n\nApp Link: https://thewarriorgym.in/app\nUsername / Email: ${email}\nDefault Password: 1234567\n\nDownload the app to view your workout plan, attendance streak, and active membership pass! 💪`
     );
@@ -265,7 +265,7 @@ export default function MemberAppPage() {
       
       {/* ── 1. HEADER SECTION & MAINTENANCE STATUS BAR ────────────────────────── */}
       <div className="bg-white rounded-[32px] p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.02)] mb-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-96 h-96 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
           <div>
@@ -281,7 +281,7 @@ export default function MemberAppPage() {
               </span>
             </div>
             <h1 className="text-3xl lg:text-4xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-              <Smartphone className="text-indigo-600" size={36} /> Member App Access & Audit
+              <Smartphone className="text-orange-600" size={36} /> Member App Access & Audit
             </h1>
             <p className="text-xs lg:text-sm font-semibold text-slate-500 mt-1">
               Manage member mobile app access, view real-time login audit trails, and control app maintenance mode.
@@ -318,11 +318,11 @@ export default function MemberAppPage() {
           <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-[10px] font-black uppercase tracking-wider">Active Gym Members</span>
-              <Users size={16} className="text-[#F97316]" />
+              <Users size={16} className="text-orange-500" />
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{activeMembers.length}</span>
-              <span className="text-[10px] font-bold text-[#EA580C] bg-[#FFF7ED] px-1.5 py-0.5 rounded">Eligible</span>
+              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">Eligible</span>
             </div>
           </div>
 
@@ -340,11 +340,11 @@ export default function MemberAppPage() {
           <div className="bg-slate-50/70 rounded-2xl p-4 border border-slate-100">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-[10px] font-black uppercase tracking-wider">Logins Today</span>
-              <Activity size={16} className="text-indigo-500" />
+              <Activity size={16} className="text-orange-500" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-indigo-600">{loginLogs.length}</span>
-              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Audit Verified</span>
+              <span className="text-2xl font-black text-orange-600">{loginLogs.length}</span>
+              <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded">Audit Verified</span>
             </div>
           </div>
 
@@ -404,7 +404,7 @@ export default function MemberAppPage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search member name, phone or app email..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#F97316]"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-orange-500"
                 />
               </div>
 
@@ -421,7 +421,7 @@ export default function MemberAppPage() {
                     onClick={() => setFilter(f.id as any)}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       filter === f.id
-                        ? 'bg-[#EA580C] text-white shadow-sm'
+                        ? 'bg-orange-600 text-white shadow-sm'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
@@ -447,7 +447,7 @@ export default function MemberAppPage() {
                   {loading ? (
                     <tr>
                       <td colSpan={5} className="py-12 text-center text-slate-400">
-                        <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-[#F97316]" />
+                        <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-orange-500" />
                         <span className="font-semibold text-xs">Loading member app permissions...</span>
                       </td>
                     </tr>
@@ -456,13 +456,13 @@ export default function MemberAppPage() {
                       const isEnabled = !!m.appAccessEnabled;
                       const isAct = m.status === 'active';
                       const isLoading = actionLoading === m.id;
-                      const appEmail = m.appEmail || `${(m.name || 'member').toLowerCase().replace(/\s+/g, '')}@thewarriorgym.in`;
+                      const appEmail = m.appEmail || `${(m.name || 'member').toLowerCase().replace(/\s+/g, '')}@alpha.com`;
 
                       return (
                         <tr key={m.id} className="hover:bg-slate-50/80 transition-all">
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0 border border-indigo-100">
+                              <div className="w-9 h-9 rounded-xl bg-orange-50 text-orange-700 font-black text-xs flex items-center justify-center shrink-0 border border-orange-100">
                                 {(m.name || 'M').charAt(0).toUpperCase()}
                               </div>
                               <div>
@@ -554,7 +554,7 @@ export default function MemberAppPage() {
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Activity size={20} className="text-indigo-600" /> Member App Login Audit Logs
+                <Activity size={20} className="text-orange-600" /> Member App Login Audit Logs
               </h3>
               <p className="text-xs font-semibold text-slate-400 mt-0.5">
                 Real-time audit log tracking who logged into the Mobile App, timestamp, IP address, and login verification.
@@ -658,7 +658,7 @@ export default function MemberAppPage() {
                 value={maintenanceMessage}
                 onChange={e => setMaintenanceMessage(e.target.value)}
                 placeholder="Type notice message shown on mobile screens..."
-                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-orange-500"
               />
             </div>
 
@@ -679,7 +679,7 @@ export default function MemberAppPage() {
                       setDisablePayments(e.target.checked);
                       saveMaintenanceState(underMaintenance, maintenanceMessage, e.target.checked, disableWorkoutTab);
                     }}
-                    className="w-4 h-4 text-[#EA580C] rounded"
+                    className="w-4 h-4 text-orange-600 rounded"
                   />
                 </label>
 
@@ -695,7 +695,7 @@ export default function MemberAppPage() {
                       setDisableWorkoutTab(e.target.checked);
                       saveMaintenanceState(underMaintenance, maintenanceMessage, disablePayments, e.target.checked);
                     }}
-                    className="w-4 h-4 text-[#EA580C] rounded"
+                    className="w-4 h-4 text-orange-600 rounded"
                   />
                 </label>
               </div>

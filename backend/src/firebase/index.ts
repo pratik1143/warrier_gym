@@ -12,11 +12,137 @@ export let mockBranches = [
 
 const pendingInvoicesMap = new Map<string, Promise<any>>();
 
-export let mockMembers: any[] = [];
-export let mockTrainers: any[] = [];
+export let mockMembers: any[] = [
+  {
+    id: 'm1',
+    uid: 'm1',
+    memberId: 'AZ-2026-0001',
+    name: 'Sahil',
+    phone: '9877466899',
+    email: 'sahil@thewarriorgym.in',
+    gender: 'Male',
+    age: 24,
+    weight: 75,
+    height: 180,
+    bmi: 23.1,
+    plan: 'Monthly Standard',
+    branch: 'Mohali, Punjab',
+    trainer: 'Karan Verma',
+    status: 'active',
+    joinDate: '2026-01-15',
+    expiryDate: '2026-07-15',
+    biometricId: '1',
+    streak: 5,
+    attendancePercent: 88,
+    daysLeft: 45
+  },
+  {
+    id: 'm2',
+    uid: 'm2',
+    memberId: 'AZ-2026-0002',
+    name: 'Arjun Mehta',
+    phone: '9877407660',
+    email: 'arjun@thewarriorgym.in',
+    gender: 'Male',
+    age: 28,
+    weight: 82,
+    height: 178,
+    bmi: 25.9,
+    plan: 'Quarterly Prime',
+    branch: 'Mohali, Punjab',
+    trainer: 'Dev Rana',
+    status: 'active',
+    joinDate: '2026-04-10',
+    expiryDate: '2026-07-10',
+    biometricId: '2',
+    streak: 12,
+    attendancePercent: 95,
+    daysLeft: 10
+  },
+  {
+    id: 'm3',
+    uid: 'm3',
+    memberId: 'AZ-2026-0003',
+    name: 'Simran Kaur',
+    phone: '7814854830',
+    email: 'simran@thewarriorgym.in',
+    gender: 'Female',
+    age: 26,
+    weight: 60,
+    height: 165,
+    bmi: 22.0,
+    plan: 'Monthly Standard',
+    branch: 'Mohali, Punjab',
+    trainer: 'Sneha Kapoor',
+    status: 'active',
+    joinDate: '2026-05-20',
+    expiryDate: '2026-06-20',
+    biometricId: '3',
+    streak: 3,
+    attendancePercent: 75,
+    daysLeft: -10
+  },
+  {
+    id: 'm4',
+    uid: 'm4',
+    memberId: 'AZ-2026-0004',
+    name: 'Priya Sharma',
+    phone: '6239139878',
+    email: 'priya@thewarriorgym.in',
+    gender: 'Female',
+    age: 23,
+    weight: 54,
+    height: 162,
+    bmi: 20.6,
+    plan: 'Annual Premium',
+    branch: 'Mohali, Punjab',
+    trainer: 'Riya Menon',
+    status: 'expired',
+    joinDate: '2025-06-01',
+    expiryDate: '2026-06-01',
+    biometricId: '',
+    streak: 0,
+    attendancePercent: 60,
+    daysLeft: -29
+  },
+  {
+    id: 'm5',
+    uid: 'm5',
+    memberId: 'AZ-2026-0005',
+    name: 'Kabir Singh',
+    phone: '9988776650',
+    email: 'kabir@thewarriorgym.in',
+    gender: 'Male',
+    age: 31,
+    weight: 90,
+    height: 185,
+    bmi: 26.3,
+    plan: 'Semi-Annual Pro',
+    branch: 'Mohali, Punjab',
+    trainer: 'Rohit Sharma',
+    status: 'frozen',
+    joinDate: '2025-12-01',
+    expiryDate: '2026-09-01',
+    biometricId: '4',
+    streak: 0,
+    attendancePercent: 90,
+    daysLeft: 120
+  }
+];
+export let mockTrainers = [
+  { id: 't_10021', biometricId: '10021', name: 'Sourav Arora', phone: '7973649709', email: '', address: '', branch: 'The Warrior Gym', status: 'active', specialization: 'Fitness Trainer', experience: 0, rating: 0, sessions: 0, salary: 0, certifications: [], photo: '', bio: '', joiningDate: '2026-01-01', instagram: '', achievements: '', members: 0 },
+  { id: 't_10012', biometricId: '10012', name: 'Deepak', phone: '8196852386', email: '', address: '', branch: 'The Warrior Gym', status: 'active', specialization: 'Fitness Trainer', experience: 0, rating: 0, sessions: 0, salary: 0, certifications: [], photo: '', bio: '', joiningDate: '2026-01-01', instagram: '', achievements: '', members: 0 },
+  { id: 't_10009', biometricId: '10009', name: 'Kuldeep', phone: '8629841471', email: 'kuldeep86298@gmail.com', address: '', branch: 'The Warrior Gym', status: 'active', specialization: 'Fitness Trainer', experience: 0, rating: 0, sessions: 0, salary: 0, certifications: [], photo: '', bio: '', joiningDate: '2026-01-01', instagram: '', achievements: '', members: 0 },
+  { id: 't_10008', biometricId: '10008', name: 'Arshdeep Singh', phone: '9915866576', email: '', address: '', branch: 'The Warrior Gym', status: 'active', specialization: 'Fitness Trainer', experience: 0, rating: 0, sessions: 0, salary: 0, certifications: [], photo: '', bio: '', joiningDate: '2026-01-01', instagram: '', achievements: '', members: 0 },
+  { id: 't_10005', biometricId: '10005', name: 'Achhar Pal', phone: '9592691190', email: '', address: 'kaimbwala chd', branch: 'The Warrior Gym', status: 'active', specialization: 'Fitness Trainer', experience: 0, rating: 0, sessions: 0, salary: 0, certifications: [], photo: '', bio: '', joiningDate: '2026-01-01', instagram: '', achievements: '', members: 0 },
+  { id: 't_10003', biometricId: '10003', name: 'Abc', phone: '7884977777', email: '', address: '', branch: 'The Warrior Gym', status: 'active', specialization: 'Fitness Trainer', experience: 0, rating: 0, sessions: 0, salary: 0, certifications: [], photo: '', bio: '', joiningDate: '2026-01-01', instagram: '', achievements: '', members: 0 },
+];
 
 export let mockAttendance: any[] = [];
-export let mockPayments: any[] = [];
+export let mockPayments: any[] = [
+  { id: 'p1', memberId: 'm1', memberName: 'Sahil', amount: 2500, plan: 'Monthly Standard', method: 'UPI', date: '2026-05-15', status: 'paid', invoice: 'INV-001', gst: 450 },
+  { id: 'p2', memberId: 'm2', memberName: 'Arjun Mehta', amount: 6500, plan: 'Quarterly Prime', method: 'Card', date: '2026-04-10', status: 'paid', invoice: 'INV-002', gst: 1170 },
+];
 export let mockWorkouts: any[] = [];
 export let mockDietPlans: any[] = [];
 export let mockCheatMealRequests: any[] = [];
@@ -26,9 +152,6 @@ export let mockChatMessages: any[] = [];
 export let mockReferrals: any[] = [];
 export let mockMigrations: any[] = [];
 export let mockFollowups: any[] = [];
-export let mockAccessControlDevices: any[] = [];
-export let mockAccessControlEvents: any[] = [];
-export let mockDeviceSyncLogs: any[] = [];
 
 export let mockPlans: any[] = [
   {
@@ -269,8 +392,6 @@ export let mockDoorStatus: any[] = [
 ];
 export let mockEnquiries: any[] = [];
 
-import initialMockDb from './mockDb.json';
-
 const MOCK_DB_FILE = path.join(__dirname, 'mockDb.json');
 
 export const saveMockDb = () => {
@@ -303,18 +424,10 @@ export const saveMockDb = () => {
 
 export const loadMockDb = () => {
   try {
-    const seedData: any = initialMockDb || {};
-    let data = seedData;
     if (fs.existsSync(MOCK_DB_FILE)) {
-      try {
-        data = JSON.parse(fs.readFileSync(MOCK_DB_FILE, 'utf8'));
-      } catch (readErr) {
-        console.warn('Could not parse filesystem mockDb.json, using bundled seed:', readErr);
-        data = seedData;
-      }
-    }
-    if (data.mockMembers && data.mockMembers.length > 0) { mockMembers.length = 0; mockMembers.push(...data.mockMembers); }
-    if (data.mockAttendance) { mockAttendance.length = 0; mockAttendance.push(...data.mockAttendance); }
+      const data = JSON.parse(fs.readFileSync(MOCK_DB_FILE, 'utf8'));
+      if (data.mockMembers) { mockMembers.length = 0; mockMembers.push(...data.mockMembers); }
+      if (data.mockAttendance) { mockAttendance.length = 0; mockAttendance.push(...data.mockAttendance); }
       if (data.mockPayments) {
         mockPayments.length = 0;
         data.mockPayments.forEach((p: any) => {
@@ -355,7 +468,10 @@ export const loadMockDb = () => {
       if (data.mockDoorStatus) { mockDoorStatus.length = 0; mockDoorStatus.push(...data.mockDoorStatus); }
       if (data.mockEnquiries) { mockEnquiries.length = 0; mockEnquiries.push(...data.mockEnquiries); }
       console.log(`[Offline Mock DB] Loaded ${mockMembers.length} members and ${mockEnquiries.length} enquiries from mockDb.json`);
-    } catch (e) {
+    } else {
+      saveMockDb();
+    }
+  } catch (e) {
     console.error('Failed to load mock database:', e);
   }
 };
@@ -374,7 +490,7 @@ if (!serviceAccountPath || !fs.existsSync(serviceAccountPath)) {
   }
 }
 
-const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 'thewarriergym.firebasestorage.app';
+const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 'thewarriorgym.firebasestorage.app';
 let isFirebaseInitialized = false;
 
 if (serviceAccountJsonRaw) {
@@ -400,13 +516,14 @@ if (serviceAccountJsonRaw) {
     console.log('Firebase Admin SDK initialized successfully from file path:', serviceAccountPath);
     
     // Proactively verify Cloud Firestore API availability
-    admin.firestore().collection('settings').doc('connection_health_check').get()
+    admin.firestore().collection('system_config').doc('test').get()
       .then(() => {
         console.log('✅ Cloud Firestore API connection verified.');
         classifyHistoricalPayments().catch(e => console.error('Classification error:', e));
       })
       .catch((err: any) => {
-        console.warn('⚠️ Cloud Firestore health check warning:', err.message);
+        console.warn('⚠️ Cloud Firestore API disabled or unreachable. Switching backend to Local Database mode.');
+        disableFirestore();
       });
   } catch (error) {
     console.error('Failed to initialize Firebase Admin SDK from file path:', error);
@@ -418,11 +535,11 @@ if (serviceAccountJsonRaw) {
 let firestoreApiDisabled = false;
 
 export const disableFirestore = () => {
-  firestoreApiDisabled = false;
+  firestoreApiDisabled = true;
 };
 
 export const getFirestoreDb = () => {
-  if (!isFirebaseInitialized) return null;
+  if (!isFirebaseInitialized || firestoreApiDisabled) return null;
   return admin.firestore();
 };
 
@@ -502,6 +619,24 @@ export const classifyHistoricalPayments = async () => {
 
 let membersCache: any[] | null = null;
 
+export function getMemberSortTime(m: any): number {
+  if (m?.createdAt) {
+    const t = typeof m.createdAt === 'object' && m.createdAt.seconds
+      ? m.createdAt.seconds * 1000
+      : new Date(m.createdAt).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (m?.joinDate) {
+    const t = new Date(m.joinDate).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (m?.startDate) {
+    const t = new Date(m.startDate).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  return 0; // safe stable fallback for historical members without timestamps
+}
+
 // Database helper functions (asynchronous to support Firestore)
 export const db = {
   classifyHistoricalPayments: async () => {
@@ -530,18 +665,17 @@ export const db = {
 
         const seenKeys = new Set<string>();
         const deduplicatedList = activeMembers.filter((m: any) => {
-          const key = m.id
-            ? `id_${String(m.id).trim()}`
-            : (m.clientId
-              ? `cid_${String(m.clientId).trim()}`
-              : (m.memberId && m.memberId !== 'TWG-2026-0000' && String(m.memberId).trim() !== '')
-                ? `mid_${String(m.memberId).trim()}`
-                : (m.biometricId ? `bio_${String(m.biometricId).trim()}` : (m.phone && String(m.phone).replace(/\D/g, '') ? `phone_${String(m.phone).replace(/\D/g, '')}` : `rnd_${Math.random()}`)));
+          const key = m.clientId
+            ? `cid_${String(m.clientId).trim()}`
+            : (m.memberId && m.memberId !== 'AZ-2026-0000')
+              ? `mid_${String(m.memberId).trim()}`
+              : (m.id ? `id_${String(m.id).trim()}` : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `rnd_${Math.random()}`));
           if (seenKeys.has(key)) return false;
           seenKeys.add(key);
           return true;
         });
 
+        deduplicatedList.sort((a: any, b: any) => getMemberSortTime(b) - getMemberSortTime(a));
         membersCache = deduplicatedList;
         return membersCache;
       } catch (error: any) {
@@ -550,29 +684,33 @@ export const db = {
           disableFirestore();
         }
         const seenMockKeys = new Set<string>();
-        return mockMembers.filter((m: any) => {
+        const mockList = mockMembers.filter((m: any) => {
           const key = m.clientId
             ? `cid_${String(m.clientId).trim()}`
-            : (m.memberId && m.memberId !== 'TWG-2026-0000')
+            : (m.memberId && m.memberId !== 'AZ-2026-0000')
               ? `mid_${String(m.memberId).trim()}`
               : (m.id ? `id_${String(m.id).trim()}` : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `rnd_${Math.random()}`));
           if (seenMockKeys.has(key)) return false;
           seenMockKeys.add(key);
           return true;
         });
+        mockList.sort((a: any, b: any) => getMemberSortTime(b) - getMemberSortTime(a));
+        return mockList;
       }
     }
     const seenMockKeys = new Set<string>();
-    return mockMembers.filter((m: any) => {
+    const mockList = mockMembers.filter((m: any) => {
       const key = m.clientId
         ? `cid_${String(m.clientId).trim()}`
-        : (m.memberId && m.memberId !== 'TWG-2026-0000')
+        : (m.memberId && m.memberId !== 'AZ-2026-0000')
           ? `mid_${String(m.memberId).trim()}`
           : (m.id ? `id_${String(m.id).trim()}` : (m.phone ? `phone_${m.phone.replace(/\D/g, '')}` : `rnd_${Math.random()}`));
       if (seenMockKeys.has(key)) return false;
       seenMockKeys.add(key);
       return true;
     });
+    mockList.sort((a: any, b: any) => getMemberSortTime(b) - getMemberSortTime(a));
+    return mockList;
   },
 
   getMemberById: async (id: string): Promise<any | null> => {
@@ -622,12 +760,10 @@ export const db = {
     if (status && status !== 'all') {
       filtered = filtered.filter(m => {
         const mStatus = (m.status || '').toLowerCase();
-        if (status === 'hold') return mStatus === 'hold';
-        if (status === 'inactive') return mStatus === 'inactive' || mStatus === 'blocked' || mStatus === 'blacklisted';
-        if (status === 'active') return (mStatus === 'active' || mStatus === 'expiring soon' || mStatus === 'expiring') && mStatus !== 'hold';
-        if (status === 'expired') return mStatus === 'expired' && mStatus !== 'hold';
+        if (status === 'active') return mStatus === 'active' || mStatus === 'expiring soon' || mStatus === 'expiring';
+        if (status === 'expired') return mStatus === 'expired';
         if (status === 'frozen') return mStatus === 'frozen';
-        if (status === 'pt') return !!m.trainer && mStatus !== 'hold';
+        if (status === 'pt') return !!m.trainer;
         return mStatus === status;
       });
     }
@@ -636,11 +772,7 @@ export const db = {
       const digitsOnly = search.replace(/\D/g, '');
       filtered = filtered.filter(m => {
         const nameMatch = (m.name || '').toLowerCase().includes(search);
-        const bioStr = String(m.biometricId || m.biometricUserId || m.deviceUserId || '').toLowerCase();
-        const idMatch = (m.memberId || '').toLowerCase().includes(search) || 
-          (m.id || '').toLowerCase().includes(search) || 
-          bioStr.includes(search) ||
-          bioStr === search;
+        const idMatch = (m.memberId || '').toLowerCase().includes(search) || (m.id || '').toLowerCase().includes(search) || (m.biometricId || '').toLowerCase().includes(search);
         const phoneMatch = digitsOnly.length >= 3 && (m.phone || '').replace(/\D/g, '').includes(digitsOnly);
         const emailMatch = (m.email || '').toLowerCase().includes(search);
         return nameMatch || idMatch || phoneMatch || emailMatch;
@@ -664,9 +796,9 @@ export const db = {
   addMember: async (member: any): Promise<any> => {
     const firestore = getFirestoreDb();
     
-    // Auto-generate sequential Member ID (TWG-2026-XXXX)
+    // Auto-generate sequential Member ID (AZ-2026-XXXX)
     const currentYear = new Date().getFullYear();
-    const prefix = `TWG-${currentYear}-`;
+    const prefix = `AZ-${currentYear}-`;
     let nextNum = 1;
     
     // Since we want accurate IDs, query Firestore or mockMembers
@@ -697,6 +829,7 @@ export const db = {
     const newMember = {
       ...member,
       memberId,
+      createdAt: member.createdAt || new Date().toISOString(),
       startDate: member.startDate || member.joinDate || new Date().toISOString().split('T')[0],
       daysLeft: Number(member.daysLeft) || 30,
       attendanceCount: Number(member.attendanceCount) || 0,
@@ -704,24 +837,24 @@ export const db = {
       streak: Number(member.streak) || 1,
       goalWeight: member.weight ? member.weight - 5 : 70,
       attendancePercent: Number(member.attendancePercent) || 100,
-      referralCode: member.name.substring(0, 4).toUpperCase() + Math.floor(100 + Math.random() * 900)
+      referralCode: member.name ? (member.name.substring(0, 4).toUpperCase() + Math.floor(100 + Math.random() * 900)) : ''
     };
 
     if (firestore) {
-      const docId = member.uid || firestore.collection('members').doc().id;
+      const docId = member.id || member.uid || firestore.collection('members').doc().id;
       await firestore.collection('members').doc(docId).set(newMember);
       const added = { id: docId, ...newMember };
       if (membersCache) {
-        membersCache.push(added);
+        membersCache.unshift(added);
       } else {
         membersCache = null; // force fetch next time
       }
       return added;
     }
 
-    const docId = member.uid || ('m' + (mockMembers.length + 1));
+    const docId = member.id || member.uid || ('m' + (mockMembers.length + 1));
     const finalMember = { id: docId, ...newMember };
-    mockMembers.push(finalMember);
+    mockMembers.unshift(finalMember);
     return finalMember;
   },
 
@@ -744,16 +877,51 @@ export const db = {
     }
 
     if (firestore) {
-      await firestore.collection('members').doc(id).update(updates);
-      const doc = await firestore.collection('members').doc(id).get();
-      const updated = { id: doc.id, ...doc.data() };
+      let docRef = firestore.collection('members').doc(id);
+      let docSnap = await docRef.get();
+
+      // If document not found by direct ID, search members collection by id, memberId, uid, or phone
+      if (!docSnap.exists) {
+        const cleanId = String(id || '').trim().toLowerCase();
+        const querySnap = await firestore.collection('members').get();
+        const foundDoc = querySnap.docs.find(d => {
+          const data = d.data();
+          const dId = String(d.id).trim().toLowerCase();
+          const mId = String(data.id || '').trim().toLowerCase();
+          const memId = String(data.memberId || '').trim().toLowerCase();
+          const uid = String(data.uid || '').trim().toLowerCase();
+          const phone = String(data.phone || '').replace(/\D/g, '');
+          const searchPhone = cleanId.replace(/\D/g, '');
+
+          return (
+            dId === cleanId || 
+            mId === cleanId || 
+            memId === cleanId || 
+            uid === cleanId || 
+            (searchPhone.length >= 10 && phone.endsWith(searchPhone.slice(-10)))
+          );
+        });
+
+        if (foundDoc) {
+          docRef = firestore.collection('members').doc(foundDoc.id);
+          docSnap = await docRef.get();
+        }
+      }
+
+      // Merge updates safely
+      await docRef.set(updates, { merge: true });
+      const updatedDocSnap = await docRef.get();
+      const updated = { id: docRef.id, ...updatedDocSnap.data() };
+      
       if (membersCache) {
-        membersCache = membersCache.map(m => m.id === id ? updated : m);
+        membersCache = membersCache.map(m => (m.id === docRef.id || m.id === id) ? updated : m);
+      } else {
+        membersCache = null;
       }
       return updated;
     }
 
-    const idx = mockMembers.findIndex(m => m.id === id);
+    const idx = mockMembers.findIndex(m => m.id === id || m.memberId === id);
     if (idx !== -1) {
       mockMembers[idx] = { ...mockMembers[idx], ...updates };
       return mockMembers[idx];
@@ -819,74 +987,70 @@ export const db = {
   getDashboardAnalytics: async (): Promise<any> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      try {
-        const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
 
-        // 1. Members
-        const membersSnap = await firestore.collection('members').get();
-        const membersList = membersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const totalMembers = membersList.length;
-        const activeMembers = membersList.filter((m: any) => {
-          const startDate = m.startDate || m.joinDate;
-          if (startDate && startDate > todayStr) return false;
-          if (m.status === 'frozen' || m.status === 'Frozen' || m.status === 'blocked' || m.status === 'Blocked') return false;
-          return m.status === 'active' || m.status === 'Active' || (m.expiryDate && m.expiryDate >= todayStr);
-        }).length;
+      // 1. Members
+      const membersSnap = await firestore.collection('members').get();
+      const membersList = membersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const totalMembers = membersList.length;
+      const activeMembers = membersList.filter((m: any) => {
+        const startDate = m.startDate || m.joinDate;
+        if (startDate && startDate > todayStr) return false;
+        if (m.status === 'frozen' || m.status === 'Frozen' || m.status === 'blocked' || m.status === 'Blocked') return false;
+        return m.status === 'active' || m.status === 'Active' || (m.expiryDate && m.expiryDate >= todayStr);
+      }).length;
 
-        // 2. Today's Deduplicated Revenue (Strict Isolation: Only non-historical payments belonging strictly to TODAY)
-        const paymentsSnap = await firestore.collection('payments').get();
-        const seen = new Set<string>();
-        let todayRevenue = 0;
+      // 2. Today's Deduplicated Revenue (Strict Isolation: Only non-historical payments belonging strictly to TODAY)
+      const paymentsSnap = await firestore.collection('payments').get();
+      const seen = new Set<string>();
+      let todayRevenue = 0;
 
-        paymentsSnap.docs.forEach((doc: any) => {
-          const p = doc.data() as any;
-          if (!p || p.isSample || p.isMock) return;
+      paymentsSnap.docs.forEach((doc: any) => {
+        const p = doc.data() as any;
+        if (!p || p.isSample || p.isMock) return;
 
-          // Strictly exclude historical imports from today's collection
-          const isHistorical = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
-          if (isHistorical) return;
+        // Strictly exclude historical imports from today's collection
+        const isHistorical = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
+        if (isHistorical) return;
 
-          const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
-          if (status !== 'paid' && status !== 'partial') return;
+        const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
+        if (status !== 'paid' && status !== 'partial') return;
 
-          // Payment date must match today (NEVER fall back to createdAt!)
-          const pDate = String(p.paymentDate || p.date || '').split('T')[0];
-          if (pDate !== todayStr && !p.isRealTimeToday) return;
+        // Payment date must match today (NEVER fall back to createdAt!)
+        const pDate = String(p.paymentDate || p.date || '').split('T')[0];
+        if (pDate !== todayStr && !p.isRealTimeToday) return;
 
-          const idKey = String(doc.id || p.paymentId || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
-          if (idKey && seen.has(idKey)) return;
-          if (idKey) seen.add(idKey);
+        const idKey = String(doc.id || p.paymentId || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
+        if (idKey && seen.has(idKey)) return;
+        if (idKey) seen.add(idKey);
 
-          const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
-          todayRevenue += (isNaN(val) ? 0 : val);
-        });
+        const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
+        todayRevenue += (isNaN(val) ? 0 : val);
+      });
 
-        // 3. Today's Unique Attendance
-        const attendanceSnap = await firestore.collection('attendance_logs').get();
-        const uniqueAttendance = new Set<string>();
-        attendanceSnap.docs.forEach((doc: any) => {
-          const a = doc.data() as any;
-          if (!a) return;
-          const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || '').split('T')[0];
-          if (checkInDate === todayStr) {
-            const mKey = a.memberId || a.biometricId || a.deviceUserId || a.memberName;
-            if (mKey && String(mKey).trim() && !String(mKey).includes('unmapped')) {
-              uniqueAttendance.add(String(mKey).trim().toLowerCase());
-            }
+      // 3. Today's Unique Attendance
+      const attendanceSnap = await firestore.collection('attendance_logs').get();
+      const uniqueAttendance = new Set<string>();
+      attendanceSnap.docs.forEach((doc: any) => {
+        const a = doc.data() as any;
+        if (!a) return;
+        const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || '').split('T')[0];
+        if (checkInDate === todayStr) {
+          const mKey = a.memberId || a.biometricId || a.deviceUserId || a.memberName;
+          if (mKey && String(mKey).trim() && !String(mKey).includes('unmapped')) {
+            uniqueAttendance.add(String(mKey).trim().toLowerCase());
           }
-        });
+        }
+      });
 
-        return {
-          totalMembers,
-          activeMembers,
-          todayAttendance: uniqueAttendance.size,
-          revenue: todayRevenue,
-          todayCollection: todayRevenue,
-          lastUpdated: new Date().toISOString()
-        };
-      } catch (err: any) {
-        console.warn('[Firestore] Error getting dashboard analytics, using fallback:', err?.message);
-      }
+      return {
+        totalMembers,
+        activeMembers,
+        todayAttendance: uniqueAttendance.size,
+        revenue: todayRevenue,
+        todayCollection: todayRevenue,
+        lastUpdated: new Date().toISOString()
+      };
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1126,48 +1290,20 @@ export const db = {
   getPayments: async (options?: { memberId?: string; limit?: number }): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      try {
-        if (options?.memberId) {
-          const memId = String(options.memberId).trim();
-          const candidateIds = new Set<string>([memId]);
-          try {
-            const mDoc = await firestore.collection('members').doc(memId).get();
-            if (mDoc.exists) {
-              const md = mDoc.data() as any;
-              if (md?.memberId) candidateIds.add(String(md.memberId).trim());
-              if (md?.uid) candidateIds.add(String(md.uid).trim());
-            } else {
-              const qCode = await firestore.collection('members').where('memberId', '==', memId).limit(1).get();
-              if (!qCode.empty) {
-                candidateIds.add(qCode.docs[0].id);
-                const md = qCode.docs[0].data() as any;
-                if (md?.uid) candidateIds.add(String(md.uid).trim());
-              }
-            }
-          } catch (e) {}
-
-          const allDocsSnap = await firestore.collection('payments').get();
-          let list = allDocsSnap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() as any }))
-            .filter(p => candidateIds.has(String(p.memberId || '')) || candidateIds.has(String(p.memberUid || '')));
-
-          list = list.sort((a, b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
-          if (options.limit && options.limit > 0) {
-            list = list.slice(0, options.limit);
-          }
-          return list;
-        }
-
-        let q: admin.firestore.Query = firestore.collection('payments').orderBy('date', 'desc');
-        if (options?.limit && options.limit > 0) {
-          q = q.limit(options.limit);
-        }
-        const snapshot = await q.get();
-        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
-        return list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
-      } catch (err: any) {
-        console.warn('[Firestore] Error fetching payments, falling back to local database:', err?.message);
+      let q: admin.firestore.Query = firestore.collection('payments');
+      if (options?.memberId) {
+        q = q.where('memberId', '==', options.memberId);
       }
+      // If no memberId filter, order by date
+      if (!options?.memberId) {
+        q = q.orderBy('date', 'desc');
+      }
+      if (options?.limit && options.limit > 0) {
+        q = q.limit(options.limit);
+      }
+      const snapshot = await q.get();
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      return list.sort((a: any, b: any) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime());
     }
     let list = mockPayments;
     if (options?.memberId) {
@@ -1202,7 +1338,7 @@ export const db = {
 
     const isHistorical = payment.isHistorical ?? (payment.transactionType === 'historical_import' || payment.imported || payment.isLegacyImport || false);
     const txType = payment.transactionType || (isHistorical ? 'historical_import' : (payment.billingType === 'PT' || payment.invoiceType === 'PT' ? 'pt_payment' : 'membership_payment'));
-    const paymentDate = payment.paymentDate || payment.date || todayStr;
+    const canonicalInvoiceDate = payment.invoiceDate || payment.billingDate || payment.date || payment.paymentDate || payment.transactionDate || todayStr;
 
     const processPayment = async () => {
       const newPayment = {
@@ -1210,8 +1346,11 @@ export const db = {
         idempotencyKey,
         invoice: payment.invoiceNumber || payment.invoice || ('INV-' + Math.floor(100000 + Math.random() * 900000)),
         invoiceNumber: payment.invoiceNumber || payment.invoice || ('INV-' + Math.floor(100000 + Math.random() * 900000)),
-        date: payment.date || todayStr,
-        paymentDate: paymentDate,
+        invoiceDate: canonicalInvoiceDate,
+        billingDate: canonicalInvoiceDate,
+        date: canonicalInvoiceDate,
+        paymentDate: canonicalInvoiceDate,
+        transactionDate: canonicalInvoiceDate,
         transactionType: txType,
         isHistorical: isHistorical,
         imported: Boolean(payment.imported || isHistorical),
@@ -1287,34 +1426,64 @@ export const db = {
 
   updatePayment: async (paymentId: string, updates: any): Promise<any> => {
     const firestore = getFirestoreDb();
-    const origAmt = Number(updates.originalAmount !== undefined ? updates.originalAmount : (updates.amount || 0));
-    const discAmt = Number(updates.discountAmount !== undefined ? updates.discountAmount : (updates.discount || 0));
-    const taxAmt = Number(updates.taxAmount !== undefined ? updates.taxAmount : (updates.tax || updates.gst || 0));
-    const othAmt = Number(updates.otherCharges || 0);
 
-    const calculatedNet = Math.max(0, origAmt - discAmt + taxAmt + othAmt);
-    const netPayable = Number(updates.netPayable !== undefined ? updates.netPayable : (calculatedNet > 0 ? calculatedNet : origAmt));
-    const amountPaid = Number(updates.amountPaid !== undefined ? updates.amountPaid : (updates.paid !== undefined ? updates.paid : netPayable));
-    const outstanding = Math.max(0, netPayable - amountPaid);
-    const status = updates.status || (outstanding <= 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'));
+    // Check if financial figures are being modified
+    const hasFinancialUpdates = 
+      updates.originalAmount !== undefined ||
+      updates.amount !== undefined ||
+      updates.discountAmount !== undefined ||
+      updates.discount !== undefined ||
+      updates.taxAmount !== undefined ||
+      updates.tax !== undefined ||
+      updates.gst !== undefined ||
+      updates.otherCharges !== undefined ||
+      updates.netPayable !== undefined ||
+      updates.amountPaid !== undefined ||
+      updates.paid !== undefined;
 
-    const sanitizedUpdates: any = {
+    const targetInvDate = updates.invoiceDate || updates.billingDate || updates.date || updates.paymentDate || updates.transactionDate;
+
+    let sanitizedUpdates: any = {
       ...updates,
-      originalAmount: origAmt,
-      discountAmount: discAmt,
-      discount: discAmt,
-      taxAmount: taxAmt,
-      gst: taxAmt,
-      otherCharges: othAmt,
-      netPayable,
-      amount: netPayable,
-      amountPaid,
-      paid: amountPaid,
-      outstandingAmount: outstanding,
-      pendingAmount: outstanding,
-      status,
+      ...(targetInvDate ? {
+        invoiceDate: targetInvDate,
+        billingDate: targetInvDate,
+        date: targetInvDate,
+        paymentDate: targetInvDate,
+        transactionDate: targetInvDate
+      } : {}),
       updatedAt: new Date().toISOString()
     };
+
+    if (hasFinancialUpdates) {
+      const origAmt = Number(updates.originalAmount !== undefined ? updates.originalAmount : (updates.amount || 0));
+      const discAmt = Number(updates.discountAmount !== undefined ? updates.discountAmount : (updates.discount || 0));
+      const taxAmt = Number(updates.taxAmount !== undefined ? updates.taxAmount : (updates.tax || updates.gst || 0));
+      const othAmt = Number(updates.otherCharges || 0);
+
+      const calculatedNet = Math.max(0, origAmt - discAmt + taxAmt + othAmt);
+      const netPayable = Number(updates.netPayable !== undefined ? updates.netPayable : (calculatedNet > 0 ? calculatedNet : origAmt));
+      const amountPaid = Number(updates.amountPaid !== undefined ? updates.amountPaid : (updates.paid !== undefined ? updates.paid : netPayable));
+      const outstanding = Math.max(0, netPayable - amountPaid);
+      const status = updates.status || (outstanding <= 0 ? 'paid' : (amountPaid > 0 ? 'partial' : 'pending'));
+
+      sanitizedUpdates = {
+        ...sanitizedUpdates,
+        originalAmount: origAmt,
+        discountAmount: discAmt,
+        discount: discAmt,
+        taxAmount: taxAmt,
+        gst: taxAmt,
+        otherCharges: othAmt,
+        netPayable,
+        amount: netPayable,
+        amountPaid,
+        paid: amountPaid,
+        outstandingAmount: outstanding,
+        pendingAmount: outstanding,
+        status
+      };
+    }
 
     if (firestore) {
       let docRef = firestore.collection('payments').doc(paymentId);
@@ -1377,14 +1546,14 @@ export const db = {
             changedBy: updates.changedBy || 'Gym Owner',
             timestamp: new Date().toISOString(),
             details: {
-              previousAmount: prevData.amount || prevData.netPayable,
-              newAmount: netPayable,
-              previousDiscount: prevData.discount || prevData.discountAmount,
-              newDiscount: discAmt,
-              previousStartDate: prevData.startDate,
-              newStartDate: sanitizedUpdates.startDate,
-              previousExpiryDate: prevData.expiryDate,
-              newExpiryDate: sanitizedUpdates.expiryDate
+              previousAmount: prevData.amount || prevData.netPayable || 0,
+              newAmount: sanitizedUpdates.netPayable || prevData.amount || 0,
+              previousDiscount: prevData.discount || prevData.discountAmount || 0,
+              newDiscount: sanitizedUpdates.discountAmount ?? prevData.discount ?? 0,
+              previousStartDate: prevData.startDate ?? null,
+              newStartDate: sanitizedUpdates.startDate ?? null,
+              previousExpiryDate: prevData.expiryDate ?? null,
+              newExpiryDate: sanitizedUpdates.expiryDate ?? null
             }
           });
         } catch (err: any) {
@@ -1395,11 +1564,11 @@ export const db = {
       }
     }
 
-    const mockIdx = mockPayments.findIndex(p => p.id === paymentId || p.invoiceNumber === paymentId || p.invoice === paymentId);
-    if (mockIdx !== -1) {
-      mockPayments[mockIdx] = { ...mockPayments[mockIdx], ...sanitizedUpdates };
+    const idx = mockPayments.findIndex(p => p.id === paymentId || p.invoiceNumber === paymentId || p.invoice === paymentId);
+    if (idx !== -1) {
+      mockPayments[idx] = { ...mockPayments[idx], ...sanitizedUpdates };
       saveMockDb();
-      return mockPayments[mockIdx];
+      return mockPayments[idx];
     }
     return { id: paymentId, ...sanitizedUpdates };
   },
@@ -1416,23 +1585,32 @@ export const db = {
             deletedAt: new Date().toISOString()
           });
         } else {
-          const qSnap = await firestore.collection('payments').where('invoiceNumber', '==', paymentId).get();
-          qSnap.docs.forEach(doc => {
-            doc.ref.update({
-              deleted: true,
-              deletedAt: new Date().toISOString()
-            }).catch(() => {});
-          });
+          const qSnap = await firestore.collection('payments')
+            .where('invoice', '==', paymentId)
+            .get();
+          if (!qSnap.empty) {
+            for (const doc of qSnap.docs) {
+              await doc.ref.update({ deleted: true, deletedAt: new Date().toISOString() });
+            }
+          } else {
+            const qSnap2 = await firestore.collection('payments')
+              .where('invoiceNumber', '==', paymentId)
+              .get();
+            for (const doc of qSnap2.docs) {
+              await doc.ref.update({ deleted: true, deletedAt: new Date().toISOString() });
+            }
+          }
         }
+        return true;
       } catch (err) {
-        console.warn('[Firebase] Firestore payment delete warning:', err);
+        console.error(`[Firestore] deletePayment error for ${paymentId}:`, err);
       }
     }
 
-    const mockIdx = mockPayments.findIndex(p => p.id === paymentId || p.invoiceNumber === paymentId || p.invoice === paymentId);
-    if (mockIdx !== -1) {
-      mockPayments[mockIdx].deleted = true;
-      mockPayments[mockIdx].deletedAt = new Date().toISOString();
+    const idx = mockPayments.findIndex(p => p.id === paymentId || p.invoice === paymentId || p.invoiceNumber === paymentId);
+    if (idx !== -1) {
+      mockPayments[idx].deleted = true;
+      mockPayments[idx].deletedAt = new Date().toISOString();
       saveMockDb();
     }
     return true;
@@ -1866,12 +2044,8 @@ export const db = {
   getDevices: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      try {
-        const snapshot = await firestore.collection('devices').get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err: any) {
-        console.warn('[Firestore] Error fetching devices, using local database fallback:', err?.message);
-      }
+      const snapshot = await firestore.collection('devices').get();
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
     return mockDevices;
   },
@@ -1922,13 +2096,27 @@ export const db = {
 
   addDeviceLog: async (log: any): Promise<any> => {
     const firestore = getFirestoreDb();
-    const newLog = {
+    const rawLog = {
+      deviceId: log?.deviceId || 'dev_001',
+      deviceName: log?.deviceName || log?.name || 'EasyBio Access Control',
+      level: log?.level || 'INFO',
+      message: log?.message || 'Device operation logged',
       ...log,
       timestamp: new Date().toISOString()
     };
+
+    // Strip any undefined properties to satisfy Firestore Admin SDK
+    const newLog = Object.fromEntries(
+      Object.entries(rawLog).filter(([_, v]) => v !== undefined)
+    );
+
     if (firestore) {
-      const docRef = await firestore.collection('deviceLogs').add(newLog);
-      return { id: docRef.id, ...newLog };
+      try {
+        const docRef = await firestore.collection('deviceLogs').add(newLog);
+        return { id: docRef.id, ...newLog };
+      } catch (err) {
+        console.warn('[addDeviceLog] Firestore write notice:', err);
+      }
     }
     newLog.id = 'log_' + Date.now();
     mockDeviceLogs.unshift(newLog);
@@ -1944,30 +2132,6 @@ export const db = {
     return mockDeviceLogs;
   },
 
-  getAccessControlDevices: async (): Promise<any[]> => {
-    const firestore = getFirestoreDb();
-    if (firestore) {
-      const snapshot = await firestore.collection('access_control_devices').get();
-      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    }
-    return mockAccessControlDevices;
-  },
-
-  addAccessControlEvent: async (event: any): Promise<any> => {
-    const firestore = getFirestoreDb();
-    const newEvt = {
-      ...event,
-      timestamp: event.timestamp || new Date().toISOString()
-    };
-    if (firestore) {
-      const docRef = await firestore.collection('access_control_events').add(newEvt);
-      return { id: docRef.id, ...newEvt };
-    }
-    newEvt.id = 'evt_' + Date.now();
-    mockAccessControlEvents.unshift(newEvt);
-    return newEvt;
-  },
-
   getAccessControlEvents: async (limitCount: number = 50): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
@@ -1978,18 +2142,14 @@ export const db = {
         console.warn('[Firestore] Error getting access control events, using fallback:', err?.message);
       }
     }
-    return mockAccessControlEvents.slice(0, limitCount);
+    return [];
   },
 
   getAccessLogs: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      try {
-        const snapshot = await firestore.collection('accessLogs').orderBy('timestamp', 'desc').limit(50).get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err: any) {
-        console.warn('[Firestore] Error getting access logs, using fallback:', err?.message);
-      }
+      const snapshot = await firestore.collection('accessLogs').orderBy('timestamp', 'desc').limit(50).get();
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
     return mockAccessLogs;
   },
@@ -1997,12 +2157,8 @@ export const db = {
   getDoorStatus: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      try {
-        const snapshot = await firestore.collection('doorStatus').get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err: any) {
-        console.warn('[Firestore] Error getting door status, using fallback:', err?.message);
-      }
+      const snapshot = await firestore.collection('doorStatus').get();
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
     return mockDoorStatus;
   },
@@ -2010,12 +2166,8 @@ export const db = {
   getTrainers: async (): Promise<any[]> => {
     const firestore = getFirestoreDb();
     if (firestore) {
-      try {
-        const snapshot = await firestore.collection('trainers').get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      } catch (err: any) {
-        console.warn('[Firestore] Error getting trainers, using fallback:', err?.message);
-      }
+      const snapshot = await firestore.collection('trainers').get();
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     }
     return mockTrainers;
   },
@@ -2251,20 +2403,15 @@ export const db = {
     const firestore = getFirestoreDb();
     let rawPlans: any[] = [];
     if (firestore) {
-      try {
-        const snapshot = await firestore.collection('plans').get();
-        if (snapshot.empty) {
-          // Seed default plans
-          for (const plan of mockPlans) {
-            await firestore.collection('plans').doc(plan.id).set(plan);
-          }
-          rawPlans = mockPlans;
-        } else {
-          rawPlans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const snapshot = await firestore.collection('plans').get();
+      if (snapshot.empty) {
+        // Seed default plans
+        for (const plan of mockPlans) {
+          await firestore.collection('plans').doc(plan.id).set(plan);
         }
-      } catch (err: any) {
-        console.warn('[Firestore] Error getting plans, using local database fallback:', err?.message);
         rawPlans = mockPlans;
+      } else {
+        rawPlans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
     } else {
       rawPlans = mockPlans;

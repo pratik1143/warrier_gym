@@ -63,12 +63,12 @@ export default function GymPulseWidget({
         <div className="bg-stone-50/80 rounded-2xl p-3 border border-stone-100 flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-400 text-[10px] font-extrabold uppercase">
             <span>STAFF ON DUTY</span>
-            <Briefcase size={13} className="text-blue-500" />
+            <Briefcase size={13} className="text-orange-500" />
           </div>
           <div className="text-2xl font-black text-slate-900 mt-2 font-sans">
             {staffInsideCount}
           </div>
-          <div className="text-[9.5px] font-bold text-blue-600 mt-1">
+          <div className="text-[9.5px] font-bold text-orange-600 mt-1">
             Active shift
           </div>
         </div>

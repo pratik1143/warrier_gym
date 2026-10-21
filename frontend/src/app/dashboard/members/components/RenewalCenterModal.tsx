@@ -26,11 +26,14 @@ export default function RenewalCenterModal({ isOpen, onClose, onOpenRenewWizard 
     return days < 0;
   });
 
-  const filteredExpired = expiredMembers.filter(m => 
-    m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    m.phone.includes(searchQuery) ||
-    (m.memberId || m.id).toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredExpired = expiredMembers.filter(m => {
+    const q = (searchQuery || '').toLowerCase();
+    return (
+      (m?.name || '').toLowerCase().includes(q) || 
+      String(m?.phone || '').includes(searchQuery || '') ||
+      String(m?.memberId || m?.id || '').toLowerCase().includes(q)
+    );
+  });
 
   const handleBlockAccess = async (m: any) => {
     if (confirm(`Are you sure you want to BLOCK facility access for ${m.name}? This will update their status to Blocked.`)) {
@@ -103,7 +106,7 @@ export default function RenewalCenterModal({ isOpen, onClose, onOpenRenewWizard 
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Search expired members..." 
-                  className="pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 transition-colors w-[220px]"
+                  className="pl-9 pr-4 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 transition-colors w-[220px]"
                 />
               </div>
 
@@ -164,7 +167,7 @@ export default function RenewalCenterModal({ isOpen, onClose, onOpenRenewWizard 
                           <td className="px-4 py-4 font-semibold text-slate-700">
                             {m.trainer ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
                                 {m.trainer}
                               </div>
                             ) : (
@@ -197,7 +200,7 @@ export default function RenewalCenterModal({ isOpen, onClose, onOpenRenewWizard 
                               </button>
                               <button 
                                 onClick={() => handleEmail(m)}
-                                className="p-1.5 bg-[#FFF7ED] hover:bg-orange-100 rounded-lg text-[#EA580C] border border-[#FED7AA] transition-colors"
+                                className="p-1.5 bg-orange-50 hover:bg-orange-100 rounded-lg text-orange-600 border border-orange-100 transition-colors"
                                 title="Email Invoice"
                               >
                                 <Mail size={12} />
@@ -216,7 +219,7 @@ export default function RenewalCenterModal({ isOpen, onClose, onOpenRenewWizard 
                               
                               <button 
                                 onClick={() => onOpenRenewWizard(m)}
-                                className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-indigo-700 transition-colors flex items-center gap-1 shadow-sm"
+                                className="px-3 py-1.5 bg-orange-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider hover:bg-orange-700 transition-colors flex items-center gap-1 shadow-sm"
                               >
                                 <RefreshCw size={10} /> Renew
                               </button>

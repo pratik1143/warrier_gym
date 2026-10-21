@@ -126,6 +126,14 @@ export const createEnquirySchema = z.object({
       message: 'Please select an interested plan'
     }),
 
+  enquiryDate: z
+    .string()
+    .trim()
+    .min(1, 'Please select a valid enquiry date')
+    .refine((val) => !isNaN(Date.parse(val)), {
+      message: 'Enter a valid calendar date (YYYY-MM-DD)'
+    }),
+
   followupDate: z
     .string()
     .trim()
@@ -134,7 +142,7 @@ export const createEnquirySchema = z.object({
       message: 'Enter a valid calendar date (YYYY-MM-DD)'
     }),
 
-  followupTime: z.string().trim().default('11:00'),
+  followupTime: z.string().trim().default('05:00'),
 
   attendedBy: z
     .string()

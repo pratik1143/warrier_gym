@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { useFollowups } from '@/hooks/useFollowups';
 import { Phone, MessageCircle, CheckCircle2, Clock, Calendar, AlertCircle, Sparkles, PenLine } from 'lucide-react';
 import toast from '@/lib/toast';
+import { formatRenewalCountdown } from '@/lib/dateUtils';
 import { getFollowupSourceInfo } from '@/app/dashboard/follow-up/page';
 
 export default function FollowUpsTab({ member }: { member: any }) {
@@ -58,7 +59,7 @@ export default function FollowUpsTab({ member }: { member: any }) {
 
             let typeBadgeClass = 'bg-slate-100 text-slate-700 border border-slate-200/80 font-bold';
             if (task.type === 'GYM MEMBERSHIP RENEWAL' || task.type === 'Renewal') {
-              typeBadgeClass = 'bg-[#FFF7ED] text-[#9A3412] border border-orange-200/60 font-black';
+              typeBadgeClass = 'bg-orange-50 text-orange-800 border border-orange-200/80 font-black';
             } else if (task.type === 'PT RENEWAL' || task.type === 'PT') {
               typeBadgeClass = 'bg-purple-50 text-purple-800 border border-purple-200/80 font-black';
             } else if (task.type === 'PENDING BALANCE' || task.type === 'Payment') {
@@ -68,7 +69,7 @@ export default function FollowUpsTab({ member }: { member: any }) {
             const priorityBadgeClass = isHighPriority 
               ? 'bg-rose-50 text-rose-700 font-bold border border-rose-200' 
               : normPriority === 'medium'
-              ? 'bg-[#FFF7ED] text-[#EA580C] font-bold border border-[#FED7AA]'
+              ? 'bg-orange-50 text-[#EA580C] font-bold border border-orange-200'
               : 'bg-slate-100 text-slate-600 font-medium border border-slate-200';
 
             return (
@@ -96,14 +97,14 @@ export default function FollowUpsTab({ member }: { member: any }) {
                         {sourceInfo.type === 'auto' ? (
                           <Sparkles size={10} className="shrink-0 text-[#EA580C]" />
                         ) : (
-                          <PenLine size={10} className="shrink-0 text-indigo-600" />
+                          <PenLine size={10} className="shrink-0 text-orange-600" />
                         )}
                         <span>{sourceInfo.label}</span>
                       </span>
 
                       {/* 3. Priority Badge */}
                       <span className={`text-[10px] px-2 py-0.5 rounded-md flex items-center gap-1 uppercase tracking-wider ${priorityBadgeClass}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isHighPriority ? 'bg-rose-500' : 'bg-[#F97316]'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full ${isHighPriority ? 'bg-rose-500' : 'bg-orange-500'}`} />
                         {task.priority || 'Medium'}
                       </span>
 
@@ -114,9 +115,18 @@ export default function FollowUpsTab({ member }: { member: any }) {
                       </span>
                     </div>
 
-                    <p className="text-xs font-bold text-slate-800">
-                      {task.reason || task.notes || task.description || task.title}
-                    </p>
+                    {(() => {
+                      let textDisplay = task.reason || task.notes || task.description || task.title;
+                      const expiry = task.expiryDate || member?.expiryDate;
+                      if ((task.type === 'GYM MEMBERSHIP RENEWAL' || task.type === 'Renewal' || task.automationKey?.startsWith('AUTO_RENEWAL_')) && expiry) {
+                        textDisplay = formatRenewalCountdown(expiry).displayText;
+                      }
+                      return (
+                        <p className="text-xs font-bold text-slate-800">
+                          {textDisplay}
+                        </p>
+                      );
+                    })()}
 
                     <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
                       <span>📅 Due: {task.dueDate || task.scheduledDate}</span>
@@ -131,7 +141,7 @@ export default function FollowUpsTab({ member }: { member: any }) {
                         <>
                           <a 
                             href={`tel:${task.phone}`} 
-                            className="px-3 py-1.5 bg-[#FFF7ED] text-[#EA580C] hover:bg-orange-100 rounded-xl text-xs font-bold flex items-center gap-1 no-underline"
+                            className="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-xl text-xs font-bold flex items-center gap-1 no-underline"
                           >
                             <Phone size={12} /> Call
                           </a>

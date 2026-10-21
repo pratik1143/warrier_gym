@@ -10,12 +10,10 @@ interface FinancialAnalyticsProps {
   fromDate?: string;
   toDate?: string;
   dateRangeTitle?: string;
-  payments?: any[];
 }
 
-export default function FinancialAnalytics({ fromDate, toDate, dateRangeTitle, payments: propPayments }: FinancialAnalyticsProps) {
-  const { payments: storePayments } = useGymStore();
-  const payments = propPayments || storePayments;
+export default function FinancialAnalytics({ fromDate, toDate, dateRangeTitle }: FinancialAnalyticsProps) {
+  const { payments } = useGymStore();
 
   const todayStr = useMemo(() => {
     const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -112,8 +110,8 @@ export default function FinancialAnalytics({ fromDate, toDate, dateRangeTitle, p
       return (
         <div className="bg-slate-900 text-white p-3 rounded-2xl shadow-xl border border-slate-700/50">
           <p className="font-bold text-xs text-slate-400 mb-2">{label}</p>
-          <p className="text-sm font-black text-indigo-400">Membership: ₹{payload[0]?.value?.toLocaleString('en-IN')}</p>
-          <p className="text-sm font-black text-purple-400">PT: ₹{payload[1]?.value?.toLocaleString('en-IN')}</p>
+          <p className="text-sm font-black text-orange-400">Membership: ₹{payload[0]?.value?.toLocaleString('en-IN')}</p>
+          <p className="text-sm font-black text-cyan-300">PT: ₹{payload[1]?.value?.toLocaleString('en-IN')}</p>
           <div className="h-px bg-slate-700 my-2"></div>
           <p className="text-sm font-black text-emerald-400">Total: ₹{(payload[0]?.value + payload[1]?.value)?.toLocaleString('en-IN')}</p>
         </div>
@@ -123,43 +121,47 @@ export default function FinancialAnalytics({ fromDate, toDate, dateRangeTitle, p
   };
 
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 relative">
-      <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-50 rounded-full blur-3xl opacity-50 -z-10 pointer-events-none" />
+    <div className="overview-chart-panel rounded-[28px] p-6 relative overflow-hidden">
+      <div className="absolute -top-16 -right-12 w-64 h-64 bg-cyan-100/70 rounded-full blur-3xl opacity-70 pointer-events-none" />
+      <div className="absolute -bottom-24 left-1/4 w-72 h-48 bg-orange-100/60 rounded-full blur-3xl opacity-70 pointer-events-none" />
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-8">
+      <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-8">
         <div>
           <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/20">
+              <IndianRupee size={17} />
+            </span>
             Financial Analytics
           </h2>
-          <p className="text-xs text-slate-500 font-medium">
+          <p className="text-xs text-slate-500 font-medium mt-1 ml-11">
             Real collections for {dateRangeTitle || 'Selected Period'} (Starting 23-Aug-2026)
           </p>
         </div>
-        <div className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full flex items-center gap-1 text-xs font-bold border border-emerald-200">
+        <div className="bg-emerald-50/80 text-emerald-700 px-3.5 py-2 rounded-full flex items-center gap-1 text-xs font-bold border border-emerald-200/80 shadow-sm backdrop-blur-md">
           <IndianRupee size={12} />
           Period Revenue: ₹{totalPeriodRevenue.toLocaleString('en-IN')}
         </div>
       </div>
 
-      <div className="h-[250px] w-full">
+      <div className="relative z-10 h-[250px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="colorMembership" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
+                <stop offset="5%" stopColor="#EA580C" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#EA580C" stopOpacity={0}/>
               </linearGradient>
               <linearGradient id="colorPT" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
+                <stop offset="5%" stopColor="#21b6c9" stopOpacity={0.28}/>
+                <stop offset="95%" stopColor="#21b6c9" stopOpacity={0}/>
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+            <CartesianGrid strokeDasharray="4 6" vertical={false} stroke="#FFEDD5" />
             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#94a3b8", fontWeight: 700 }} dy={10} />
             <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#94a3b8", fontWeight: 700 }} tickFormatter={(value) => `₹${value}`} dx={-10} />
             <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '5 5' }} />
-            <Area type="monotone" dataKey="Membership" stroke="#4F46E5" strokeWidth={3} fillOpacity={1} fill="url(#colorMembership)" />
-            <Area type="monotone" dataKey="PT" stroke="#8B5CF6" strokeWidth={3} fillOpacity={1} fill="url(#colorPT)" />
+            <Area type="monotone" dataKey="Membership" stroke="#2876e6" strokeWidth={3} fillOpacity={1} fill="url(#colorMembership)" animationDuration={900} />
+            <Area type="monotone" dataKey="PT" stroke="#21b6c9" strokeWidth={3} fillOpacity={1} fill="url(#colorPT)" animationDuration={1100} />
           </AreaChart>
         </ResponsiveContainer>
       </div>

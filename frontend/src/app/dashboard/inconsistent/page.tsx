@@ -680,7 +680,7 @@ export default function InconsistentAttendancePage() {
                         <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider border ${
                           item.isEmployee 
                             ? 'bg-purple-50 text-purple-700 border-purple-200' 
-                            : 'bg-[#FFF7ED] text-[#C2410C] border-[#FED7AA]'
+                            : 'bg-orange-50 text-orange-700 border-orange-200'
                         }`}>
                           {item.displayType}
                         </span>
@@ -770,7 +770,7 @@ export default function InconsistentAttendancePage() {
                             className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer border-none transition-all flex items-center gap-1 ${
                               item.daysAbsent >= 8 
                                 ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200' 
-                                : 'bg-[#FFF7ED] text-[#EA580C] hover:bg-orange-100 border border-[#FED7AA]'
+                                : 'bg-orange-50 text-[#EA580C] hover:bg-orange-100 border border-orange-200'
                             }`}
                             title="Schedule Follow-up Task"
                           >

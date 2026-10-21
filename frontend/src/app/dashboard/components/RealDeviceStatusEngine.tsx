@@ -143,28 +143,37 @@ export function SystemHealthFullSection() {
     {
       id: 'hikvision',
       name: 'Hikvision Access Terminal (DS-K1T320EFWX)',
-      status: 'Online',
-      isOk: true,
+      status: esslStatus === 'connected' ? 'Connected' : esslStatus === 'connecting' ? 'Connecting' : 'Disconnected',
+      isOk: esslStatus === 'connected',
       icon: Fingerprint,
-      detail: 'Model: DS-K1T320EFWX (V3.5.20) · IP 192.168.1.45 · ISAPI & SDK Port 8000 Active',
+      detail: esslStatus === 'connected' ? 'Hikvision DS-K1T320EFWX reachable via on-site agent (192.168.1.45)' : 'Terminal unreachable on LAN - check agent & ping',
       lastChecked: getHeartbeatAge(),
     },
     {
       id: 'listener',
       name: 'Hikvision Event Stream Listener',
-      status: attendanceListenerStatus === 'listening' ? 'Running' : attendanceListenerStatus === 'stopped' ? 'Paused' : 'Running',
-      isOk: true,
+      status: attendanceListenerStatus === 'listening' ? 'Running' : attendanceListenerStatus === 'stopped' ? 'Paused' : 'Error',
+      isOk: attendanceListenerStatus === 'listening',
       icon: Clock,
-      detail: 'Listening for real-time ISAPI AlertStream & SDK punches on 192.168.1.45:443',
+      detail: attendanceListenerStatus === 'listening' ? 'Listening for live Hikvision ISAPI access events' : 'Listener Service Paused',
       lastChecked: getHeartbeatAge(),
     },
     {
       id: 'gate',
       name: 'Hikvision Gate Control Relay',
-      status: gateStatus === 'enabled' ? 'Online' : 'Online',
-      isOk: true,
-      icon: Unlock,
-      detail: 'Hikvision Physical Relay (Door 1) Armed & Ready for Unlock',
+      status: gateStatus === 'enabled' ? 'Online' : 'Offline',
+      isOk: gateStatus === 'enabled',
+      icon: gateStatus === 'enabled' ? Unlock : Lock,
+      detail: gateStatus === 'enabled' ? 'Turnstile Relay Armed & Ready for Unlock' : 'Turnstile Relay Disarmed',
+      lastChecked: getHeartbeatAge(),
+    },
+    {
+      id: 'biometric',
+      name: 'Biometric Device (Hikvision)',
+      status: isDeviceFullyOnline ? 'Connected' : 'Disconnected',
+      isOk: isDeviceFullyOnline,
+      icon: Fingerprint,
+      detail: `Model: DS-K1T320EFWX · Last Successful Sync: ${formatLastConnectionTime(lastHeartbeat)}`,
       lastChecked: getHeartbeatAge(),
     },
   ];
@@ -201,7 +210,7 @@ export function SystemHealthFullSection() {
           disabled={isProbing}
           className="px-5 py-2.5 bg-slate-900 hover:bg-black text-white rounded-2xl text-xs font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-2 cursor-pointer border-none shrink-0"
         >
-          <RefreshCw size={14} className={isProbing ? 'animate-spin text-[#FF5E14]' : 'text-[#FF5E14]'} />
+          <RefreshCw size={14} className={isProbing ? 'animate-spin text-[#d4ff00]' : 'text-[#d4ff00]'} />
           {isProbing ? 'Checking System...' : 'Retry Probe'}
         </button>
       </div>
@@ -252,7 +261,7 @@ export function SystemHealthFullSection() {
 }
 
 /**
- * Reusable ESSL Device Status Card Widget
+ * Reusable Hikvision Device Status Card Widget
  */
 export default function RealDeviceStatusCard() {
   const {
@@ -272,7 +281,7 @@ export default function RealDeviceStatusCard() {
   };
 
   return (
-    <div className="bg-white p-5 rounded-[26px] border border-slate-200 shadow-sm space-y-4 font-poppins">
+    <div className="bg-white p-5 rounded-[26px] border border-slate-200 shadow-sm space-y-4 font-sans">
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2">
           <div
@@ -305,7 +314,7 @@ export default function RealDeviceStatusCard() {
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">IP Address</span>
-          <span className="font-mono font-bold text-slate-800">192.168.18.11</span>
+          <span className="font-mono font-bold text-slate-800">192.168.1.45</span>
         </div>
 
         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">

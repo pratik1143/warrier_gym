@@ -78,7 +78,7 @@ export default function WebMessagesPage() {
     let unsub = () => {};
     // Load local cache first
     try {
-      const cached = localStorage.getItem('warriorgym_messages') || localStorage.getItem('alphazone_messages');
+      const cached = localStorage.getItem('alphazone_messages');
       if (cached) setMessages(JSON.parse(cached));
     } catch (e) {}
 
@@ -87,7 +87,7 @@ export default function WebMessagesPage() {
       unsub = onSnapshot(q, (snapshot) => {
         const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as WebMessage));
         setMessages(data);
-        try { localStorage.setItem('warriorgym_messages', JSON.stringify(data)); } catch (e) {}
+        try { localStorage.setItem('alphazone_messages', JSON.stringify(data)); } catch (e) {}
         setLoading(false);
       }, (err) => {
         console.warn("Firestore permissions note:", err.message);
@@ -143,7 +143,7 @@ export default function WebMessagesPage() {
     // 1. Optimistically update local state & LocalStorage
     setMessages(prev => {
       const updated = prev.map(m => m.id === id ? { ...m, status: newStatus } : m);
-      try { localStorage.setItem('warriorgym_messages', JSON.stringify(updated)); } catch (e) {}
+      try { localStorage.setItem('alphazone_messages', JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
     if (selectedMessage && selectedMessage.id === id) {
@@ -171,7 +171,7 @@ export default function WebMessagesPage() {
     // Optimistic delete
     setMessages(prev => {
       const filtered = prev.filter(m => m.id !== id);
-      try { localStorage.setItem('warriorgym_messages', JSON.stringify(filtered)); } catch (e) {}
+      try { localStorage.setItem('alphazone_messages', JSON.stringify(filtered)); } catch (e) {}
       return filtered;
     });
     if (selectedMessage?.id === id) setSelectedMessage(null);
@@ -255,18 +255,18 @@ export default function WebMessagesPage() {
       
       {/* ── 1. PAGE HEADER (Aligned with Members & Employees) ── */}
       <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div>
           <div className="flex items-center gap-2.5 mb-2">
-            <span className="px-3 py-1 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
+            <span className="px-3 py-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
               Inbound CRM Engine
             </span>
             <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200/60 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow-2xs">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               LIVE
             </span>
-            <span className="text-xs text-slate-400 font-mono font-bold">TWG-MSG-v4.0</span>
+            <span className="text-xs text-slate-400 font-mono font-bold">AZ-MSG-v4.0</span>
           </div>
           <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 font-display">Website Messages</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">Manage inbound website enquiries, contact messages and responses.</p>
@@ -293,9 +293,9 @@ export default function WebMessagesPage() {
           { label: 'Total Inquiries', value: totalCount, sub: 'All website submissions', icon: MessageSquare, badgeBg: 'bg-[#FFF7ED] border-[#FED7AA] text-[#EA580C]' },
           { label: 'Unread Pending', value: unreadCount, sub: 'Awaiting first response', icon: AlertCircle, badgeBg: 'bg-amber-50 border-amber-200/60 text-amber-600' },
           { label: 'Responded', value: respondedCount, sub: 'Successfully answered', icon: CheckCheck, badgeBg: 'bg-emerald-50 border-emerald-200/60 text-emerald-600' },
-          { label: 'New Today', value: todayCount, sub: 'Received today', icon: Clock, badgeBg: 'bg-[#FFF7ED] border-orange-200/60 text-[#EA580C]' }
+          { label: 'New Today', value: todayCount, sub: 'Received today', icon: Clock, badgeBg: 'bg-orange-50 border-orange-200/60 text-orange-600' }
         ].map((stat, i) => (
-          <div key={i} className="bg-white border border-[#FED7AA] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234,88,12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
+          <div key={i} className="bg-white border border-[#FFEDD5] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234, 88, 12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{stat.label}</span>
               <div className={`p-2.5 rounded-2xl border ${stat.badgeBg}`}>
@@ -311,7 +311,7 @@ export default function WebMessagesPage() {
       </div>
 
       {/* ── 3. SEARCH & FILTERS BAR (Unified with Enquiries & Employees) ── */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234,88,12,0.02)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234, 88, 12,0.02)]">
         <div className="relative flex-1 min-w-[240px]">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input 
@@ -319,7 +319,7 @@ export default function WebMessagesPage() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search by name, phone, email or message..."
-            className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
+            className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
           />
         </div>
 
@@ -331,7 +331,7 @@ export default function WebMessagesPage() {
               setStatusFilter(e.target.value);
               setActiveTab(e.target.value as any);
             }}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Statuses</option>
             <option value="Unread">Unread</option>
@@ -343,7 +343,7 @@ export default function WebMessagesPage() {
           <select 
             value={goalFilter}
             onChange={e => setGoalFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Goals</option>
             {dynamicGoals.map(g => (
@@ -378,13 +378,13 @@ export default function WebMessagesPage() {
         
         {/* LEFT COLUMN: Inbound Messages List (5 of 12 cols on desktop) */}
         <div className={`lg:col-span-5 ${selectedMessage ? 'hidden lg:block' : 'block'}`}>
-          <div className="bg-white border border-[#FED7AA] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234,88,12,0.03)] flex flex-col">
+          <div className="bg-white border border-[#FFEDD5] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234, 88, 12,0.03)] flex flex-col">
             
             {/* List Header */}
             <div className="p-4 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-xs uppercase tracking-wider text-slate-800">Inbound Messages</span>
-                <span className="px-2 py-0.5 rounded-full bg-[#FFF7ED] text-[#EA580C] border border-orange-200/60 text-[10px] font-black">
+                <span className="px-2 py-0.5 rounded-full bg-orange-50 text-[#EA580C] border border-orange-200/60 text-[10px] font-black">
                   {filteredMessages.length}
                 </span>
               </div>
@@ -420,9 +420,9 @@ export default function WebMessagesPage() {
                       onClick={() => setSelectedMessage(msg)}
                       className={`p-4 transition-all cursor-pointer flex items-start gap-3.5 hover:bg-slate-50/80 ${
                         isSelected 
-                          ? 'bg-orange-50/60 border-l-4 border-[#EA580C]' 
+                          ? 'bg-orange-50/50 border-l-4 border-[#EA580C]' 
                           : isUnread 
-                          ? 'bg-orange-50/60 border-l-4 border-amber-400' 
+                          ? 'bg-orange-50/20 border-l-4 border-amber-400' 
                           : 'bg-white'
                       }`}
                     >
@@ -460,7 +460,7 @@ export default function WebMessagesPage() {
                         <div className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate">
                           📞 {msg.phone || '—'}
                           {msg.goal && (
-                            <span className="ml-2 font-bold text-[#EA580C] bg-[#FFF7ED] px-1.5 py-0.2 rounded border border-orange-200/60 text-[9.5px] uppercase">
+                            <span className="ml-2 font-bold text-[#EA580C] bg-orange-50 px-1.5 py-0.2 rounded border border-orange-200/50 text-[9.5px] uppercase">
                               {msg.goal}
                             </span>
                           )}
@@ -514,7 +514,7 @@ export default function WebMessagesPage() {
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white border border-[#FED7AA] rounded-3xl shadow-[0_4px_25px_rgba(234,88,12,0.03)] p-6 lg:p-7 space-y-6 text-left"
+              className="bg-white border border-[#FFEDD5] rounded-3xl shadow-[0_4px_25px_rgba(234, 88, 12,0.03)] p-6 lg:p-7 space-y-6 text-left"
             >
               {/* Back to list button on mobile */}
               <div className="lg:hidden pb-2 border-b border-slate-100">
@@ -641,7 +641,7 @@ export default function WebMessagesPage() {
                   className={`px-4 py-3 rounded-2xl font-extrabold text-xs uppercase tracking-wider transition-all border cursor-pointer ${
                     selectedMessage.status === 'Responded'
                       ? 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                      : 'bg-[#FFF7ED] text-[#EA580C] border-[#FED7AA] hover:bg-orange-100'
+                      : 'bg-orange-50 text-[#EA580C] border-orange-200 hover:bg-orange-100'
                   }`}
                 >
                   {selectedMessage.status === 'Responded' ? 'Mark Read' : 'Mark Responded'}
@@ -661,8 +661,8 @@ export default function WebMessagesPage() {
             </motion.div>
           ) : (
             /* Centered Empty State */
-            <div className="bg-white border border-[#FED7AA] rounded-3xl p-16 text-center text-slate-400 shadow-[0_4px_25px_rgba(234,88,12,0.03)]">
-              <div className="w-16 h-16 rounded-full bg-[#FFF7ED] text-[#EA580C] flex items-center justify-center mx-auto mb-4 border border-[#FED7AA]">
+            <div className="bg-white border border-[#FFEDD5] rounded-3xl p-16 text-center text-slate-400 shadow-[0_4px_25px_rgba(234, 88, 12,0.03)]">
+              <div className="w-16 h-16 rounded-full bg-orange-50 text-[#EA580C] flex items-center justify-center mx-auto mb-4 border border-orange-100">
                 <MessageSquare size={26} />
               </div>
               <h4 className="font-extrabold text-slate-800 text-base">No Message Selected</h4>
@@ -710,9 +710,9 @@ export default function WebMessagesPage() {
               const nextStatus = msg.status === 'Read' ? 'Unread' : 'Read';
               handleUpdateStatus(msg.id, nextStatus);
             }}
-            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
           >
-            <CheckCheck size={14} className="text-[#EA580C]" />
+            <CheckCheck size={14} className="text-orange-600" />
             <span>{actionsMenu.message.status === 'Read' ? 'Mark as Unread' : 'Mark as Read'}</span>
           </button>
 

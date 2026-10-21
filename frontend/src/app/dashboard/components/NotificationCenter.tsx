@@ -33,7 +33,7 @@ export default function NotificationCenter({ hideIcon = false }: { hideIcon?: bo
     const demos = [
       { id: 'n1', title: 'Member Check-in Verified', message: 'Rahul Sharma checked in via Main Gate Terminal', type: 'pt', read: false, timestamp: new Date().toISOString() },
       { id: 'n2', title: 'New Lead Enquiry Captured', message: 'Priya Verma requested Quarterly Membership details', type: 'expiry', read: false, timestamp: new Date(Date.now() - 900000).toISOString() },
-      { id: 'n3', title: 'Hardware Gate Online', message: 'Hikvision DS-K1T320EFWX Turnstile controller synced & 100% operational', type: 'payment', read: true, timestamp: new Date(Date.now() - 3600000).toISOString() }
+      { id: 'n3', title: 'Hardware Gate Online', message: 'Hikvision DS-K1T320EFWX turnstile controller synced & operational', type: 'payment', read: true, timestamp: new Date(Date.now() - 3600000).toISOString() }
     ];
     setNotifications(demos);
     setUnreadCount(demos.filter(n => !n.read).length);
@@ -54,7 +54,7 @@ export default function NotificationCenter({ hideIcon = false }: { hideIcon?: bo
       case 'expiry': return <AlertTriangle size={14} className="text-red-500" />;
       case 'birthday': return <Gift size={14} className="text-purple-500" />;
       case 'payment': return <DollarSign size={14} className="text-orange-500" />;
-      case 'pt': return <Dumbbell size={14} className="text-[#F97316]" />;
+      case 'pt': return <Dumbbell size={14} className="text-orange-500" />;
       default: return <Info size={14} className="text-slate-500" />;
     }
   };
@@ -106,7 +106,7 @@ export default function NotificationCenter({ hideIcon = false }: { hideIcon?: bo
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="text-sm font-black text-slate-800">Notifications</h3>
               {unreadCount > 0 && (
-                <button onClick={markAllAsRead} className="text-[10px] font-bold text-[#EA580C] hover:text-[#9A3412] border-none bg-transparent cursor-pointer">
+                <button onClick={markAllAsRead} className="text-[10px] font-bold text-orange-600 hover:text-orange-800 border-none bg-transparent cursor-pointer">
                   Mark all read
                 </button>
               )}
@@ -122,7 +122,7 @@ export default function NotificationCenter({ hideIcon = false }: { hideIcon?: bo
                   {notifications.map((notif) => (
                     <div 
                       key={notif.id} 
-                      className={`p-4 hover:bg-slate-50 transition-colors cursor-pointer flex gap-3 ${!notif.read ? 'bg-orange-50/60' : ''}`}
+                      className={`p-4 hover:bg-slate-50 transition-colors cursor-pointer flex gap-3 ${!notif.read ? 'bg-orange-50/30' : ''}`}
                       onClick={() => {
                         if (!notif.read) markAsRead(notif.id);
                       }}
@@ -143,7 +143,7 @@ export default function NotificationCenter({ hideIcon = false }: { hideIcon?: bo
                           ) : 'Just now'}
                         </span>
                       </div>
-                      {!notif.read && <div className="w-1.5 h-1.5 rounded-full bg-[#F97316] mt-1 shrink-0" />}
+                      {!notif.read && <div className="w-1.5 h-1.5 rounded-full bg-orange-500 mt-1 shrink-0" />}
                     </div>
                   ))}
                 </div>

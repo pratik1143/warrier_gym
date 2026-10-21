@@ -2,39 +2,31 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuthStore, useGymStore, useDeviceStore } from "@/store";
+import { useAuthStore, useGymStore } from "@/store";
 import { db } from "@/lib/firebase";
 import { collection, addDoc } from "firebase/firestore";
 import {
-  UserPlus,
-  MessageSquare,
-  PhoneCall,
-  X,
-  CheckCircle2
+  UserPlus, Coins, Wallet, Dumbbell, IndianRupee,
+  MessageSquare, UserMinus, CalendarCheck, PhoneCall,
+  UserCheck, Users, Activity,
+  Fingerprint, BarChart3,
+  X, CheckCircle2, Sparkles, AlertCircle, Info
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import toast from "@/lib/toast";
+import toast from '@/lib/toast';
 import API from "@/services/api";
 
+import FinancialAnalytics from "./components/FinancialAnalytics";
+import "./overview.css";
+import PresentMembersModal from "./components/PresentMembersModal";
 import { useFollowups } from "@/hooks/useFollowups";
 import { SYSTEM_START_DATE, SYSTEM_CONFIG } from "@/config/system";
-import { getPaymentDateStr, useTodaysPayments } from "@/hooks/useTodaysPayments";
-
-// New Next-Level Redesigned Overview Components
-import DashboardHero from "./components/DashboardHero";
-import KPICommandStrip from "./components/KPICommandStrip";
-import PerformanceAnalytics from "./components/PerformanceAnalytics";
-import AttendanceCommandCenter from "./components/AttendanceCommandCenter";
-import MembershipOverviewWidget from "./components/MembershipOverviewWidget";
-import RecentPaymentsTable from "./components/RecentPaymentsTable";
-import GymPulseWidget from "./components/GymPulseWidget";
-import PresentMembersModal from "./components/PresentMembersModal";
-import dashboardStyles from "./overview.module.css";
+import { useTodaysPayments } from "@/hooks/useTodaysPayments";
 
 const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 16 },
+  initial: { opacity: 0, y: 18 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.22, delay: delay * 0.45, ease: "easeOut" as const }
+  transition: { duration: 0.4, delay, ease: "easeOut" as const },
 });
 
 export default function OverviewCommandCenter() {
@@ -42,49 +34,51 @@ export default function OverviewCommandCenter() {
   const router = useRouter();
   const { followups, todaysCount, createFollowup } = useFollowups();
   const {
-    members,
-    fetchMembers,
-    fetchPayments,
+    members, fetchMembers,
     attendance,
-    gymPresence,
-    triggerGateUnlock
   } = useGymStore();
 
-  const { deviceStatus } = useDeviceStore();
-
   // Live payment data — single source of truth
-  const { todaysTotal: todaysRealCollection, allPayments, todayStr } = useTodaysPayments();
+  const { todaysTotal: todaysRealCollection, allPayments } = useTodaysPayments();
+  // alias for range/PT analytics that use the full payment list
   const payments = allPayments;
 
   // Helper to format date in YYYY-MM-DD in Asia/Kolkata timezone
   const getLocalDateStr = (d: Date = new Date()) => {
-    const formatter = new Intl.DateTimeFormat("en-CA", {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: SYSTEM_CONFIG.timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
     });
     return formatter.format(d);
   };
 
+  const todayStr = useMemo(() => getLocalDateStr(new Date()), []);
+
   const yesterdayStr = useMemo(() => {
-    const d = new Date(`${todayStr}T12:00:00Z`);
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }, [todayStr]);
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return getLocalDateStr(d);
+  }, []);
+
   const sevenDaysAgoStr = useMemo(() => {
-    const d = new Date(`${todayStr}T12:00:00Z`);
-    d.setUTCDate(d.getUTCDate() - 6);
-    return d.toISOString().slice(0, 10);
-  }, [todayStr]);
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return getLocalDateStr(d);
+  }, []);
+
   const thirtyDaysAgoStr = useMemo(() => {
-    const d = new Date(`${todayStr}T12:00:00Z`);
-    d.setUTCDate(d.getUTCDate() - 29);
-    return d.toISOString().slice(0, 10);
-  }, [todayStr]);
+    const d = new Date();
+    d.setDate(d.getDate() - 29);
+    return getLocalDateStr(d);
+  }, []);
+
   const monthStartStr = useMemo(() => {
-    return `${todayStr.slice(0, 7)}-01`;
-  }, [todayStr]);
+    const d = new Date();
+    d.setDate(1);
+    return getLocalDateStr(d);
+  }, []);
 
   // Filter Dates State
   const [fromDate, setFromDate] = useState(todayStr);
@@ -99,49 +93,32 @@ export default function OverviewCommandCenter() {
   const [showPresentModal, setShowPresentModal] = useState(false);
 
   // New Enquiry Form State
-  const [enqName, setEnqName] = useState("");
-  const [enqPhone, setEnqPhone] = useState("");
-  const [enqSource, setEnqSource] = useState("Walk-in");
-  const [enqPlan, setEnqPlan] = useState("Monthly Standard");
+  const [enqName, setEnqName] = useState('');
+  const [enqPhone, setEnqPhone] = useState('');
+  const [enqSource, setEnqSource] = useState('Walk-in');
+  const [enqPlan, setEnqPlan] = useState('Monthly Standard');
   const [enqDate, setEnqDate] = useState(todayStr);
-  const [enqRemarks, setEnqRemarks] = useState("");
+  const [enqRemarks, setEnqRemarks] = useState('');
   const [enqSaving, setEnqSaving] = useState(false);
 
   // New Followup Form State
-  const [folSelectedId, setFolSelectedId] = useState("");
-  const [folTitle, setFolTitle] = useState("");
+  const [folSourceType, setFolSourceType] = useState<'member' | 'enquiry'>('member');
+  const [folSelectedId, setFolSelectedId] = useState('');
+  const [folTitle, setFolTitle] = useState('');
   const [folDate, setFolDate] = useState(todayStr);
-  const [folTime, setFolTime] = useState("10:00");
-  const [folPriority, setFolPriority] = useState<"High" | "Medium" | "Low">("Medium");
+  const [folTime, setFolTime] = useState('10:00');
+  const [folPriority, setFolPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
   const [folSaving, setFolSaving] = useState(false);
 
-  const displayedFromDate = dateRange === "Today" ? todayStr
-    : dateRange === "Yesterday" ? yesterdayStr
-    : dateRange === "7 Days" ? sevenDaysAgoStr
-    : dateRange === "30 Days" ? thirtyDaysAgoStr
-    : dateRange === "Month" ? monthStartStr : fromDate;
-  const displayedToDate = dateRange === "Yesterday" ? yesterdayStr : toDate;
+  // New Member Form State
+  const [memName, setMemName] = useState('');
+  const [memPhone, setMemPhone] = useState('');
+  const [memPlan, setMemPlan] = useState('3 Months');
+  const [memPaid, setMemPaid] = useState('6500');
+  const [memMethod, setMemMethod] = useState('UPI');
+  const [memSaving, setMemSaving] = useState(false);
 
-  const todaysBills = useMemo(() => allPayments.filter((payment: any) => {
-    if (!payment || payment.isSample || payment.isMock) return false;
-    if (payment.isHistorical || payment.imported || payment.isLegacyImport || payment.transactionType === "historical_import") return false;
-    const billDate = payment.isRealTimeToday && payment.createdAt
-      ? getPaymentDateStr(payment.createdAt)
-      : getPaymentDateStr(payment.paymentDate || payment.billingDate || payment.date || payment.createdAt);
-    return billDate === todayStr;
-  }), [allPayments, todayStr]);
-
-
-  // Fetch enquiries on mount
-  useEffect(() => {
-    API.get("/enquiries")
-      .then((res) => {
-        if (Array.isArray(res.data)) setEnquiries(res.data);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Preset Handler
+  // Quick preset button click handler (Syncs both state and calendar inputs)
   const handleSelectPreset = (preset: "Today" | "Yesterday" | "7 Days" | "30 Days" | "Month") => {
     setDateRange(preset);
     if (preset === "Today") {
@@ -162,83 +139,197 @@ export default function OverviewCommandCenter() {
     }
   };
 
-  // Date input handler
+  // Calendar date input change handler
   const handleDateInputChange = (newFrom: string, newTo: string) => {
     setFromDate(newFrom);
     setToDate(newTo);
-    if (newFrom === todayStr && newTo === todayStr) setDateRange("Today");
-    else if (newFrom === yesterdayStr && newTo === yesterdayStr) setDateRange("Yesterday");
-    else if (newFrom === sevenDaysAgoStr && newTo === todayStr) setDateRange("7 Days");
-    else if (newFrom === thirtyDaysAgoStr && newTo === todayStr) setDateRange("30 Days");
-    else if (newFrom === monthStartStr && newTo === todayStr) setDateRange("Month");
-    else setDateRange("Custom");
+
+    if (newFrom === todayStr && newTo === todayStr) {
+      setDateRange("Today");
+    } else if (newFrom === yesterdayStr && newTo === yesterdayStr) {
+      setDateRange("Yesterday");
+    } else if (newFrom === sevenDaysAgoStr && newTo === todayStr) {
+      setDateRange("7 Days");
+    } else if (newFrom === thirtyDaysAgoStr && newTo === todayStr) {
+      setDateRange("30 Days");
+    } else if (newFrom === monthStartStr && newTo === todayStr) {
+      setDateRange("Month");
+    } else {
+      setDateRange("Custom");
+    }
   };
 
   // Greeting helper
-  const greeting = useMemo(() => {
+  const getGreeting = () => {
     const h = new Date().getHours();
     if (h < 12) return "Good Morning";
     if (h < 17) return "Good Afternoon";
     return "Good Evening";
+  };
+
+  // Fetch enquiries on mount
+  useEffect(() => {
+    API.get('/enquiries').then(res => {
+      if (Array.isArray(res.data)) setEnquiries(res.data);
+    }).catch(() => {});
   }, []);
 
-  const headerDateStr = useMemo(() => {
-    return new Date(`${todayStr}T12:00:00Z`).toLocaleDateString("en-IN", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      timeZone: SYSTEM_CONFIG.timezone
-    });
-  }, [todayStr]);
+  // Query Bounds clamped to SYSTEM_START_DATE (2026-08-23) and todayStr (no future data)
+  const queryBounds = useMemo(() => {
+    const s = fromDate || todayStr;
+    const e = toDate || todayStr;
+    const effectiveStart = s > SYSTEM_START_DATE ? s : SYSTEM_START_DATE;
+    const effectiveEnd = e < todayStr ? e : todayStr;
+    // Data exists only if the query window overlaps with [SYSTEM_START_DATE, todayStr]
+    const hasData = e >= SYSTEM_START_DATE && s <= todayStr && effectiveStart <= effectiveEnd;
 
-  // 1. Unique Member Attendance for Today
+    return {
+      requestedStart: s,
+      requestedEnd: e,
+      effectiveStart,
+      effectiveEnd,
+      hasData
+    };
+  }, [fromDate, toDate, todayStr]);
+
+  // TODAY'S COLLECTION is now provided by useTodaysPayments hook above (live Firestore listener)
+
+  // 2. PRESENT TODAY (Unique member attendance for today)
   const presentTodayCount = useMemo(() => {
-    const set = new Set<string>();
+    const uniqueMembers = new Set<string>();
     attendance.forEach((a: any) => {
       if (!a) return;
-      const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || "").split("T")[0];
+      const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || '').split('T')[0];
       if (checkInDate === todayStr) {
         const mKey = a.memberId || a.biometricId || a.deviceUserId || a.memberName;
-        if (mKey && String(mKey).trim() && !String(mKey).includes("unmapped")) {
-          set.add(String(mKey).trim().toLowerCase());
+        if (mKey && String(mKey).trim() && !String(mKey).includes('unmapped')) {
+          uniqueMembers.add(String(mKey).trim().toLowerCase());
         }
       }
     });
-    return set.size;
+    return uniqueMembers.size;
   }, [attendance, todayStr]);
 
-  // 2. Active Members Count
+  // 3. ACTIVE MEMBERS (Current active members count - does NOT fluctuate with date filter)
   const activeMembersCount = useMemo(() => {
     return members.filter((m: any) => {
       if (!m) return false;
-      if (m.status === "frozen" || m.status === "Frozen" || m.status === "blocked" || m.status === "Blocked") return false;
-      return m.status === "active" || m.status === "Active" || (m.expiryDate && m.expiryDate >= todayStr);
+      if (m.status === 'frozen' || m.status === 'Frozen' || m.status === 'blocked' || m.status === 'Blocked') return false;
+      return m.status === 'active' || m.status === 'Active' || (m.expiryDate && m.expiryDate >= todayStr);
     }).length;
   }, [members, todayStr]);
 
-  // 3. Pending Enquiries Count
-  const pendingEnquiriesCount = useMemo(
-    () => enquiries.filter((e: any) => e.status !== "Converted" && e.status !== "Lost").length,
-    [enquiries]
-  );
+  // 4. EXPIRED MEMBERS
+  const expiredMembersCount = useMemo(() => {
+    return members.filter((m: any) => {
+      if (!m) return false;
+      if (m.status === 'frozen' || m.status === 'Frozen' || m.status === 'blocked' || m.status === 'Blocked') return false;
+      return m.status === 'expired' || m.status === 'Expired' || (m.expiryDate && m.expiryDate < todayStr);
+    }).length;
+  }, [members, todayStr]);
 
-  // 4. Last Punch Event for Gate Access Card
-  const lastPunchEvent = useMemo(() => {
-    if (!attendance || attendance.length === 0) return undefined;
-    const latest = attendance[0];
-    const rawTs = latest.checkIn || latest.timestamp || latest.createdAt;
-    const timeFormatted = rawTs
-      ? new Date(rawTs).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
-      : "Just now";
-    return {
-      memberName: latest.memberName || `Member #${latest.biometricId || "Bio"}`,
-      time: `Today at ${timeFormatted}`,
-      biometricId: latest.biometricId
-    };
-  }, [attendance]);
+  // 5. FILTERED RANGE COLLECTION (Strict real database records only)
+  const filteredRangeCollection = useMemo(() => {
+    if (!queryBounds.hasData) return 0;
+    const seen = new Set<string>();
 
-  // Submit Handlers
+    return payments
+      .filter((p: any) => {
+        if (!p || p.isSample || p.isMock) return false;
+        const isHist = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
+        if (isHist) return false;
+
+        const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
+        if (status !== 'paid' && status !== 'partial') return false;
+
+        const pDate = String(p.paymentDate || p.date || '').split('T')[0];
+        if (!pDate) return false;
+        if (pDate < queryBounds.effectiveStart || pDate > queryBounds.effectiveEnd) return false;
+
+        const idKey = String(p.id || p.paymentId || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
+        if (idKey && seen.has(idKey)) return false;
+        if (idKey) seen.add(idKey);
+        return true;
+      })
+      .reduce((sum: number, p: any) => {
+        const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
+        return sum + (isNaN(val) ? 0 : val);
+      }, 0);
+  }, [payments, queryBounds]);
+
+  // 6. FILTERED PT COLLECTION
+  const filteredPTCollection = useMemo(() => {
+    if (!queryBounds.hasData) return 0;
+    const seen = new Set<string>();
+
+    return payments
+      .filter((p: any) => {
+        if (!p || p.isSample || p.isMock) return false;
+        const isHist = p.isHistorical === true || p.imported === true || p.isLegacyImport === true || p.transactionType === 'historical_import';
+        if (isHist) return false;
+
+        const isPT = p.isPT || p.billingType === 'PT' || p.packageType === 'PT' || p.invoiceType === 'PT' || p.transactionType === 'pt_payment';
+        if (!isPT) return false;
+
+        const status = String(p.status || p.paymentStatus || 'paid').toLowerCase();
+        if (status !== 'paid' && status !== 'partial') return false;
+
+        const pDate = String(p.paymentDate || p.date || '').split('T')[0];
+        if (pDate < queryBounds.effectiveStart || pDate > queryBounds.effectiveEnd) return false;
+
+        const idKey = String(p.id || p.paymentId || p.invoiceNumber || p.invoice || p.idempotencyKey || '').trim();
+        if (idKey && seen.has(idKey)) return false;
+        if (idKey) seen.add(idKey);
+        return true;
+      })
+      .reduce((sum: number, p: any) => {
+        const val = Number(p.amountPaid !== undefined ? p.amountPaid : (p.paid !== undefined ? p.paid : (p.amount || 0)));
+        return sum + (isNaN(val) ? 0 : val);
+      }, 0);
+  }, [payments, queryBounds]);
+
+  // 7. FILTERED ATTENDANCE CHECK-INS
+  const filteredCheckins = useMemo(() => {
+    if (!queryBounds.hasData) return 0;
+    const uniqueMembers = new Set<string>();
+
+    attendance.forEach((a: any) => {
+      if (!a) return;
+      const checkInDate = String(a.checkIn || a.timestamp || a.createdAt || '').split('T')[0];
+      if (checkInDate >= queryBounds.effectiveStart && checkInDate <= queryBounds.effectiveEnd) {
+        const mKey = a.memberId || a.biometricId || a.deviceUserId || a.memberName;
+        if (mKey && String(mKey).trim() && !String(mKey).includes('unmapped')) {
+          uniqueMembers.add(String(mKey).trim().toLowerCase());
+        }
+      }
+    });
+    return uniqueMembers.size;
+  }, [attendance, queryBounds]);
+
+  // 8. FILTERED FOLLOW-UPS COUNT
+  const filteredFollowupsCount = useMemo(() => {
+    if (!queryBounds.hasData) return 0;
+    return followups.filter((f: any) => {
+      if (!f) return false;
+      const fDate = String(f.scheduledDate || f.followUpDate || f.dueDate || f.date || '').split('T')[0];
+      return fDate >= queryBounds.effectiveStart && fDate <= queryBounds.effectiveEnd;
+    }).length;
+  }, [followups, queryBounds]);
+
+  // 9. FILTERED NEW CLIENTS
+  const filteredNewClients = useMemo(() => {
+    if (!queryBounds.hasData) return 0;
+    return members.filter((m: any) => {
+      if (!m || m.isSample || m.isMock) return false;
+      const joined = String(m.joinDate || m.registrationDate || m.createdAt || '').split('T')[0];
+      return joined >= queryBounds.effectiveStart && joined <= queryBounds.effectiveEnd;
+    }).length;
+  }, [members, queryBounds]);
+
+  // 10. PENDING ENQUIRIES COUNT
+  const pendingEnquiriesCount = useMemo(() => enquiries.filter((e: any) => e.status !== "Converted" && e.status !== "Lost").length, [enquiries]);
+
+  // Submit Handlers for Popups
   const handleCreateEnquiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!enqName || !enqPhone) {
@@ -254,23 +345,21 @@ export default function OverviewCommandCenter() {
         interestedPlan: enqPlan,
         nextFollowUp: enqDate,
         remarks: enqRemarks,
-        status: "Pending",
-        priority: "Warm",
+        status: 'Pending',
+        priority: 'Warm',
         createdAt: new Date().toISOString()
       };
 
       try {
-        await API.post("/enquiries", payload);
+        await API.post('/enquiries', payload);
       } catch (_) {
-        await addDoc(collection(db, "enquiries"), payload);
+        await addDoc(collection(db, 'enquiries'), payload);
       }
 
-      setEnquiries((prev) => [{ id: `enq_${Date.now()}`, ...payload }, ...prev]);
+      setEnquiries(prev => [{ id: `enq_${Date.now()}`, ...payload }, ...prev]);
       toast.success("New Enquiry created successfully! 🎉");
       setShowNewEnquiryModal(false);
-      setEnqName("");
-      setEnqPhone("");
-      setEnqRemarks("");
+      setEnqName(''); setEnqPhone(''); setEnqRemarks('');
     } catch (err: any) {
       toast.error("Failed to create enquiry: " + err.message);
     } finally {
@@ -288,19 +377,19 @@ export default function OverviewCommandCenter() {
     try {
       const targetMember = members.find((m: any) => m.id === folSelectedId || m.memberId === folSelectedId);
 
-      let followUpType = "General";
-      if (folTitle.includes("Renewal") || folTitle.includes("Membership")) {
-        followUpType = "GYM MEMBERSHIP RENEWAL";
-      } else if (folTitle.includes("PT") || folTitle.includes("Personal Training")) {
-        followUpType = "PT RENEWAL";
-      } else if (folTitle.includes("Balance") || folTitle.includes("Payment")) {
-        followUpType = "PENDING BALANCE";
+      let followUpType = 'General';
+      if (folTitle.includes('Renewal') || folTitle.includes('Membership')) {
+        followUpType = 'GYM MEMBERSHIP RENEWAL';
+      } else if (folTitle.includes('PT') || folTitle.includes('Personal Training')) {
+        followUpType = 'PT RENEWAL';
+      } else if (folTitle.includes('Balance') || folTitle.includes('Payment')) {
+        followUpType = 'PENDING BALANCE';
       }
 
       await createFollowup({
         memberId: folSelectedId,
-        memberName: targetMember?.name || "Member",
-        phone: targetMember?.phone || "",
+        memberName: targetMember?.name || 'Member',
+        phone: targetMember?.phone || '',
         title: folTitle,
         reason: folTitle,
         notes: folTitle,
@@ -310,15 +399,14 @@ export default function OverviewCommandCenter() {
         scheduledTimestamp: new Date(`${folDate}T${folTime}`).getTime() || Date.now(),
         priority: folPriority,
         type: followUpType,
-        source: "manual",
-        status: "Pending",
+        source: 'manual',
+        status: 'Pending',
         createdAt: new Date().toISOString()
       });
 
       toast.success("Follow-up scheduled successfully! 📅");
       setShowNewFollowupModal(false);
-      setFolTitle("");
-      setFolSelectedId("");
+      setFolTitle(''); setFolSelectedId('');
     } catch (err: any) {
       toast.error("Failed to schedule follow-up: " + err.message);
     } finally {
@@ -326,90 +414,579 @@ export default function OverviewCommandCenter() {
     }
   };
 
+  const handleCreateMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!memName || !memPhone) {
+      toast.error("Name and Phone are required!");
+      return;
+    }
+    setMemSaving(true);
+    try {
+      const invoiceNumber = `INV-${Math.floor(100000 + Math.random() * 900000)}`;
+      const paidAmt = Number(memPaid) || 0;
+
+      const memberPayload = {
+        name: memName,
+        phone: memPhone,
+        plan: memPlan,
+        status: 'active',
+        joinDate: todayStr,
+        price: paidAmt,
+        originalAmount: paidAmt,
+        discountAmount: 0,
+        netPayable: paidAmt,
+        totalBilled: paidAmt,
+        totalPaid: paidAmt,
+        paymentStatus: 'paid',
+        paymentMethod: memMethod,
+        invoiceNumber: invoiceNumber,
+        transactionType: 'membership_payment',
+        isHistorical: false,
+        imported: false,
+        paymentDate: todayStr,
+        idempotencyKey: `overview_mem_${memPhone.replace(/\D/g, '')}_${todayStr}`,
+        isRealTimeToday: true,
+        createdAt: new Date().toISOString()
+      };
+
+      try {
+        await API.post('/members', memberPayload);
+      } catch (_) {
+        const docRef = await addDoc(collection(db, 'members'), memberPayload);
+        await addDoc(collection(db, 'payments'), {
+          memberId: docRef.id,
+          memberName: memName,
+          originalAmount: paidAmt,
+          discountAmount: 0,
+          netPayable: paidAmt,
+          amount: paidAmt,
+          amountPaid: paidAmt,
+          paid: paidAmt,
+          plan: memPlan,
+          method: memMethod,
+          invoice: invoiceNumber,
+          invoiceNumber: invoiceNumber,
+          status: 'paid',
+          transactionType: 'membership_payment',
+          isHistorical: false,
+          imported: false,
+          date: todayStr,
+          paymentDate: todayStr,
+          isRealTimeToday: true,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      toast.success(`Member registered & Invoice ${invoiceNumber} issued! 📄✨`);
+      setShowNewMemberModal(false);
+      setMemName(''); setMemPhone(''); setMemPaid('6500');
+      fetchMembers();
+      // Payment list refreshes automatically via useTodaysPayments hook listener
+    } catch (err: any) {
+      toast.error("Failed to add member: " + err.message);
+    } finally {
+      setMemSaving(false);
+    }
+  };
+
+  const headerDateStr = useMemo(() => {
+    return new Date().toLocaleDateString("en-IN", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: SYSTEM_CONFIG.timezone
+    });
+  }, []);
+
   return (
-    <div className={`${dashboardStyles.dashboard} w-full space-y-5 pb-8 text-left font-sans`}>
-      
-      {/* ── 1. HERO COMMAND CENTER ── */}
-      <motion.div {...fadeUp(0)}>
-        <DashboardHero
-          userName={user?.name || "Gym Owner"}
-          dateStr={headerDateStr}
-          greeting={greeting}
-          fromDate={displayedFromDate}
-          toDate={displayedToDate}
-          dateRange={dateRange}
-          onSelectPreset={handleSelectPreset}
-          onDateChange={handleDateInputChange}
-          presentTodayCount={presentTodayCount}
-          activeMembersCount={activeMembersCount}
-          pendingEnquiriesCount={pendingEnquiriesCount}
-          todaysRealCollection={todaysRealCollection}
-          onNewMember={() => router.push("/dashboard/members?action=add")}
-          onNewEnquiry={() => setShowNewEnquiryModal(true)}
-          onFollowUp={() => setShowNewFollowupModal(true)}
-          onAttendance={() => router.push("/dashboard/attendance")}
-        />
-      </motion.div>
+    <div className="overview-dashboard w-full space-y-4 pb-6 text-left">
 
-      {/* ── 2. TOP KPI COMMAND STRIP ── */}
-      <motion.div {...fadeUp(0.08)}>
-        <KPICommandStrip
-          todaysCollection={todaysRealCollection}
-          activeMembersCount={activeMembersCount}
-          totalMembersCount={members.length}
-          presentTodayCount={presentTodayCount}
-          todaysFollowupsCount={todaysCount}
-          newEnquiriesCount={pendingEnquiriesCount}
-          onOpenBilling={() => router.push("/dashboard/billing")}
-          onOpenMembers={() => router.push("/dashboard/members")}
-          onOpenPresentModal={() => setShowPresentModal(true)}
-          onOpenFollowups={() => router.push("/dashboard/follow-up")}
-          onOpenEnquiries={() => router.push("/dashboard/enquiries")}
-        />
-      </motion.div>
+      {/* ── MOBILE COMPACT COMMAND CENTER (VISIBLE ONLY ON MOBILE < md) ── */}
+      <div className="md:hidden space-y-3 text-left">
+        {/* Compact Header Greeting */}
+        <div className="overview-hero rounded-2xl p-4 text-white shadow-md relative overflow-hidden border border-white/15">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[9px] font-black uppercase tracking-widest text-orange-300">Command Center</span>
+              <h2 className="text-lg font-black text-white leading-tight">
+                {getGreeting()}, <span className="text-orange-300">{user?.name?.split(' ')[0] || 'Admin'}</span> 👋
+              </h2>
+            </div>
+            <div className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/30 px-2.5 py-1 rounded-full text-[9px] font-extrabold text-emerald-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live
+            </div>
+          </div>
+        </div>
 
-      {/* ── 3. GYM PERFORMANCE ANALYTICS (Revenue & Member Growth) ── */}
-      <motion.div {...fadeUp(0.14)}>
-        <PerformanceAnalytics
-          payments={payments}
-          members={members}
-        />
-      </motion.div>
+        {/* 2x2 KPI Grid (Compact cards ~90-110px height) */}
+        <div className="grid grid-cols-2 gap-2.5">
+          {/* Card 1: Today's Collection */}
+          <div
+            onClick={() => router.push('/dashboard/billing')}
+            className="overview-glass-card border border-white/80 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Collection</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <IndianRupee size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                ₹{todaysRealCollection.toLocaleString('en-IN')}
+              </h3>
+              <p className="text-[9px] font-bold text-emerald-600 mt-0.5">Today IST →</p>
+            </div>
+          </div>
 
-      {/* ── 4. ATTENDANCE COMMAND CENTER (Full Width) ── */}
-      <motion.div {...fadeUp(0.18)} className="w-full">
-        <AttendanceCommandCenter
-          attendanceLogs={attendance}
-          activeMembersCount={activeMembersCount}
-          onOpenRoster={() => setShowPresentModal(true)}
-        />
-      </motion.div>
+          {/* Card 2: Present Today */}
+          <div
+            onClick={() => setShowPresentModal(true)}
+            className="overview-glass-card border border-white/80 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Present</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <UserCheck size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">{presentTodayCount}</h3>
+              <p className="text-[9px] font-bold text-[#EA580C] mt-0.5">View roster →</p>
+            </div>
+          </div>
 
-      {/* ── 5. MEMBERSHIP OVERVIEW & EXPIRING TABLE (Full Width) ── */}
-      <motion.div {...fadeUp(0.24)} className="w-full">
-        <MembershipOverviewWidget
-          members={members}
-          onRenewMember={(m) => router.push(`/dashboard/billing?memberId=${m.id || m.memberId}`)}
-        />
-      </motion.div>
+          {/* Card 3: Active Members */}
+          <div
+            onClick={() => router.push('/dashboard/members')}
+            className="overview-glass-card border border-white/80 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Active</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <Activity size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">{activeMembersCount}</h3>
+              <p className="text-[9px] font-bold text-slate-500 mt-0.5">Gym Members →</p>
+            </div>
+          </div>
 
-      {/* ── 7. GYM PULSE & TELEMETRY ── */}
-      <motion.div {...fadeUp(0.38)}>
-        <GymPulseWidget
-          membersInsideCount={gymPresence.length > 0 ? gymPresence.length : presentTodayCount}
-          staffInsideCount={4}
-          deviceStatus={deviceStatus}
-          isGateReady={true}
-        />
-      </motion.div>
+          {/* Card 4: Today's Follow-ups */}
+          <div
+            onClick={() => router.push('/dashboard/follow-up')}
+            className="overview-glass-card border border-white/80 rounded-2xl p-3 shadow-2xs flex flex-col justify-between cursor-pointer active:scale-98 transition-transform"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Follow-ups</span>
+              <div className="w-6 h-6 rounded-lg bg-orange-50 text-[#EA580C] flex items-center justify-center">
+                <PhoneCall size={13} />
+              </div>
+            </div>
+            <div className="mt-2">
+              <h3 className="text-xl font-black text-slate-900 tracking-tight font-mono">{todaysCount}</h3>
+              <p className="text-[9px] font-bold text-[#EA580C] mt-0.5">Due today →</p>
+            </div>
+          </div>
+        </div>
 
-      {/* ── 8. RECENT PAYMENTS & INVOICES TABLE ── */}
-      <motion.div {...fadeUp(0.42)}>
-        <RecentPaymentsTable
-          payments={todaysBills}
-          todayStr={todayStr}
-        />
+        {/* Compact Quick Actions */}
+        <div className="overview-glass-card p-3 rounded-2xl border border-white/80 shadow-xs">
+          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">Quick Actions</span>
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              onClick={() => router.push('/dashboard/members?action=add')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-orange-50 border border-orange-100 text-[#EA580C] hover:bg-orange-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <UserPlus size={16} />
+              <span className="text-[10px] font-bold mt-1 leading-tight">+ Member</span>
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard/billing')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <Coins size={16} className="text-emerald-600" />
+              <span className="text-[10px] font-bold mt-1 leading-tight">Bill</span>
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard/attendance')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <Fingerprint size={16} className="text-orange-600" />
+              <span className="text-[10px] font-bold mt-1 leading-tight">Attendance</span>
+            </button>
+
+            <button
+              onClick={() => router.push('/dashboard/gate-control')}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 hover:bg-slate-100 transition-all cursor-pointer active:scale-95 border-none"
+            >
+              <Activity size={16} className="text-orange-600" />
+              <span className="text-[10px] font-bold mt-1 leading-tight">Gate</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Compact Recent Attendance Feed */}
+        <div className="overview-glass-card p-3.5 rounded-2xl border border-white/80 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-slate-900 uppercase tracking-tight flex items-center gap-1.5">
+              <Activity size={14} className="text-[#EA580C]" /> Recent Live Punches
+            </span>
+            <button
+              onClick={() => router.push('/dashboard/attendance')}
+              className="text-[10px] font-bold text-[#EA580C] hover:underline border-none bg-transparent cursor-pointer"
+            >
+              View All →
+            </button>
+          </div>
+
+          {attendance && attendance.length > 0 ? (
+            <div className="divide-y divide-slate-100">
+              {attendance.slice(0, 3).map((item: any, idx: number) => {
+                const punchTime = item.checkIn || item.timestamp ? new Date(item.checkIn || item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now';
+                return (
+                  <div key={idx} className="py-2 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                      <div className="w-7 h-7 rounded-full bg-orange-100 text-[#EA580C] font-black text-[10px] flex items-center justify-center shrink-0">
+                        {(item.memberName || 'M').charAt(0)}
+                      </div>
+                      <div className="truncate">
+                        <p className="font-bold text-slate-900 truncate">{item.memberName || 'Gym Member'}</p>
+                        <p className="text-[9px] text-slate-400 font-medium">ID: {item.biometricId || item.memberId || 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                        {punchTime} ENTRY
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 py-2 text-center">No attendance punches recorded today.</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── DESKTOP ONLY DASHBOARD (HIDDEN ON MOBILE < md) ── */}
+      <div className="hidden md:block space-y-4">
+        {/* HERO HEADER CARD (Clean greeting, quick actions, date range filter with 2-way sync) */}
+        <div className="overview-hero relative overflow-hidden rounded-[28px] px-6 py-6 border border-white/15 shadow-xl">
+          <div className="overview-hero-orb absolute top-0 right-0 w-72 h-72 bg-orange-400/20 rounded-full blur-3xl pointer-events-none" />
+          <div className="overview-hero-orb-delayed absolute -bottom-12 left-[28%] w-64 h-64 bg-cyan-400/15 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          {/* Greeting & Quick Actions */}
+          <div className="space-y-4">
+            <motion.div {...fadeUp(0)} className="flex items-center gap-3">
+              <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-[9.5px] font-black uppercase tracking-[0.15em] text-white/80 flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Live Sync
+              </span>
+            </motion.div>
+
+            <div>
+              <motion.h1 {...fadeUp(0.05)} className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight leading-tight">
+                {getGreeting()}, <span className="text-orange-300 font-extrabold">{user?.name || 'Mr. Veer Chand'}</span> 👋
+              </motion.h1>
+
+              <motion.p {...fadeUp(0.1)} className="text-slate-300 text-xs md:text-sm mt-1 font-semibold">
+                {headerDateStr}
+              </motion.p>
+            </div>
+
+            {/* POPUP ACTION BUTTONS */}
+            <motion.div {...fadeUp(0.15)} className="flex flex-wrap gap-2.5 pt-1">
+              <motion.button
+                whileHover={{ y: -2, scale: 1.025 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => router.push('/dashboard/members?action=add')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-orange-500/80 hover:bg-orange-500 border border-white/20 transition-all cursor-pointer shadow-lg shadow-orange-950/25 backdrop-blur-md"
+              >
+                <UserPlus size={14} /> + New Member
+              </motion.button>
+
+              <motion.button
+                whileHover={{ y: -2, scale: 1.025 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowNewEnquiryModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 transition-all cursor-pointer shadow-lg backdrop-blur-md"
+              >
+                <MessageSquare size={14} /> + New Enquiry
+              </motion.button>
+
+              <motion.button
+                whileHover={{ y: -2, scale: 1.025 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowNewFollowupModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 transition-all cursor-pointer shadow-lg backdrop-blur-md"
+              >
+                <PhoneCall size={14} /> + Follow Up
+              </motion.button>
+
+              <motion.button
+                whileHover={{ y: -2, scale: 1.025 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => router.push('/dashboard/attendance')}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-100 bg-white/10 hover:bg-white/20 border border-white/15 transition-all cursor-pointer backdrop-blur-md"
+              >
+                <Fingerprint size={14} className="text-orange-300" /> Attendance
+              </motion.button>
+            </motion.div>
+          </div>
+
+          {/* Date Filter & Calendar Controls */}
+          <motion.div {...fadeUp(0.1)} className="flex flex-col items-start lg:items-end gap-3 shrink-0">
+            {/* Calendar Date Inputs */}
+            <div className="flex flex-wrap items-center gap-2 bg-white/5 border border-white/10 rounded-2xl p-2">
+              <input
+                type="date"
+                value={fromDate}
+                onChange={e => handleDateInputChange(e.target.value, toDate)}
+                className="bg-white/10 border border-white/10 text-white text-[11px] font-bold rounded-xl px-3 py-1.5 outline-none focus:border-orange-400 transition-all w-36 cursor-pointer"
+              />
+              <span className="text-slate-400 text-xs font-black">→</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={e => handleDateInputChange(fromDate, e.target.value)}
+                className="bg-white/10 border border-white/10 text-white text-[11px] font-bold rounded-xl px-3 py-1.5 outline-none focus:border-orange-400 transition-all w-36 cursor-pointer"
+              />
+              <button
+                onClick={() => handleDateInputChange(fromDate, toDate)}
+                className="px-4 py-1.5 bg-[#EA580C] hover:bg-[#C2410C] text-white text-[11px] font-black rounded-xl transition-all tracking-wider uppercase cursor-pointer border-none shadow-sm"
+              >
+                Filter
+              </button>
+            </div>
+
+            {/* Quick Range Preset Buttons */}
+            <div className="flex flex-wrap gap-1.5">
+              {(["Today", "Yesterday", "7 Days", "30 Days", "Month"] as const).map(r => (
+                <button
+                  key={r}
+                  onClick={() => handleSelectPreset(r)}
+                  className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border ${
+                    dateRange === r
+                      ? "bg-[#EA580C] text-white border-[#EA580C] shadow-sm"
+                      : "bg-white/10 text-slate-200 border-white/10 hover:border-orange-400/50 hover:text-white"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+              {dateRange === "Custom" && (
+                <span className="px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-600/30 text-emerald-300 border border-emerald-500/40">
+                  Custom
+                </span>
+              )}
+            </div>
+
+            <div className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+              <Info size={11} className="text-orange-300" />
+              Software data live from: <span className="text-orange-300 font-bold">23-Aug-2026</span>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* FLOATING KPI STRIP (REAL CALCULATED OPERATIONAL METRICS) */}
+      <motion.div
+        {...fadeUp(0.2)}
+        className="overview-kpi-grid grid grid-cols-2 sm:grid-cols-4 gap-3 relative z-10"
+      >
+        {[
+          { title: "Today's Collection", value: `₹${todaysRealCollection.toLocaleString('en-IN')}`, icon: IndianRupee, color: "#EA580C", onClick: () => router.push('/dashboard/billing') },
+          { title: "Present Today", value: presentTodayCount, icon: UserCheck, color: "#EA580C", onClick: () => setShowPresentModal(true) },
+          { title: "Active Members", value: activeMembersCount, icon: Activity, color: "#EA580C", onClick: () => router.push('/dashboard/members') },
+          { title: "Today's Follow-ups", value: todaysCount, icon: PhoneCall, color: "#EA580C", onClick: () => router.push('/dashboard/follow-up') },
+        ].map((kpi, i) => (
+          <motion.div
+            key={i}
+            onClick={kpi.onClick}
+            onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); kpi.onClick?.(); } }}
+            role="button"
+            tabIndex={0}
+            whileHover={{ y: -4, scale: 1.015 }}
+            whileTap={{ scale: 0.985 }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.18 + i * 0.07, ease: 'easeOut' }}
+            className="overview-glass-card rounded-2xl p-4 border border-white/80 flex items-center gap-3 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+          >
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-[#FFF7ED] text-[#EA580C]"
+            >
+              <kpi.icon size={18} />
+            </div>
+            <div>
+              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider leading-none flex items-center gap-1">
+                {kpi.title}
+                <span className="text-[8px] text-[#EA580C] font-black">· Click for list →</span>
+              </div>
+              <div className="text-lg font-black text-slate-900 mt-1 leading-none">{kpi.value}</div>
+            </div>
+          </motion.div>
+        ))}
       </motion.div>
+      </div>
+
+      {/* ── MAIN BODY ── */}
+      <div className="space-y-5">
+
+        {/* ─── SUMMARY STATISTICS (13 REAL-TIME OPERATIONAL CARDS) ─── */}
+        <motion.div {...fadeUp(0.25)}>
+          <div className="flex items-center justify-between mb-4 px-1">
+            <div className="flex items-center gap-2">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white flex items-center justify-center font-black shadow-lg shadow-orange-500/20">
+                <BarChart3 size={18} />
+              </div>
+              <h2 className="text-lg font-black text-slate-900 font-display">Summary Statistics</h2>
+            </div>
+            <div className="h-px flex-1 mx-4 bg-gradient-to-r from-orange-200 via-slate-200 to-transparent" />
+            <span className="text-[10px] font-black text-[#EA580C] bg-[#FFF7ED] px-3 py-1 rounded-full border border-[#FED7AA] uppercase tracking-wider">
+              {dateRange} Real Time
+            </span>
+          </div>
+
+          {/* Clean notice when filtering date before system launch */}
+          {!queryBounds.hasData && (
+            <div className="mb-4 p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <AlertCircle size={18} />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-amber-900">No activity recorded for this period</h4>
+                <p className="text-[11px] text-amber-700 font-medium mt-0.5">
+                  No attendance, billing or follow-up activity was recorded during {fromDate} to {toDate}. Software data started fresh on 23-Aug-2026.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="overview-summary-grid grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Row 1 */}
+            <SummaryStatCard
+              title="New clients"
+              value={filteredNewClients}
+              icon={Dumbbell}
+              color="#EA580C"
+              lineAccentColor="#EA580C"
+            />
+            <SummaryStatCard
+              title="Total collection"
+              value={`₹${filteredRangeCollection.toLocaleString('en-IN')}`}
+              icon={Coins}
+              color="#EA580C"
+              lineAccentColor="#C2410C"
+            />
+            <SummaryStatCard
+              title="Total Expenses"
+              value="₹0"
+              icon={Wallet}
+              color="#EA580C"
+              lineAccentColor="#F97316"
+            />
+            <SummaryStatCard
+              title="Total PT Collection"
+              value={`₹${filteredPTCollection.toLocaleString('en-IN')}`}
+              icon={Sparkles}
+              color="#EA580C"
+              lineAccentColor="#0040d0"
+            />
+
+            {/* Row 2 */}
+            <SummaryStatCard
+              title="Profit/Loss"
+              value={`₹${filteredRangeCollection.toLocaleString('en-IN')}`}
+              icon={IndianRupee}
+              color="#EA580C"
+              lineAccentColor="#EA580C"
+            />
+            <SummaryStatCard
+              title="Pending Inquiry(s)"
+              value={pendingEnquiriesCount}
+              icon={MessageSquare}
+              color="#EA580C"
+              lineAccentColor="#F97316"
+            />
+            <SummaryStatCard
+              title="Active clients"
+              value={activeMembersCount}
+              icon={Activity}
+              color="#EA580C"
+              lineAccentColor="#C2410C"
+            />
+            <SummaryStatCard
+              title="Expired clients"
+              value={expiredMembersCount}
+              icon={UserMinus}
+              color="#78716C"
+              lineAccentColor="#8aa0ba"
+            />
+
+            {/* Row 3 */}
+            <SummaryStatCard
+              title="Profile Created clients"
+              value={filteredNewClients}
+              icon={UserCheck}
+              color="#EA580C"
+              lineAccentColor="#C2410C"
+            />
+            <SummaryStatCard
+              title="Booked PT Sessions"
+              value="0"
+              icon={CalendarCheck}
+              color="#EA580C"
+              lineAccentColor="#F97316"
+            />
+            <SummaryStatCard
+              title="Follow-ups"
+              value={filteredFollowupsCount}
+              icon={PhoneCall}
+              color="#EA580C"
+              lineAccentColor="#EA580C"
+            />
+            <SummaryStatCard
+              title="Today Present Client"
+              value={filteredCheckins}
+              icon={Users}
+              color="#EA580C"
+              lineAccentColor="#C2410C"
+              onClick={() => setShowPresentModal(true)}
+            />
+
+            {/* Row 4 */}
+            <SummaryStatCard
+              title="Booked Group Class"
+              value="0"
+              icon={Users}
+              color="#EA580C"
+              lineAccentColor="#F97316"
+            />
+          </div>
+        </motion.div>
+
+        {/* ─── FINANCIAL ANALYTICS (FULL WIDTH - REAL DATA ONLY) ─── */}
+        <motion.div {...fadeUp(0.3)} className="w-full">
+          <FinancialAnalytics
+            fromDate={fromDate}
+            toDate={toDate}
+            dateRangeTitle={dateRange}
+          />
+        </motion.div>
+
+      </div>
 
       {/* ─── POPUP MODALS ─── */}
 
@@ -417,69 +994,30 @@ export default function OverviewCommandCenter() {
       <AnimatePresence>
         {showNewEnquiryModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setShowNewEnquiryModal(false)}
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden text-left z-10 font-sans"
-            >
-              <div className="bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] px-6 py-4 flex items-center justify-between text-white">
-                <h3 className="font-black text-sm uppercase tracking-wide flex items-center gap-2">
-                  <MessageSquare size={17} /> Add New Client Enquiry
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowNewEnquiryModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden text-left z-10">
+              <div className="bg-gradient-to-r from-orange-600 to-amber-600 px-6 py-4 flex items-center justify-between text-white">
+                <h3 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
+                  <MessageSquare size={18} /> Add New Client Enquiry
                 </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowNewEnquiryModal(false)}
-                  className="text-white/80 hover:text-white border-none cursor-pointer bg-transparent"
-                >
-                  <X size={18} />
-                </button>
+                <button onClick={() => setShowNewEnquiryModal(false)} className="text-white/80 hover:text-white border-none cursor-pointer bg-transparent"><X size={18}/></button>
               </div>
 
               <form onSubmit={handleCreateEnquiry} className="p-6 space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">
-                    Client Full Name <span className="text-[#EA580C]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Rahul Sharma"
-                    value={enqName}
-                    onChange={(e) => setEnqName(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] focus:bg-white transition-all"
-                  />
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Client Full Name <span className="text-orange-600">*</span></label>
+                  <input type="text" required placeholder="e.g. Rahul Sharma" value={enqName} onChange={e => setEnqName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600" />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">
-                    Phone Number <span className="text-[#EA580C]">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="e.g. 9876543210"
-                    value={enqPhone}
-                    onChange={(e) => setEnqPhone(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] focus:bg-white transition-all"
-                  />
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Phone Number <span className="text-orange-600">*</span></label>
+                  <input type="tel" required placeholder="e.g. 9876543210" value={enqPhone} onChange={e => setEnqPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-600 block mb-1">Source</label>
-                    <select
-                      value={enqSource}
-                      onChange={(e) => setEnqSource(e.target.value)}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                    >
+                    <select value={enqSource} onChange={e => setEnqSource(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer">
                       <option>Walk-in</option>
                       <option>Instagram</option>
                       <option>Facebook</option>
@@ -489,11 +1027,7 @@ export default function OverviewCommandCenter() {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-600 block mb-1">Interested Plan</label>
-                    <select
-                      value={enqPlan}
-                      onChange={(e) => setEnqPlan(e.target.value)}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                    >
+                    <select value={enqPlan} onChange={e => setEnqPlan(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer">
                       <option>Monthly Standard</option>
                       <option>Quarterly Prime</option>
                       <option>Semi-Annual Pro</option>
@@ -505,39 +1039,18 @@ export default function OverviewCommandCenter() {
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 block mb-1">Next Follow-up Date</label>
-                  <input
-                    type="date"
-                    value={enqDate}
-                    onChange={(e) => setEnqDate(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                  />
+                  <input type="date" value={enqDate} onChange={e => setEnqDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer" />
                 </div>
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 block mb-1">Remarks / Notes</label>
-                  <textarea
-                    rows={3}
-                    placeholder="Initial conversation notes..."
-                    value={enqRemarks}
-                    onChange={(e) => setEnqRemarks(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl p-3 text-xs font-semibold text-slate-700 outline-none focus:border-[#F97316] resize-none"
-                  />
+                  <textarea rows={3} placeholder="Initial conversation notes..." value={enqRemarks} onChange={e => setEnqRemarks(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-600 resize-none" />
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowNewEnquiryModal(false)}
-                    className="px-5 py-2.5 rounded-xl border border-stone-200 text-slate-600 font-bold text-xs cursor-pointer hover:bg-stone-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={enqSaving}
-                    className="px-6 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all border-none cursor-pointer disabled:opacity-50"
-                  >
-                    {enqSaving ? "Saving..." : "Save Enquiry"}
+                  <button type="button" onClick={() => setShowNewEnquiryModal(false)} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs cursor-pointer hover:bg-slate-50">Cancel</button>
+                  <button type="submit" disabled={enqSaving} className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all border-none cursor-pointer disabled:opacity-50">
+                    {enqSaving ? 'Saving...' : 'Save Enquiry'}
                   </button>
                 </div>
               </form>
@@ -550,96 +1063,43 @@ export default function OverviewCommandCenter() {
       <AnimatePresence>
         {showNewFollowupModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setShowNewFollowupModal(false)}
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden text-left z-10 font-sans"
-            >
-              <div className="bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] px-6 py-4 flex items-center justify-between text-white">
-                <h3 className="font-black text-sm uppercase tracking-wide flex items-center gap-2">
-                  <PhoneCall size={17} /> Schedule New Follow-Up
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowNewFollowupModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden text-left z-10">
+              <div className="bg-gradient-to-r from-orange-600 to-amber-600 px-6 py-4 flex items-center justify-between text-white">
+                <h3 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
+                  <PhoneCall size={18} /> Schedule New Follow-Up
                 </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowNewFollowupModal(false)}
-                  className="text-white/80 hover:text-white border-none cursor-pointer bg-transparent"
-                >
-                  <X size={18} />
-                </button>
+                <button onClick={() => setShowNewFollowupModal(false)} className="text-white/80 hover:text-white border-none cursor-pointer bg-transparent"><X size={18}/></button>
               </div>
 
               <form onSubmit={handleCreateFollowup} className="p-6 space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">
-                    Select Member <span className="text-[#EA580C]">*</span>
-                  </label>
-                  <select
-                    required
-                    value={folSelectedId}
-                    onChange={(e) => setFolSelectedId(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                  >
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Select Member <span className="text-orange-600">*</span></label>
+                  <select required value={folSelectedId} onChange={e => setFolSelectedId(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer">
                     <option value="">-- Select Member --</option>
-                    {members.map((m: any) => (
-                      <option key={m.id || m.memberId} value={m.id || m.memberId}>
-                        {m.name} ({m.phone})
-                      </option>
-                    ))}
+                    {members.map((m: any) => <option key={m.id || m.memberId} value={m.id || m.memberId}>{m.name} ({m.phone})</option>)}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-600 block mb-1">
-                    Title / Reason <span className="text-[#EA580C]">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Renewal Reminder"
-                    value={folTitle}
-                    onChange={(e) => setFolTitle(e.target.value)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316]"
-                  />
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Title / Reason <span className="text-orange-600">*</span></label>
+                  <input type="text" required placeholder="e.g. Renewal Reminder" value={folTitle} onChange={e => setFolTitle(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-slate-600 block mb-1">Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={folDate}
-                      onChange={(e) => setFolDate(e.target.value)}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                    />
+                    <input type="date" required value={folDate} onChange={e => setFolDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-slate-600 block mb-1">Time</label>
-                    <input
-                      type="time"
-                      required
-                      value={folTime}
-                      onChange={(e) => setFolTime(e.target.value)}
-                      className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                    />
+                    <input type="time" required value={folTime} onChange={e => setFolTime(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer" />
                   </div>
                 </div>
 
                 <div>
                   <label className="text-xs font-bold text-slate-600 block mb-1">Priority</label>
-                  <select
-                    value={folPriority}
-                    onChange={(e) => setFolPriority(e.target.value as any)}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-[#F97316] cursor-pointer"
-                  >
+                  <select value={folPriority} onChange={e => setFolPriority(e.target.value as any)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer">
                     <option value="High">High</option>
                     <option value="Medium">Medium</option>
                     <option value="Low">Low</option>
@@ -647,19 +1107,9 @@ export default function OverviewCommandCenter() {
                 </div>
 
                 <div className="pt-2 flex justify-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowNewFollowupModal(false)}
-                    className="px-5 py-2.5 rounded-xl border border-stone-200 text-slate-600 font-bold text-xs cursor-pointer hover:bg-stone-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={folSaving}
-                    className="px-6 py-2.5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all border-none cursor-pointer disabled:opacity-50"
-                  >
-                    {folSaving ? "Scheduling..." : "Schedule Follow-up"}
+                  <button type="button" onClick={() => setShowNewFollowupModal(false)} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs cursor-pointer hover:bg-slate-50">Cancel</button>
+                  <button type="submit" disabled={folSaving} className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all border-none cursor-pointer disabled:opacity-50">
+                    {folSaving ? 'Scheduling...' : 'Schedule Follow-up'}
                   </button>
                 </div>
               </form>
@@ -668,8 +1118,83 @@ export default function OverviewCommandCenter() {
         )}
       </AnimatePresence>
 
+      {/* 3. NEW MEMBER MODAL */}
+      <AnimatePresence>
+        {showNewMemberModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowNewMemberModal(false)} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden text-left z-10">
+              <div className="bg-gradient-to-r from-orange-600 to-amber-600 px-6 py-4 flex items-center justify-between text-white">
+                <h3 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
+                  <UserPlus size={18} /> Register New Gym Member
+                </h3>
+                <button onClick={() => setShowNewMemberModal(false)} className="text-white/80 hover:text-white border-none cursor-pointer bg-transparent"><X size={18}/></button>
+              </div>
 
-      {/* 4. PRESENT MEMBERS ROSTER MODAL */}
+              <form onSubmit={handleCreateMember} className="p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Member Full Name <span className="text-orange-600">*</span></label>
+                  <input type="text" required placeholder="e.g. Vikram Singh" value={memName} onChange={e => setMemName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600" />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-600 block mb-1">Phone Number <span className="text-orange-600">*</span></label>
+                  <input type="tel" required placeholder="e.g. 9812345678" value={memPhone} onChange={e => setMemPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 block mb-1">Membership Plan</label>
+                    <select value={memPlan} onChange={e => {
+                      setMemPlan(e.target.value);
+                      if (e.target.value === '1 Month') setMemPaid('2000');
+                      if (e.target.value === '3 Months') setMemPaid('6500');
+                      if (e.target.value === '6 Months') setMemPaid('11500');
+                      if (e.target.value === '12 Months') setMemPaid('18000');
+                    }} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer">
+                      <option value="1 Month">1 Month (₹2,000)</option>
+                      <option value="3 Months">3 Months (₹6,500)</option>
+                      <option value="6 Months">6 Months (₹11,500)</option>
+                      <option value="12 Months">12 Months (₹18,000)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 block mb-1">Amount Paid (₹)</label>
+                    <input type="number" value={memPaid} onChange={e => setMemPaid(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-600 block mb-1">Payment Method</label>
+                    <select value={memMethod} onChange={e => setMemMethod(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800 outline-none focus:border-orange-600 cursor-pointer">
+                      <option value="UPI">UPI / QR Code</option>
+                      <option value="Cash">Cash</option>
+                      <option value="Card">Credit / Debit Card</option>
+                      <option value="NetBanking">Net Banking</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col justify-end">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center gap-2 text-[11px] font-bold text-emerald-700">
+                      <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
+                      Auto Invoice & Receipt
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-3">
+                  <button type="button" onClick={() => setShowNewMemberModal(false)} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs cursor-pointer hover:bg-slate-50">Cancel</button>
+                  <button type="submit" disabled={memSaving} className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all border-none cursor-pointer disabled:opacity-50">
+                    {memSaving ? 'Registering...' : 'Register Member'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── PRESENT MEMBERS ROSTER MODAL ── */}
       <PresentMembersModal
         isOpen={showPresentModal}
         onClose={() => setShowPresentModal(false)}
@@ -678,5 +1203,36 @@ export default function OverviewCommandCenter() {
       />
 
     </div>
+  );
+}
+
+function SummaryStatCard({ title, value, icon: Icon, color, lineAccentColor, onClick }: { title: string; value: string | number; icon: any; color: string; lineAccentColor: string; onClick?: () => void }) {
+  return (
+    <motion.div
+      onClick={onClick}
+      onKeyDown={event => { if (onClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onClick(); } }}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      initial={{ opacity: 0, y: 18, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      whileHover={{ y: -4, scale: 1.015 }}
+      whileTap={onClick ? { scale: 0.985 } : undefined}
+      transition={{ duration: 0.42, ease: 'easeOut' }}
+      className={`overview-glass-card overview-stat-card rounded-2xl p-4 relative overflow-hidden flex flex-col justify-between ${onClick ? 'cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-orange-400' : ''}`}
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm bg-gradient-to-br from-orange-50 to-amber-100 ring-1 ring-orange-100/80" style={{ color, backgroundColor: `${color}12` }}>
+          <Icon size={20} />
+        </div>
+        <div>
+          <div className="text-xs font-bold text-[#78716C] flex items-center gap-1">
+            {title}
+            {onClick && <span className="text-[8px] text-[#EA580C] font-black">· Click for list →</span>}
+          </div>
+          <div className="text-xl font-black text-[#10233f] font-mono tracking-tight mt-0.5">{value}</div>
+        </div>
+      </div>
+      <div className="h-1 w-16 rounded-full mt-3 shadow-[0_0_12px_rgba(249, 115, 22,0.25)]" style={{ background: `linear-gradient(90deg, ${color}, ${lineAccentColor}, transparent)` }} />
+    </motion.div>
   );
 }

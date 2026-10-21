@@ -20,6 +20,17 @@ export function getKolkataDateString(date: Date = new Date()): string {
   }
 }
 
+export function getTomorrowKolkataDateString(date: Date = new Date()): string {
+  const todayStr = getKolkataDateString(date);
+  const [y, m, d] = todayStr.split('-').map(Number);
+  if (!y || !m || !d) return todayStr;
+  const nextDate = new Date(Date.UTC(y, m - 1, d + 1));
+  const year = nextDate.getUTCFullYear();
+  const month = String(nextDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(nextDate.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * Calculates calendar days difference between targetDate and baseDate (targetDate - baseDate).
  * Handles month boundaries, leap years, and year boundaries accurately.
@@ -41,6 +52,36 @@ export function getCalendarDaysDiff(targetDateStr: string, baseDateStr: string):
   return Math.round((targetUtc - baseUtc) / (1000 * 60 * 60 * 24));
 }
 
+export function formatRenewalCountdown(expiryDateStr: string, baseDateStr?: string): {
+  daysRemaining: number;
+  displayText: string;
+  isExpired: boolean;
+} {
+  if (!expiryDateStr) {
+    return { daysRemaining: NaN, displayText: 'Membership renewal due', isExpired: false };
+  }
+  const cleanExpiry = expiryDateStr.split('T')[0];
+  const base = baseDateStr || getKolkataDateString();
+  const days = getCalendarDaysDiff(cleanExpiry, base);
+
+  if (isNaN(days)) {
+    return { daysRemaining: NaN, displayText: 'Membership renewal due', isExpired: false };
+  }
+
+  if (days > 1) {
+    return { daysRemaining: days, displayText: `Membership renewal due in ${days} days`, isExpired: false };
+  } else if (days === 1) {
+    return { daysRemaining: 1, displayText: 'Membership renewal due tomorrow', isExpired: false };
+  } else if (days === 0) {
+    return { daysRemaining: 0, displayText: 'Membership expires today', isExpired: false };
+  } else {
+    const expiredDays = Math.abs(days);
+    const dayLabel = expiredDays === 1 ? '1 day' : `${expiredDays} days`;
+    return { daysRemaining: days, displayText: `Membership expired ${dayLabel} ago`, isExpired: true };
+  }
+}
+
+
 export interface AutomatedFollowupResult {
   generatedCount: number;
   skippedCount: number;
@@ -51,7 +92,7 @@ export interface AutomatedFollowupResult {
 /**
  * Main Automated Follow-Up Generation Engine.
  * Checks:
- * 1. GYM MEMBERSHIP RENEWAL (daily from 7 days before expiry through expiry and after)
+ * 1. UPCOMING GYM MEMBERSHIP RENEWAL (7 days before expiry)
  * 2. PT RENEWAL (4 days before PT expiry)
  * 3. PENDING BALANCE (2 days before payment due date when balance > 0)
  * 4. PENDING ENQUIRIES (creates idempotent follow-up for every pending enquiry with nextFollowUpDate)
@@ -118,28 +159,21 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
     const assignedStaff = member.trainer || member.assignedStaff || 'Receptionist';
 
     // -------------------------------------------------------------
-    // RULE 1: GYM MEMBERSHIP RENEWAL (daily from 7 days before expiry onward)
+    // RULE 1: UPCOMING GYM MEMBERSHIP RENEWAL (7 Days Before Expiry)
     // -------------------------------------------------------------
     const membershipExpiry = member.expiryDate ? member.expiryDate.split('T')[0] : null;
     const memberStatus = (member.status || '').toLowerCase();
 
-    // Active memberships get a daily 7-to-1 countdown. Expired memberships
-    // continue getting one daily task until renewed (or manually completed).
-    if (membershipExpiry && ['active', 'expired'].includes(memberStatus)) {
+    // Check only if member is active (not already expired in the past)
+    if (membershipExpiry && (memberStatus === 'active' || memberStatus === 'upcoming' || memberStatus === 'frozen')) {
       const daysToExpiry = getCalendarDaysDiff(membershipExpiry, todayStr);
 
-      if (daysToExpiry <= 7) {
-        const reminderDay = daysToExpiry < 0 ? `EXPIRED_${todayStr}` : `D${daysToExpiry}_${todayStr}`;
-        const automationKey = `AUTO_RENEWAL_${memberId}_${membershipExpiry}_${reminderDay}`;
+      if (daysToExpiry <= 7 && daysToExpiry >= 0) {
+        const automationKey = `AUTO_RENEWAL_${memberId}_${membershipExpiry}`;
 
         if (existingKeyMap.has(automationKey)) {
           skippedCount++;
         } else {
-          const renewalMessage = daysToExpiry < 0
-            ? `Membership expired ${Math.abs(daysToExpiry)} ${Math.abs(daysToExpiry) === 1 ? 'day' : 'days'} ago`
-            : daysToExpiry === 0
-              ? 'Membership expires today'
-              : `Membership ending in ${daysToExpiry} days`;
           const payload = {
             id: automationKey,
             automationKey,
@@ -148,11 +182,11 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
             phone: memberPhone,
             memberPhone,
             type: 'GYM MEMBERSHIP RENEWAL',
-            reason: renewalMessage,
+            reason: 'GYM MEMBERSHIP RENEWAL',
             title: 'GYM MEMBERSHIP RENEWAL',
-            description: `${renewalMessage} (${membershipExpiry})`,
-            notes: renewalMessage,
-            priority: daysToExpiry <= 2 ? 'High' : 'Medium',
+            description: 'Gym membership renewal due',
+            notes: 'Gym membership renewal due',
+            priority: 'Medium',
             dueDate: todayStr,
             scheduledDate: todayStr,
             scheduledTime: '10:00',
@@ -162,8 +196,6 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
             source: 'auto',
             plan: member.plan || 'Monthly Standard',
             expiryDate: membershipExpiry,
-            daysToExpiry,
-            reminderStage: daysToExpiry < 0 ? 'EXPIRED' : `D${daysToExpiry}`,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
@@ -341,8 +373,8 @@ export async function generateAutomatedFollowups(todayStrOverride?: string): Pro
           priority: enquiry.priority === 'Hot' ? 'High' : 'Medium',
           dueDate: cleanEnqDate,
           scheduledDate: cleanEnqDate,
-          scheduledTime: enquiry.followUpTime || '11:00',
-          scheduledTimestamp: new Date(`${cleanEnqDate}T${enquiry.followUpTime || '11:00'}:00+05:30`).getTime() || Date.now(),
+          scheduledTime: enquiry.followUpTime || '05:00',
+          scheduledTimestamp: new Date(`${cleanEnqDate}T${enquiry.followUpTime || '05:00'}:00+05:30`).getTime() || Date.now(),
           assignedTo: enquiry.assignedTo || enquiry.attendedBy || 'Veer Chand (manager)',
           status: 'pending',
           source: 'auto',
@@ -401,8 +433,7 @@ export async function resolveStaleRenewalFollowups(
       let resolveReason = '';
 
       if (renewalType === 'MEMBERSHIP' && (fol.type === 'GYM MEMBERSHIP RENEWAL' || fol.type === 'Renewal')) {
-        const reminderExpiry = fol.expiryDate || fol.automationKey?.match(/^AUTO_RENEWAL_.+?_(\d{4}-\d{2}-\d{2})(?:_|$)/)?.[1];
-        if (newExpiryOrDueDate && reminderExpiry && reminderExpiry !== newExpiryOrDueDate) {
+        if (newExpiryOrDueDate && fol.automationKey !== `AUTO_RENEWAL_${entityId}_${newExpiryOrDueDate}`) {
           shouldResolve = true;
           resolveReason = `Auto-resolved: Membership renewed to ${newExpiryOrDueDate}`;
         } else if (!newExpiryOrDueDate) {

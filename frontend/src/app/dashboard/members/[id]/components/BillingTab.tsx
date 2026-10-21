@@ -1,32 +1,41 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import {
   Receipt, CreditCard, AlertCircle, CheckCircle, Clock, Download, MessageSquare,
   RefreshCw, Plus, Eye, Printer, Mail, ArrowUpRight, Edit3, X, Calendar, Shield,
-  FileText, Sparkles, Check, ChevronDown, FileSpreadsheet, FileCode, Trash2
+  FileText, Sparkles, Check, ChevronDown, FileSpreadsheet, FileCode, Trash2,
+  TrendingUp
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot, updateDoc, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { membershipEngine } from '@/lib/engines/membershipEngine';
 import { paymentEngine } from '@/lib/engines/paymentEngine';
-import { formatDate } from '@/lib/utils';
+import { cleanPlanName, formatDate, formatPhoneNumber } from '@/lib/utils';
 import { useGymStore } from '@/store';
 import toast from '@/lib/toast';
 import API from '@/services/api';
-import { billingRepository, CanonicalTransaction } from '@/services/billingRepository';
 import RenewalWizardModal from '../../components/RenewalWizardModal';
 import OfficialInvoiceReceipt from '@/app/dashboard/components/OfficialInvoiceReceipt';
-import { downloadOfficialInvoicePdf } from '@/lib/invoicePdf';
 import EditBillingModal from './EditBillingModal';
 import CreateNewBillModal from '../../components/CreateNewBillModal';
+import UpgradeModal from '../../components/UpgradeModal';
+import {
+  listenMemberBillingTransactions,
+  NormalizedBillingTransaction,
+  BillingSummary,
+  BillingDiagnostics
+} from '@/services/billingService';
 
-export default function BillingTab({ member: initialMember, onOpenCreateBill }: { member: any; onOpenCreateBill?: () => void }) {
+export default function BillingTab({ member: initialMember }: { member: any }) {
+  const router = useRouter();
   const { fetchMembers } = useGymStore();
   const [member, setMember] = useState(initialMember);
-  const isHold = String(member?.status || member?.membershipStatus || '').trim().toUpperCase() === 'HOLD' || member?.activationStatus === 'PENDING_ACTIVATION';
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<NormalizedBillingTransaction[]>([]);
+  const [summary, setSummary] = useState<BillingSummary>({ totalBilled: 0, totalCollected: 0, totalPending: 0 });
+  const [diagnostics, setDiagnostics] = useState<BillingDiagnostics | null>(null);
   const [loading, setLoading] = useState(true);
   const [markingId, setMarkingId] = useState<string | null>(null);
 
@@ -40,6 +49,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
   const [invoiceToDelete, setInvoiceToDelete] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [selectedInvoiceForUpgrade, setSelectedInvoiceForUpgrade] = useState<any | null>(null);
   const [showNewBillModal, setShowNewBillModal] = useState(false);
 
   useEffect(() => {
@@ -79,47 +89,21 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
     };
   }, [openDropdown]);
 
-  // Canonical Real-time listener for member invoices with API Fallback
+  // Real-time listener for member invoices using Canonical Billing Service
   useEffect(() => {
     if (!member) return;
     setLoading(true);
 
-    const unsub = billingRepository.subscribeMemberBilling(
-      member,
-      (liveData: any[]) => {
-        const combinedMap = new Map<string, any>();
-
-        if (liveData && liveData.length > 0) {
-          liveData.forEach((inv: any) => {
-            // If member is on HOLD, filter out fake zero-amount legacy invoices
-            if (isHold && Number(inv.amount || inv.netPayable || 0) === 0 && Number(inv.amountPaid || inv.paid || 0) === 0) {
-              return;
-            }
-            const key = inv.id || inv.transactionId || inv.invoiceNumber || inv.invoice;
-            combinedMap.set(key, inv);
-          });
-        } else if (!isHold && Array.isArray(member.billingHistory) && member.billingHistory.length > 0) {
-          member.billingHistory.forEach((inv: any) => {
-            const key = inv.transactionId || inv.id || inv.invoiceNumber || inv.invoice;
-            combinedMap.set(key, inv);
-          });
-        }
-
-        const sorted = Array.from(combinedMap.values()).sort((a: any, b: any) =>
-          new Date(b.date || b.paymentDate || b.createdAt || b.startDate || 0).getTime() -
-          new Date(a.date || a.paymentDate || a.createdAt || a.startDate || 0).getTime()
-        );
-
-        setInvoices(sorted);
-        setLoading(false);
-      },
-      (err) => {
-        console.warn('BillingTab subscription fallback notice:', err);
-      }
-    );
+    const unsub = listenMemberBillingTransactions(member, (txList, sum, diag) => {
+      setInvoices(txList);
+      setSummary(sum);
+      setDiagnostics(diag);
+      setLoading(false);
+      console.log('[MEMBER BILLING DIAGNOSTICS]', diag);
+    });
 
     return () => unsub();
-  }, [member, isHold]);
+  }, [member]);
 
   // Filter for billing types: ALL, MEMBERSHIP, PT
   const [billingTypeFilter, setBillingTypeFilter] = useState<'all' | 'membership' | 'pt'>('all');
@@ -146,75 +130,67 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
         return (inv.id && inv.id !== invId) && (!targetInvNum || iNum !== targetInvNum);
       });
 
-      let backendSuccess = false;
-      // 2. Call Backend Admin API (Runs on Admin SDK, bypasses client permission restrictions)
-      try {
-        const deleteKey = targetInvNum || invId;
-        if (deleteKey) {
-          await API.delete(`/billing/${deleteKey}?memberId=${member.id}`);
-          backendSuccess = true;
-        }
-      } catch (apiErr: any) {
-        console.warn('Backend API delete failed, trying client batch fallback:', apiErr?.message || apiErr);
+      // 2. Perform Atomic Firestore Batch Operation
+      const batch = writeBatch(db);
+
+      if (invId) {
+        batch.delete(doc(db, 'payments', invId));
       }
 
-      // 3. Client Firestore batch fallback if client has direct permissions
+      if (member.id) {
+        if (isPtBill) {
+          // CRITICAL SAFETY RULE: Deleting a PT bill MUST NEVER affect membership expiryDate, startDate, or plan!
+          const updatedPtHistory = (Array.isArray(member.ptHistory) ? member.ptHistory : []).filter((h: any) => {
+            const hNum = h.invoiceNumber || h.invoice || h.id;
+            return hNum !== targetInvNum && h.id !== invId;
+          });
+
+          const netPay = Number(invoiceToDelete.netPayable || invoiceToDelete.amount || 0);
+          const paidAmt = Number(invoiceToDelete.amountPaid !== undefined ? invoiceToDelete.amountPaid : (invoiceToDelete.paid || 0));
+
+          const newTotalBilled = Math.max(0, (Number(member.totalBilled) || 0) - netPay);
+          const newTotalPaid = Math.max(0, (Number(member.totalPaid) || 0) - paidAmt);
+
+          batch.update(doc(db, 'members', member.id), {
+            ptHistory: updatedPtHistory,
+            totalBilled: newTotalBilled,
+            totalPaid: newTotalPaid,
+            outstandingBalance: Math.max(0, newTotalBilled - newTotalPaid),
+            updatedAt: new Date().toISOString(),
+          });
+        } else {
+          // Deleting a membership bill recalculates membership history
+          const remainingMembershipInvoices = remainingInvoices.filter((inv: any) => inv.billingType !== 'pt');
+          const timeline = membershipEngine.rebuildMemberMembershipTimeline(member, remainingMembershipInvoices);
+
+          batch.update(doc(db, 'members', member.id), {
+            membershipHistory: timeline.recalculatedHistory,
+            startDate: timeline.startDate,
+            expiryDate: timeline.expiryDate,
+            plan: timeline.plan,
+            daysLeft: timeline.daysLeft,
+            status: timeline.status,
+            totalBilled: timeline.totalBilled,
+            totalPaid: timeline.totalPaid,
+            outstandingBalance: timeline.outstandingBalance,
+            amount: timeline.totalBilled,
+            paidAmount: timeline.totalPaid,
+            paymentStatus: timeline.outstandingBalance <= 0 ? 'paid' : (timeline.totalPaid > 0 ? 'partial' : 'pending'),
+            'ai.daysLeft': timeline.daysLeft,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      await batch.commit();
+
+      // 3. Optional Backend API sync fallback
       try {
-        const batch = writeBatch(db);
-
-        if (invId) {
-          batch.delete(doc(db, 'payments', invId));
+        if (targetInvNum) {
+          await API.delete(`/billing/${targetInvNum}`);
         }
-
-        if (member.id) {
-          if (isPtBill) {
-            const updatedPtHistory = (Array.isArray(member.ptHistory) ? member.ptHistory : []).filter((h: any) => {
-              const hNum = h.invoiceNumber || h.invoice || h.id;
-              return hNum !== targetInvNum && h.id !== invId;
-            });
-
-            const netPay = Number(invoiceToDelete.netPayable || invoiceToDelete.amount || 0);
-            const paidAmt = Number(invoiceToDelete.amountPaid !== undefined ? invoiceToDelete.amountPaid : (invoiceToDelete.paid || 0));
-
-            const newTotalBilled = Math.max(0, (Number(member.totalBilled) || 0) - netPay);
-            const newTotalPaid = Math.max(0, (Number(member.totalPaid) || 0) - paidAmt);
-
-            batch.update(doc(db, 'members', member.id), {
-              ptHistory: updatedPtHistory,
-              totalBilled: newTotalBilled,
-              totalPaid: newTotalPaid,
-              outstandingBalance: Math.max(0, newTotalBilled - newTotalPaid),
-              updatedAt: new Date().toISOString(),
-            });
-          } else {
-            const remainingMembershipInvoices = remainingInvoices.filter((inv: any) => inv.billingType !== 'pt');
-            const timeline = membershipEngine.rebuildMemberMembershipTimeline(member, remainingMembershipInvoices);
-
-            batch.update(doc(db, 'members', member.id), {
-              membershipHistory: timeline.recalculatedHistory,
-              startDate: timeline.startDate,
-              expiryDate: timeline.expiryDate,
-              plan: timeline.plan,
-              daysLeft: timeline.daysLeft,
-              status: timeline.status,
-              totalBilled: timeline.totalBilled,
-              totalPaid: timeline.totalPaid,
-              outstandingBalance: timeline.outstandingBalance,
-              amount: timeline.totalBilled,
-              paidAmount: timeline.totalPaid,
-              paymentStatus: timeline.outstandingBalance <= 0 ? 'paid' : (timeline.totalPaid > 0 ? 'partial' : 'pending'),
-              'ai.daysLeft': timeline.daysLeft,
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        }
-
-        await batch.commit();
-      } catch (clientBatchErr: any) {
-        if (!backendSuccess) {
-          throw clientBatchErr;
-        }
-        console.warn('Client-side batch skipped due to permissions; backend already completed deletion.');
+      } catch (e) {
+        // Backend API fallback notice
       }
 
       // 4. Update local state immediately
@@ -244,6 +220,11 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
 
   const calcStats = (invList: any[]) => {
     const billed = invList.reduce((s: number, inv: any) => {
+      const isUp = Boolean(inv.isUpgrade || inv.transactionType === 'membership_upgrade' || String(inv.invoiceNumber || '').startsWith('INV-UPG'));
+      if (isUp) {
+        const net = Number(inv.netPayable !== undefined ? inv.netPayable : (inv.additionalAmountDue !== undefined ? inv.additionalAmountDue : Number(inv.amount || 0)));
+        return s + (isNaN(net) ? 0 : net);
+      }
       const origAmt = Number(inv.originalAmount !== undefined ? inv.originalAmount : (inv.packagePrice || inv.price || inv.amount || 0));
       const discAmt = Number(inv.discountAmount !== undefined ? inv.discountAmount : (inv.discount || 0));
       const taxAmt = Number(inv.taxAmount !== undefined ? inv.taxAmount : (inv.tax || inv.gst || 0));
@@ -280,22 +261,27 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
   const handleWhatsApp = (inv: any) => {
     const rawPhone = (member.phone || '').replace(/\D/g, '');
     const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+    const total = Number(inv.netPayable || inv.amount || 0);
     const invNum = inv.invoiceNumber || inv.invoice || 'INV-001';
-    const msg = encodeURIComponent(`Hello ${member.name}, your Warrior Gym membership receipt ${invNum} is attached as a PDF. Thank you!`);
-    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank', 'noopener,noreferrer');
-    setViewInvoice(inv);
-    void (async () => {
-      try {
-        await new Promise(resolve => setTimeout(resolve, 250));
-        const receiptElement = document.getElementById('printable-official-invoice');
-        if (!receiptElement) throw new Error('Invoice preview is not ready.');
-        await downloadOfficialInvoicePdf(receiptElement, invNum);
-        toast.success('Membership receipt PDF downloaded. Attach it in the WhatsApp chat to send.');
-      } catch (error) {
-        console.error('Could not create WhatsApp invoice PDF:', error);
-        toast.error('Could not create the receipt PDF. Please try again.');
-      }
-    })();
+    const planTitle = cleanPlanName(inv.plan || member.plan);
+    const billDate = inv.date ? formatDate(inv.date) : formatDate(new Date().toISOString());
+    const startDate = inv.startDate ? formatDate(inv.startDate) : formatDate(member.joinDate);
+    const expiryDate = inv.expiryDate ? formatDate(inv.expiryDate) : formatDate(member.expiryDate);
+
+    const msg = encodeURIComponent(
+      `🏋️ *THE WARRIOR GYM — OFFICIAL INVOICE RECEIPT*\n\n` +
+      `👤 *Member Name*: ${member.name}\n` +
+      `📄 *Invoice No*: ${invNum}\n` +
+      `📦 *Package*: ${planTitle}\n` +
+      `📅 *Billing Date*: ${billDate}\n` +
+      `🚀 *Start Date*: ${startDate}\n` +
+      `🏁 *Expiry Date*: ${expiryDate}\n` +
+      `💰 *Total Amount*: ₹${total.toLocaleString('en-IN')}\n` +
+      `✅ *Payment Status*: ${(inv.status || 'paid').toUpperCase()}\n` +
+      `💳 *Payment Mode*: ${inv.method || 'UPI'}\n\n` +
+      `Thank you for training with The Warrior Gym! 💪`
+    );
+    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
   };
 
   // Export Excel CSV
@@ -335,14 +321,41 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
 
   return (
     <div className="space-y-6">
+      {/* ── DEV-ONLY BILLING DIAGNOSTICS PANEL (Rule #15) ────────────────── */}
+      {process.env.NODE_ENV === 'development' && diagnostics && (
+        <div className="bg-slate-900 text-slate-100 p-4 rounded-3xl border border-slate-700 shadow-xl space-y-2 text-xs font-mono">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="font-black text-amber-400 text-sm tracking-wider">🛠 BILLING RESOLVER DIAGNOSTICS (DEV ONLY)</span>
+            <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-bold">STABLE RULE #15</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-[11px]">
+            <div><span className="text-slate-400">Member Doc ID:</span> <span className="text-emerald-400 font-bold">{diagnostics.memberDocId}</span></div>
+            <div><span className="text-slate-400">Canonical Member ID:</span> <span className="text-cyan-400 font-bold">{diagnostics.canonicalMemberId}</span></div>
+            <div><span className="text-slate-400">Live Firestore Payments:</span> <span className="text-yellow-400 font-bold">{diagnostics.firestoreLiveCount}</span></div>
+            <div><span className="text-slate-400">Embedded History Records:</span> <span className="text-purple-400 font-bold">{diagnostics.embeddedCount}</span></div>
+          </div>
+          <div className="text-[10px] text-slate-400 truncate">
+            <span className="font-bold text-slate-300">Resolved Query Keys:</span> {diagnostics.allMemberKeys.join(', ')}
+          </div>
+          <div className="pt-1 border-t border-slate-800 flex items-center justify-between text-[11px]">
+            <span>Canonical Calculated Totals:</span>
+            <div className="flex items-center gap-4 font-bold">
+              <span className="text-slate-300">Billed: ₹{diagnostics.billed.toLocaleString('en-IN')}</span>
+              <span className="text-emerald-400">Collected: ₹{diagnostics.collected.toLocaleString('en-IN')}</span>
+              <span className={diagnostics.pending > 0 ? "text-rose-400" : "text-slate-400"}>Pending: ₹{diagnostics.pending.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── KPI Cards Header (Separate Membership & PT Totals) ───────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
         
         {/* MEMBERSHIP STATS GROUP */}
-        <div className={`${hasPtData ? 'lg:col-span-3' : 'lg:col-span-6'} bg-orange-50/60 p-3.5 rounded-3xl border border-orange-200/60 space-y-2`}>
+        <div className={`${hasPtData ? 'lg:col-span-3' : 'lg:col-span-6'} bg-orange-50/50 p-3.5 rounded-3xl border border-orange-200/80 space-y-2`}>
           <span className="text-[10px] font-black uppercase tracking-widest text-[#EA580C] block">MEMBERSHIP FINANCIALS</span>
           <div className="grid grid-cols-3 gap-2">
-            <div className="bg-white rounded-2xl p-3 border border-[#FED7AA]">
+            <div className="bg-white rounded-2xl p-3 border border-[#FFEDD5]">
               <p className="text-[9px] font-bold text-slate-500 uppercase">Billed</p>
               <p className="text-base font-black text-[#10233f] font-mono">{fmt(memStats.billed)}</p>
             </div>
@@ -379,30 +392,73 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
         )}
 
         {/* Create New Bill Action Card (1 Card) */}
-        <div className="lg:col-span-1 bg-gradient-to-br from-[#EA580C] to-[#FB923C] rounded-3xl p-3.5 text-white shadow-md flex flex-col justify-between">
+        <div className="lg:col-span-1 bg-gradient-to-br from-[#EA580C] to-[#F97316] rounded-3xl p-3.5 text-white shadow-md flex flex-col justify-between">
           <div>
             <span className="text-[9px] font-black uppercase tracking-widest text-orange-100 block">ACTIONS</span>
-            <p className="text-xs font-black mt-0.5">New Invoice</p>
+            <p className="text-xs font-black mt-0.5">Billing Actions</p>
           </div>
-          <button
-            onClick={() => {
-              if (onOpenCreateBill) onOpenCreateBill();
-              else setShowNewBillModal(true);
-            }}
-            className="mt-2 py-2 px-3 bg-white text-[#EA580C] hover:bg-[#FFF7ED] rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 shadow-xs border-none cursor-pointer"
-          >
-            <Plus size={14} /> + New Bill
-          </button>
+          <div className="flex flex-col gap-1.5 mt-2">
+            <button
+              onClick={() => router.push(`/dashboard/billing/create?mode=new&id=${member.id}`)}
+              className="py-1.5 px-3 bg-white text-[#EA580C] hover:bg-[#FFF7ED] rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 shadow-xs border-none cursor-pointer"
+            >
+              <Plus size={13} /> + New Bill
+            </button>
+            <button
+              onClick={() => router.push(`/dashboard/billing/create?mode=upgrade&id=${member.id}`)}
+              className="py-1.5 px-3 bg-[#C2410C] hover:bg-[#9A3412] text-white rounded-xl text-[11px] font-black transition-all flex items-center justify-center gap-1 shadow-xs border-none cursor-pointer"
+            >
+              <TrendingUp size={13} /> Upgrade Package
+            </button>
+          </div>
         </div>
 
       </div>
+
+      {/* Outstanding Balance Banner with + Balance Follow-Up button */}
+      {((memStats.outstanding + ptStats.outstanding) > 0 || Number(member.outstandingBalance || 0) > 0) && (
+        <div className="bg-[#FFFBEB] p-4 rounded-3xl border border-[#FDE68A] border-l-4 border-l-[#D97706] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-[#D97706] flex items-center justify-center font-black border border-amber-200 shrink-0">
+              <AlertCircle size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-[#D97706] tracking-wider">BALANCE DUE</span>
+                <span className="text-base font-black text-slate-900 font-mono">
+                  ₹{Math.max(memStats.outstanding + ptStats.outstanding, Number(member.outstandingBalance || 0)).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 font-medium mt-0.5">
+                Member has an outstanding billing balance. Schedule a balance follow-up to ensure timely payment collection.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => router.push(`/dashboard/billing/create?mode=collect&id=${member.id}`)}
+              className="px-4 py-2 bg-gradient-to-r from-[#EA580C] to-[#C2410C] hover:from-[#C2410C] hover:to-[#9A3412] text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 border-none cursor-pointer"
+            >
+              <CreditCard size={14} /> Collect Payment
+            </button>
+            <button
+              onClick={() => {
+                window.location.href = `/dashboard/follow-up?tab=balance&search=${encodeURIComponent(member.name || '')}`;
+              }}
+              className="px-4 py-2 bg-[#D97706] hover:bg-amber-700 text-white text-xs font-black rounded-xl transition-all shadow-md shadow-amber-600/20 flex items-center justify-center gap-1.5 border-none cursor-pointer"
+            >
+              <Plus size={14} /> + Balance Follow-Up
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Official Billing History Table Module (Spacious & Clean Layout) ── */}
       <div className="bg-white rounded-3xl border border-slate-300 shadow-md relative min-h-[480px] overflow-hidden">
         {/* Table Top Header */}
         <div className="bg-[#EA580C] text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <Receipt size={22} className="text-orange-100" />
+            <Receipt size={22} className="text-orange-200" />
             <div>
               <h3 className="font-extrabold text-base tracking-wide">Billing History</h3>
               <p className="text-[11px] text-orange-100 font-medium">Complete payment records, invoices, and transaction breakdown</p>
@@ -411,7 +467,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
 
           <div className="flex items-center gap-3">
             {/* Filter Tabs: ALL, MEMBERSHIP, PT */}
-            <div className="flex items-center gap-1 bg-blue-900/50 p-1 rounded-xl border border-white/20">
+            <div className="flex items-center gap-1 bg-orange-900/50 p-1 rounded-xl border border-white/20">
               {(['all', 'membership', 'pt'] as const).map((bType) => (
                 <button
                   key={bType}
@@ -419,7 +475,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
                   onClick={() => setBillingTypeFilter(bType)}
                   className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer ${
                     billingTypeFilter === bType
-                      ? 'bg-white text-blue-900 shadow-sm'
+                      ? 'bg-white text-orange-900 shadow-sm'
                       : 'text-orange-100 hover:text-white bg-transparent'
                   }`}
                 >
@@ -438,7 +494,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
         <div className="overflow-x-auto custom-scrollbar pb-24">
           <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
             <thead>
-              <tr className="bg-[#0e68d6] text-white font-extrabold text-[11px] uppercase tracking-wider border-b border-blue-700">
+              <tr className="bg-[#0e68d6] text-white font-extrabold text-[11px] uppercase tracking-wider border-b border-orange-700">
                 <th className="px-4 py-4 whitespace-nowrap">Date</th>
                 <th className="px-4 py-4 whitespace-nowrap">Invoice No</th>
                 <th className="px-4 py-4 whitespace-nowrap min-w-[250px]">Package / Description</th>
@@ -457,31 +513,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
               {filteredInvoices.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="py-16 text-center text-slate-400 font-bold text-sm">
-                    {isHold ? (
-                      <div className="flex flex-col items-center justify-center gap-3 py-6">
-                        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200">
-                          <Receipt size={24} />
-                        </div>
-                        <div className="space-y-1">
-                          <h4 className="text-sm font-black text-slate-800">No invoices yet</h4>
-                          <p className="text-xs text-slate-500 font-medium max-w-sm">
-                            This member is on HOLD waiting for membership billing. Create an official bill to activate their membership.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onOpenCreateBill) onOpenCreateBill();
-                            else setShowNewBillModal(true);
-                          }}
-                          className="mt-2 py-2.5 px-5 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all border-none cursor-pointer shadow-md flex items-center gap-1.5"
-                        >
-                          <Plus size={14} /> + Create Bill
-                        </button>
-                      </div>
-                    ) : (
-                      `No ${billingTypeFilter === 'all' ? 'billing' : billingTypeFilter.toUpperCase()} history recorded yet. Click "Create New Bill" or "+ Add PT Bill" to add an entry.`
-                    )}
+                    No {billingTypeFilter === 'all' ? 'billing' : billingTypeFilter.toUpperCase()} history recorded yet. Click "Create New Bill" or "+ Add PT Bill" to add an entry.
                   </td>
                 </tr>
               ) : (
@@ -492,10 +524,13 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
                   const taxAmt = Number(inv.taxAmount !== undefined ? inv.taxAmount : (inv.tax || inv.gst || 0));
                   const otherAmt = Number(inv.otherCharges || 0);
 
+                  const isUp = Boolean(inv.isUpgrade || inv.transactionType === 'membership_upgrade' || String(inv.invoiceNumber || '').startsWith('INV-UPG'));
                   const computedNet = Math.max(0, origItemAmt - discountAmt + taxAmt + otherAmt);
                   const netPayable = Number(inv.netPayable !== undefined ? inv.netPayable : (computedNet > 0 ? computedNet : Number(inv.amount || 0)));
                   const paidAmt = Number(inv.amountPaid !== undefined ? inv.amountPaid : (inv.paid !== undefined ? inv.paid : netPayable));
-                  const pendingAmt = Math.max(0, netPayable - paidAmt);
+                  const pendingAmt = isUp
+                    ? Number(inv.pendingAmount !== undefined ? inv.pendingAmount : (inv.remainingBalance !== undefined ? inv.remainingBalance : Math.max(0, netPayable - paidAmt)))
+                    : Math.max(0, netPayable - paidAmt);
                   const startDate = inv.startDate || member.joinDate || '20-08-2026';
                   const expiryDate = inv.expiryDate || member.expiryDate || '19-10-2026';
                   const planTitle = inv.plan || member.plan || 'Gym membership';
@@ -505,26 +540,42 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
 
                   return (
                     <tr key={inv.id || idx} className="hover:bg-orange-50/60 transition-colors border-b border-slate-100">
-                      {/* Date */}
+                      {/* Date & Time */}
                       <td className="px-4 py-4 whitespace-nowrap font-mono text-slate-700 font-bold">
-                        {inv.date || formatDate(member.joinDate)}
+                        <div>{formatDate(inv.invoiceDate || inv.billingDate || inv.date || inv.paymentDate || inv.transactionDate || member.joinDate)}</div>
+                        {(inv.transactionTime || inv.paymentTime || inv.time) && (
+                          <div className="text-[10px] text-slate-400 font-semibold mt-0.5">{inv.transactionTime || inv.paymentTime || inv.time}</div>
+                        )}
                       </td>
 
                       {/* Invoice No */}
-                      <td className="px-4 py-4 whitespace-nowrap font-mono font-black text-[#C2410C]">
+                      <td className="px-4 py-4 whitespace-nowrap font-mono font-black text-orange-700">
                         {invNum}
                       </td>
 
                       {/* Item Description & Validity Period */}
                       <td className="px-4 py-4 min-w-[250px]">
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider border ${
-                            isPt
-                              ? 'bg-amber-100 text-amber-900 border-amber-300'
-                              : 'bg-[#FFEDD5] text-[#9A3412] border-[#FDBA74]'
-                          }`}>
-                            {isPt ? 'PERSONAL TRAINING' : 'MEMBERSHIP'}
-                          </span>
+                          {inv.isUpgrade || inv.transactionType === 'membership_upgrade' || String(inv.invoiceNumber || '').startsWith('INV-UPG') ? (
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider border bg-purple-100 text-purple-800 border-purple-300 flex items-center gap-1">
+                              <TrendingUp size={10} /> UPGRADED BILL
+                            </span>
+                          ) : (
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider border ${
+                              isPt
+                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                : 'bg-orange-100 text-orange-800 border-orange-300'
+                            }`}>
+                              {isPt ? 'PERSONAL TRAINING' : 'MEMBERSHIP'}
+                            </span>
+                          )}
+
+                          {inv.isUpgraded && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200">
+                              Upgraded to {inv.upgradedToInvoice || 'New Bill'}
+                            </span>
+                          )}
+
                           {isPt && (inv.trainerName || member.trainer) && (
                             <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                               Trainer: {inv.trainerName || member.trainer}
@@ -532,6 +583,12 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
                           )}
                         </div>
                         <div className="font-extrabold text-slate-900">{planTitle}</div>
+                        {(inv.adjustedAmount || inv.previousPaidAmount) && (
+                          <div className="text-[10px] text-purple-700 font-semibold mt-0.5">
+                            Previous payment adjusted: ₹{(inv.adjustedAmount || inv.previousPaidAmount).toLocaleString('en-IN')}
+                            {inv.additionalAmountPaid !== undefined ? ` • Additional: ₹${Number(inv.additionalAmountPaid).toLocaleString('en-IN')}` : ''}
+                          </div>
+                        )}
                         <div className="text-[11px] text-slate-500 font-mono mt-0.5">({startDate} to {expiryDate})</div>
                       </td>
 
@@ -635,8 +692,8 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
           <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full p-6 space-y-6 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <FileText size={20} className="text-[#EA580C]" />
-                <h3 className="text-lg font-black text-slate-900">Warrior Gym Membership Receipt</h3>
+                <FileText size={20} className="text-orange-600" />
+                <h3 className="text-lg font-black text-slate-900">Official Tax Invoice &amp; Receipt</h3>
               </div>
               <button onClick={() => setViewInvoice(null)} className="p-2 rounded-full text-slate-400 hover:bg-slate-100 border-none bg-transparent cursor-pointer">
                 <X size={18} />
@@ -649,7 +706,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
             <div className="flex items-center gap-3 max-w-[800px] mx-auto">
               <button
                 onClick={() => window.print()}
-                className="flex-1 py-3.5 bg-[#EA580C] text-white rounded-xl text-xs font-black hover:bg-orange-700 transition-all flex items-center justify-center gap-2 border-none cursor-pointer shadow-md"
+                className="flex-1 py-3.5 bg-orange-600 text-white rounded-xl text-xs font-black hover:bg-orange-700 transition-all flex items-center justify-center gap-2 border-none cursor-pointer shadow-md"
               >
                 <Printer size={16} /> Print Official Invoice
               </button>
@@ -706,7 +763,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
             }}
             className="w-full px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-800 transition-colors"
           >
-            <Eye size={15} className="text-[#EA580C]" />
+            <Eye size={15} className="text-orange-600" />
             <span>View Bill</span>
           </button>
 
@@ -716,10 +773,22 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
               setSelectedInvoiceForEdit(openDropdown.invoice);
               setOpenDropdown(null);
             }}
-            className="w-full px-4 py-2.5 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-800 transition-colors font-extrabold"
+            className="w-full px-4 py-2.5 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-800 transition-colors font-extrabold"
           >
-            <Edit3 size={15} className="text-indigo-600" />
+            <Edit3 size={15} className="text-orange-600" />
             <span>Edit Bill</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              router.push(`/dashboard/billing/create?mode=upgrade&id=${member.id}`);
+              setOpenDropdown(null);
+            }}
+            className="w-full px-4 py-2.5 hover:bg-orange-50 hover:text-[#EA580C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-800 transition-colors font-extrabold"
+          >
+            <TrendingUp size={15} className="text-[#EA580C]" />
+            <span>Upgrade Package</span>
           </button>
 
           <button
@@ -769,7 +838,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
             className="w-full px-4 py-2.5 hover:bg-emerald-50 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-emerald-700 font-extrabold transition-colors"
           >
             <MessageSquare size={15} className="text-emerald-600" />
-            <span>Download PDF &amp; WhatsApp</span>
+            <span>WhatsApp Bill</span>
           </button>
 
           <div className="border-t border-slate-100 my-1"></div>
@@ -810,7 +879,7 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 font-bold">Invoice Number:</span>
-                <span className="font-mono font-extrabold text-[#EA580C]">{invoiceToDelete.invoiceNumber || invoiceToDelete.invoice || 'INV-000'}</span>
+                <span className="font-mono font-extrabold text-orange-600">{invoiceToDelete.invoiceNumber || invoiceToDelete.invoice || 'INV-000'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400 font-bold">Package:</span>
@@ -873,6 +942,24 @@ export default function BillingTab({ member: initialMember, onOpenCreateBill }: 
             if (shouldGenerateReceipt) {
               setViewInvoice(updatedInv);
             }
+            fetchMembers(true);
+          }}
+        />
+      )}
+
+      {/* ── 6. UPGRADE MEMBERSHIP MODAL ────────────────────────────────────── */}
+      {showUpgradeModal && (
+        <UpgradeModal
+          isOpen={showUpgradeModal}
+          member={member}
+          preselectedPayment={selectedInvoiceForUpgrade}
+          onClose={() => {
+            setShowUpgradeModal(false);
+            setSelectedInvoiceForUpgrade(null);
+          }}
+          onSuccess={(updatedMem, newInv) => {
+            if (updatedMem) setMember((prev: any) => ({ ...prev, ...updatedMem }));
+            if (newInv) setInvoices((prev: any[]) => [newInv, ...prev]);
             fetchMembers(true);
           }}
         />

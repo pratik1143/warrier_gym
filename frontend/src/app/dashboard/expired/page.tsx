@@ -40,7 +40,7 @@ export default function ExpiredPage() {
   const [followupDate, setFollowupDate] = useState('');
   const [followupTime, setFollowupTime] = useState('11:00');
   const [followupRemarks, setFollowupRemarks] = useState('');
-  const [followupAssignedTo, setFollowupAssignedTo] = useState('Manager');
+  const [followupAssignedTo, setFollowupAssignedTo] = useState('Veer Chand (manager)');
   const [isSubmittingFollowup, setIsSubmittingFollowup] = useState(false);
 
   // Custom Delete Confirmation Modal State (NO window.confirm)
@@ -277,14 +277,14 @@ export default function ExpiredPage() {
       
       {/* ── 1. PAGE HEADER (Unified with Members, Employees, Enquiries) ── */}
       <div className="bg-white rounded-3xl p-6 lg:p-8 border border-slate-100 shadow-[0_4px_25px_rgba(0,0,0,0.03)] flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3" />
         
         <div>
           <div className="flex items-center gap-2.5 mb-2">
-            <span className="px-3 py-1 bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
+            <span className="px-3 py-1 bg-gradient-to-r from-orange-600 to-amber-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-sm">
               Membership Recovery
             </span>
-            <span className="text-xs text-slate-400 font-mono font-bold">TWG-EXP-v4.0</span>
+            <span className="text-xs text-slate-400 font-mono font-bold">AZ-EXP-v4.0</span>
           </div>
           <h1 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 font-display">Expired Memberships</h1>
           <p className="text-xs text-slate-500 font-medium mt-1">Manage expired memberships, renewal opportunities and recovery follow-ups.</p>
@@ -316,7 +316,7 @@ export default function ExpiredPage() {
           { label: 'Lost (90D+)', value: lostCount, sub: 'Over 90 days overdue', icon: UserX, badgeBg: 'bg-slate-100 border-slate-200 text-slate-700' },
           { label: 'Recovery Rate', value: recoveryRate, sub: 'Successfully recovered', icon: CheckCircle, badgeBg: 'bg-emerald-50 border-emerald-200/60 text-emerald-600' }
         ].map((stat, i) => (
-          <div key={i} className="bg-white border border-[#FED7AA] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234,88,12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
+          <div key={i} className="bg-white border border-[#FFEDD5] rounded-3xl p-5 flex flex-col justify-between shadow-[0_4px_20px_rgba(234, 88, 12,0.03)] relative overflow-hidden group transition-all hover:border-[#EA580C] hover:shadow-md">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{stat.label}</span>
               <div className={`p-2.5 rounded-2xl border ${stat.badgeBg}`}>
@@ -332,7 +332,7 @@ export default function ExpiredPage() {
       </div>
 
       {/* ── 3. SEARCH & FILTERS BAR (Unified with Members & Employees) ── */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234,88,12,0.02)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl p-4 flex flex-wrap gap-4 items-center shadow-[0_4px_20px_rgba(234, 88, 12,0.02)]">
         {/* Search input */}
         <div className="relative flex-1 min-w-[240px]">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -341,7 +341,7 @@ export default function ExpiredPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search expired members by name, phone or member ID..."
-            className="w-full text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
+            className="w-full text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl pl-11 pr-4 py-3 focus:outline-none focus:border-[#EA580C] focus:bg-white transition-all text-[#10233f] font-semibold placeholder:text-slate-400"
           />
         </div>
 
@@ -350,7 +350,7 @@ export default function ExpiredPage() {
           <select 
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Statuses</option>
             <option value="Expired">Expired</option>
@@ -361,7 +361,7 @@ export default function ExpiredPage() {
           <select 
             value={planFilter}
             onChange={e => setPlanFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">All Memberships</option>
             {uniquePlans.map(p => (
@@ -373,7 +373,7 @@ export default function ExpiredPage() {
           <select 
             value={overduePeriodFilter}
             onChange={e => setOverduePeriodFilter(e.target.value)}
-            className="text-xs bg-[#fdfdfd] border border-[#FED7AA] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
+            className="text-xs bg-[#fdfdfd] border border-[#FFEDD5] rounded-2xl px-4 py-3 text-[#10233f] focus:outline-none font-bold cursor-pointer hover:bg-white transition-all"
           >
             <option value="All">Overdue Period</option>
             <option value="0-7">0 – 7 Days</option>
@@ -399,7 +399,7 @@ export default function ExpiredPage() {
       </div>
 
       {/* ── 4. MAIN EXPIRED MEMBERS TABLE (Matching Members & Employees Table) ── */}
-      <div className="bg-white border border-[#FED7AA] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234,88,12,0.03)]">
+      <div className="bg-white border border-[#FFEDD5] rounded-3xl overflow-hidden shadow-[0_4px_25px_rgba(234, 88, 12,0.03)]">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs whitespace-nowrap">
             <thead className="bg-[#EA580C] text-[#fdfdfd] font-extrabold uppercase tracking-wider text-[9.5px] border-b border-[#C2410C]">
@@ -509,7 +509,7 @@ export default function ExpiredPage() {
 
                       {/* 3. MEMBERSHIP */}
                       <td className="px-5 py-3.5">
-                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-[#FFF7ED] text-[#EA580C] border border-orange-200/60 inline-block font-sans">
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-orange-50 text-[#EA580C] border border-orange-200/60 inline-block font-sans">
                           {member.plan || '1 MONTH'}
                         </span>
                       </td>
@@ -599,11 +599,11 @@ export default function ExpiredPage() {
             onClick={() => {
               const m = actionsMenu.member;
               setActionsMenu(null);
-              setRenewTargetMember(m);
+              router.push(`/dashboard/billing/create?mode=renew&id=${encodeURIComponent(m.id)}`);
             }}
-            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-[#C2410C] flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-[#C2410C] transition-colors font-extrabold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-orange-700 transition-colors font-extrabold"
           >
-            <RotateCcw size={14} className="text-[#EA580C]" />
+            <RotateCcw size={14} className="text-orange-600" />
             <span>Renew Membership</span>
           </button>
 
@@ -644,9 +644,9 @@ export default function ExpiredPage() {
               setActionsMenu(null);
               handleOpenFollowup(m);
             }}
-            className="w-full px-3.5 py-2 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
+            className="w-full px-3.5 py-2 hover:bg-orange-50 hover:text-orange-700 flex items-center gap-2.5 text-left border-none bg-transparent cursor-pointer text-slate-700 transition-colors font-bold"
           >
-            <Calendar size={14} className="text-indigo-600" />
+            <Calendar size={14} className="text-orange-600" />
             <span>Create Follow-up</span>
           </button>
 
@@ -735,7 +735,7 @@ export default function ExpiredPage() {
                     onChange={e => setFollowupAssignedTo(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-[#EA580C] cursor-pointer"
                   >
-                    <option value="Manager">Manager</option>
+                    <option value="Veer Chand (manager)">Veer Chand (manager)</option>
                     <option value="Tanya Mehra">Tanya Mehra</option>
                     <option value="Ujjval Peet Kaur">Ujjval Peet Kaur</option>
                     <option value="Karan Verma">Karan Verma</option>
@@ -805,7 +805,7 @@ export default function ExpiredPage() {
                   {deleteTargetMember.name} <span className="font-mono text-slate-500 font-bold">#{deleteTargetMember.memberId || deleteTargetMember.id}</span>
                 </div>
                 <p className="text-[11px] text-rose-700 font-normal">
-                  All membership history, biometric logs, and invoices for this member will be permanently deleted across Warrior Gym OS.
+                  All membership history, biometric logs, and invoices for this member will be permanently deleted across The Warrior Gym OS.
                 </p>
               </div>
 

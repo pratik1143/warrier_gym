@@ -16,16 +16,16 @@ import { useAuthStore, useGymStore, useDeviceStore } from '@/store';
 import { getInitials } from '@/lib/utils';
 import toast from '@/lib/toast';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { auth, db as fDb, isFirebaseReady } from '@/lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { db as fDb, isFirebaseReady } from '@/lib/firebase';
 import { useCallback } from 'react';
 import AttendancePopupManager from './components/AttendancePopupManager';
 import EmployeePopupManager from './components/EmployeePopupManager';
-import { HikvisionEventPopupEngine } from './components/HikvisionEventPopupEngine';
 import UniversalSearchBar from './components/UniversalSearchBar';
 import LiveTimeCard from './components/LiveTimeCard';
 import SoftwareFooter from './components/SoftwareFooter';
-import layoutStyles from './layout.module.css';
+import MobileBottomNav from './components/MobileBottomNav';
+import AddMemberModal from './members/components/AddMemberModal';
+import './mobile-dashboard.css';
 
 export default function DashboardLayout({
   children,
@@ -39,8 +39,8 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   
+  const [isMobileAddModalOpen, setIsMobileAddModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const [activeHeatmapFilter, setActiveHeatmapFilter] = useState('Yours');
   
@@ -102,8 +102,6 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!isFirebaseReady || !fDb) return;
 
-
-
     // Safe Firestore Timestamp → JS Date converter
     const toJsDate = (val: any): Date | null => {
       if (!val) return null;
@@ -121,7 +119,9 @@ export default function DashboardLayout({
     const unsubscribeFeed = onSnapshot(qFeed, (snapshot) => {
       const logs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
       setRealtimeFeed(logs);
-    }, () => { /* silenced: permission-denied expected without Firebase auth */ });
+    }, (err) => {
+      console.warn("Firestore dashboard feed listener error:", err);
+    });
 
     // 3. Listen for push notifications from device service (checkin, alert, enrollment)
     const notifCollection = collection(fDb, 'notifications');
@@ -169,14 +169,18 @@ export default function DashboardLayout({
           });
         }
       });
-    }, () => { /* silenced */ });
+    }, (err) => {
+      console.warn("Firestore dashboard notifications listener error:", err);
+    });
 
     // 4. Listen for gym_presence for Live Members Engine
     const presenceCollection = collection(fDb, 'gym_presence');
     const unsubscribePresence = onSnapshot(presenceCollection, (snapshot) => {
       const presenceList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       useGymStore.getState().setGymPresence(presenceList);
-    }, () => { /* silenced */ });
+    }, (err) => {
+      console.warn("Firestore dashboard presence listener error:", err);
+    });
 
     // 5. Listen for devices status in real-time
     const devicesCollection = collection(fDb, 'devices');
@@ -194,7 +198,9 @@ export default function DashboardLayout({
       
       useDeviceStore.getState().setDeviceStatus(status);
       useGymStore.setState({ deviceStatus: status });
-    }, () => { /* silenced */ });
+    }, (err) => {
+      console.warn("Firestore dashboard devices listener error:", err);
+    });
 
     return () => {
       unsubscribeFeed();
@@ -239,8 +245,8 @@ export default function DashboardLayout({
 
   if (!mounted || !isAuthenticated || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAF9]">
-        <div className="w-8 h-8 border-2 border-[#F97316] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+        <div className="w-8 h-8 border-2 border-[#EA580C] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -251,81 +257,78 @@ export default function DashboardLayout({
   const checkinDays = attendance ? attendance.map((a: any) => new Date(a.checkIn || '').getDate()) : [];
 
   return (
-    <div className="min-h-screen w-full flex font-poppins text-slate-800 bg-[#FCFAF8] relative">
-      {mobileSidebarOpen && <button type="button" className={layoutStyles.mobileBackdrop} aria-label="Close navigation menu" onClick={() => setMobileSidebarOpen(false)} />}
-      {/* ─── Column 1: Left Navigation Sidebar ─── */}
-      <aside 
-        style={{ width: '240px' }}
-        className={`${layoutStyles.sidebar} fixed top-0 left-0 bottom-0 h-screen h-[100vh] bg-white border-r border-stone-200/80 p-4 flex flex-col justify-between z-50 select-none overflow-hidden ${mobileSidebarOpen ? layoutStyles.sidebarOpen : ''}`}
-      >
-        {/* Sidebar Header Brand Area */}
-        <div className="px-1 flex items-center justify-start border-b border-stone-100 pb-4 shrink-0">
-          <Link href="/dashboard/overview" className="flex items-center gap-3 group no-underline">
-            <img 
-              src="/gymlogo.png" 
-              alt="The Warrior Gym Logo" 
-              className="h-14 w-14 object-contain shrink-0 group-hover:scale-105 transition-transform drop-shadow-sm" 
-            />
-            <div className="flex flex-col justify-center leading-none">
-              <span className="font-rowdies font-extrabold text-[14px] tracking-tight uppercase text-slate-900 leading-tight">
-                THE WARRIOR
+    <div className="crm-app-frame h-[100dvh] w-full flex font-sans text-slate-800 bg-[#FDFDFD] overflow-hidden relative">
+      {/* ─── Column 1: Left Navigation Sidebar (Desktop Only) ─── */}
+      <aside className="hidden md:flex w-[230px] lg:w-[240px] flex-shrink-0 bg-white border-r border-slate-200/80 p-4 flex-col justify-between h-full overflow-y-auto z-40">
+        <div className="space-y-6">
+          {/* Branding Logo */}
+          <div className="px-1 flex items-center justify-start border-b border-slate-100 pb-4">
+            <Link href="/dashboard/overview" className="flex items-center gap-2.5 group no-underline">
+              <img 
+                src="/gymlogo.png" 
+                alt="The Warrior Gym Logo" 
+                className="h-10 w-10 object-contain shrink-0 rounded-full shadow-xs group-hover:scale-105 transition-transform" 
+              />
+              <span className="font-rowdies font-extrabold text-[15px] tracking-tight uppercase text-slate-900 leading-none">
+                The Warrior <span className="text-[#EA580C]">Gym</span>
               </span>
-              <span className="font-rowdies font-black text-[14px] tracking-wider uppercase text-[#EA580C] leading-tight">
-                GYM
-              </span>
-            </div>
-          </Link>
+            </Link>
+          </div>
+
+          {/* Sidebar Navigation */}
+          <nav className="space-y-1 pr-1">
+            {[
+              { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
+              { to: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+              { to: '/dashboard/members', label: 'Members', icon: Users },
+              { to: '/dashboard/employees', label: 'Employees', icon: Briefcase, badge: 'NEW' },
+              { to: '/dashboard/enquiries', label: 'Enquiries', icon: ClipboardList },
+              { to: '/dashboard/messages', label: 'Web Messages', icon: MessageSquare, badge: 'LIVE' },
+              { to: '/dashboard/expired', label: 'Expired', icon: UserX },
+              { to: '/dashboard/trainers', label: 'Trainers', icon: UserCheck },
+              { to: '/dashboard/follow-up', label: 'Follow Up', icon: AlertTriangle },
+              { to: '/dashboard/referrals', label: 'Referrals', icon: Gift },
+              { to: '/dashboard/inconsistent', label: 'Inconsistent', icon: UserX },
+              { to: '/dashboard/attendance', label: 'Attendance', icon: Clock },
+              { to: '/dashboard/diet-management', label: 'Diet Management', icon: AppleIcon },
+              { to: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+              { to: '/dashboard/automation', label: 'Email Automation', icon: Mail },
+              { to: '/dashboard/automation/whatsapp', label: 'WhatsApp Automation', icon: MessageSquare },
+              { to: '/dashboard/memberships', label: 'Memberships', icon: Award },
+              { to: '/dashboard/member-app', label: 'Member App', icon: Smartphone },
+              { to: '/dashboard/settings', label: 'Settings', icon: Settings }
+            ].map((item, idx) => {
+              const isActive = pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
+              return (
+                <Link
+                  key={idx}
+                  href={item.to}
+                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all ${
+                    isActive 
+                      ? 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] shadow-xs' 
+                      : 'text-slate-600 hover:text-[#EA580C] hover:bg-[#FFFAF5]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon size={14} className={isActive ? 'text-[#EA580C]' : 'text-slate-400'} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <span className="bg-[#EA580C] text-white text-[8px] font-black px-1.5 py-0.5 rounded-full scale-90 border border-orange-400 animate-pulse">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* Sidebar Navigation - Scrollable inside sidebar only if viewport is small */}
-        <nav className="flex-1 overflow-y-auto my-2 pr-1 space-y-1 min-h-0 custom-scrollbar">
-          {[
-            { to: '/dashboard/overview', label: 'Overview', icon: LayoutDashboard },
-            { to: '/dashboard', label: 'Dashboard', icon: HomeIcon },
-            { to: '/dashboard/members', label: 'Members', icon: Users },
-            { to: '/dashboard/employees', label: 'Employees', icon: Briefcase, badge: 'NEW' },
-            { to: '/dashboard/enquiries', label: 'Enquiries', icon: ClipboardList },
-            { to: '/dashboard/messages', label: 'Web Messages', icon: MessageSquare, badge: 'LIVE' },
-            { to: '/dashboard/expired', label: 'Expired', icon: UserX },
-            { to: '/dashboard/trainers', label: 'Trainers', icon: UserCheck },
-            { to: '/dashboard/follow-up', label: 'Follow Up', icon: AlertTriangle },
-            { to: '/dashboard/inconsistent', label: 'Inconsistent', icon: UserX },
-            { to: '/dashboard/billing', label: 'Billing', icon: CreditCard },
-            { to: '/dashboard/automation', label: 'Email Automation', icon: Mail },
-            { to: '/dashboard/memberships', label: 'Memberships', icon: Award },
-            { to: '/dashboard/settings', label: 'Settings', icon: Settings }
-          ].map((item, idx) => {
-            const isActive = pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
-            return (
-              <Link
-                key={idx}
-                href={item.to}
-                onClick={() => setMobileSidebarOpen(false)}
-                className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider transition-all ${
-                  isActive 
-                    ? 'bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] shadow-xs' 
-                    : 'text-slate-600 hover:text-[#EA580C] hover:bg-[#FFF7ED]/60'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <item.icon size={14} className={isActive ? 'text-[#EA580C]' : 'text-slate-400'} />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge && (
-                  <span className="bg-gradient-to-r from-[#F97316] to-[#EA580C] text-white text-[8px] font-black px-1.5 py-0.5 rounded-full scale-90 border border-orange-300 animate-pulse">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Sidebar Bottom: User Profile + Sign Out - Always pinned at bottom */}
-        <div className="mt-auto shrink-0 border-t border-stone-100 pt-3 space-y-2">
+        {/* Sidebar Bottom: User Profile + Sign Out */}
+        <div className="mt-4 border-t border-slate-100 pt-4 space-y-2">
           {/* User Info */}
-          <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-stone-50 border border-stone-100">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#F97316] to-[#EA580C] text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+          <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="w-8 h-8 rounded-full bg-[#EA580C] text-white font-black text-xs flex items-center justify-center shrink-0">
               {getInitials(user?.name || 'A')}
             </div>
             <div className="flex-1 min-w-0">
@@ -350,24 +353,42 @@ export default function DashboardLayout({
       </aside>
 
       {/* ─── Main Workspace Content Area ─── */}
-      <main 
-        style={{ marginLeft: '240px', width: 'calc(100% - 240px)', minHeight: '100vh' }}
-        className={`${layoutStyles.main} flex-1 min-w-0 p-4 sm:p-6 flex flex-col gap-4 text-left bg-[#FCFAF8] overflow-x-hidden`}
-      >
-        {/* Top Header Bar: Universal Search (Left/Center) + Live Time Card (Right) */}
-        <div className="w-full flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 shrink-0 pb-1">
-          <button type="button" className={layoutStyles.mobileMenu} aria-label={mobileSidebarOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen((open) => !open)}>
-            {mobileSidebarOpen ? <X size={19} /> : <Menu size={19} />}
-          </button>
-          <div className="order-2 sm:order-none ml-auto sm:ml-0">
-            <LiveTimeCard />
+      <main className="crm-main flex-1 min-w-0 w-full h-full p-4 sm:p-6 pb-24 md:pb-6 overflow-y-auto flex flex-col justify-between gap-6 text-left bg-[#FDFDFD]">
+        <div className="crm-main-content flex flex-col gap-4 flex-1 min-w-0">
+          {/* Compact Mobile Top Header Bar (< md) with iOS Safe-Area Top Inset */}
+          <div 
+            className="crm-mobile-topbar md:hidden sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 flex items-center justify-between shadow-2xs shrink-0"
+            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}
+          >
+            <Link href="/dashboard/overview" className="flex items-center gap-2 cursor-pointer no-underline">
+              <img src="/gymlogo.png" alt="The Warrior Gym" className="crm-mobile-logo h-9 w-9 object-contain rounded-full shrink-0" />
+              <span className="font-rowdies font-extrabold text-sm text-slate-900 tracking-tight uppercase leading-none">
+                Warrior <span className="text-[#EA580C]">CRM</span>
+              </span>
+            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsMobileAddModalOpen(true)}
+                className="px-3 py-2 bg-[#EA580C] text-white rounded-xl text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-1 cursor-pointer border-none shadow-xs active:scale-95 transition-transform"
+              >
+                <Plus size={14} /> Add Member
+              </button>
+            </div>
           </div>
-          <div className="order-3 sm:order-none basis-full sm:basis-auto w-full sm:max-w-[460px] md:max-w-[500px] sm:flex-1">
-            <UniversalSearchBar />
+
+          {/* Top Header Bar: Universal Search (Left/Center) + Live Time Card (Right) */}
+          <div className="crm-mobile-search w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0 pb-1">
+            <div className="w-full sm:max-w-[460px] md:max-w-[500px]">
+              <UniversalSearchBar />
+            </div>
+            <div className="hidden sm:block">
+              <LiveTimeCard />
+            </div>
           </div>
+          <div className="crm-page-slot min-w-0 w-full">{children}</div>
         </div>
-        {children}
-        <SoftwareFooter />
+        <div className="crm-desktop-footer"><SoftwareFooter /></div>
       </main>
 
       {/* AI Gym Copilot Helper */}
@@ -376,13 +397,13 @@ export default function DashboardLayout({
         return null;
       })()}
 
-      {/* AI Gym Copilot Pulsing FAB */}
+      {/* AI Gym Copilot Pulsing FAB (Repositioned above bottom-nav on mobile) */}
       <button
         onClick={() => setIsCopilotOpen(true)}
-        className="fixed bottom-8 right-8 z-[60] w-14 h-14 bg-gradient-to-tr from-[#F97316] via-[#EA580C] to-[#C2410C] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(249,115,22,0.5)] hover:scale-105 active:scale-95 transition-all animate-bounce cursor-pointer text-white border border-white/20"
+        className="fixed bottom-22 right-4 md:bottom-8 md:right-8 z-[45] w-12 h-12 md:w-14 md:h-14 bg-gradient-to-tr from-[#EA580C] via-[#F97316] to-[#FB923C] rounded-full flex items-center justify-center shadow-[0_0_24px_rgba(234,88,12,0.55)] hover:scale-105 active:scale-95 transition-all animate-bounce cursor-pointer text-white border border-white/20"
         title="Warrior AI Gym Copilot"
       >
-        <Sparkles size={24} className="animate-pulse" />
+        <Sparkles size={20} className="animate-pulse md:w-6 md:h-6" />
       </button>
 
       {/* Copilot Drawer Backdrop */}
@@ -504,7 +525,7 @@ export default function DashboardLayout({
                         </div>
                         <div className="p-3 bg-slate-900 border border-white/5 rounded-2xl text-center space-y-1">
                           <span className="text-[8px] font-bold text-slate-500 uppercase block">Expected Renewals</span>
-                          <span className="text-xs font-black text-indigo-400 font-mono">{Math.round(expectedRenewalsCount)} / {totalInScope}</span>
+                          <span className="text-xs font-black text-orange-400 font-mono">{Math.round(expectedRenewalsCount)} / {totalInScope}</span>
                         </div>
                         <div className="p-3 bg-slate-900 border border-white/5 rounded-2xl text-center space-y-1">
                           <span className="text-[8px] font-bold text-slate-500 uppercase block">High Risk Cards</span>
@@ -652,7 +673,7 @@ export default function DashboardLayout({
                                 onClick={() => {
                                   toast.success(`Follow-up log created for ${m.name}. Syncing to Firestore...`);
                                 }}
-                                className="p-1.5 bg-indigo-950 hover:bg-indigo-900 text-indigo-400 rounded-lg flex items-center justify-center border-none cursor-pointer transition-colors"
+                                className="p-1.5 bg-orange-950 hover:bg-orange-900 text-orange-400 rounded-lg flex items-center justify-center border-none cursor-pointer transition-colors"
                                 title="Create Follow Up"
                               >
                                 <Plus size={12} />
@@ -679,8 +700,8 @@ export default function DashboardLayout({
                     </div>
 
                     {/* Trainer Recommendation */}
-                    <div className="p-3 bg-indigo-950/20 border border-indigo-500/20 text-indigo-200 rounded-2xl flex gap-2.5 items-start">
-                      <Sparkles size={15} className="text-indigo-400 shrink-0 mt-0.5" />
+                    <div className="p-3 bg-orange-950/20 border border-orange-500/20 text-orange-200 rounded-2xl flex gap-2.5 items-start">
+                      <Sparkles size={15} className="text-orange-400 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold block">Diet & Coach Recommendation</span>
                         <p className="text-[9.5px] text-slate-400 leading-normal mt-0.5">Coach Rohit Sharma has 92% client compliance. Recommend duplicating his keto-shred templates to other fat-loss athletes.</p>
@@ -710,7 +731,7 @@ export default function DashboardLayout({
                     }, 1500);
                   }}
                   disabled={launchingCampaign}
-                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md disabled:opacity-50 border-none flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-amber-600 hover:from-purple-500 hover:to-amber-500 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md disabled:opacity-50 border-none flex items-center justify-center gap-2"
                 >
                   <MessageSquare size={13} />
                   <span>{launchingCampaign ? 'Sending Campaigns...' : 'Smart WhatsApp Campaigns'}</span>
@@ -722,7 +743,8 @@ export default function DashboardLayout({
       </AnimatePresence>
     <AttendancePopupManager />
     <EmployeePopupManager />
-    <HikvisionEventPopupEngine />
+    <MobileBottomNav onOpenAddMember={() => setIsMobileAddModalOpen(true)} />
+    <AddMemberModal isOpen={isMobileAddModalOpen} onClose={() => setIsMobileAddModalOpen(false)} />
     </div>
   );
 }

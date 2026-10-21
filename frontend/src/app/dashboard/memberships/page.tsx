@@ -13,7 +13,7 @@ const IconMap: Record<string, any> = {
   Crown
 };
 
-// Official 14 Client Master Packages strictly adhering to Warrior Gym OS (#EA580C) theme
+// Official 14 Client Master Packages strictly adhering to The Warrior Gym OS (#EA580C) theme
 const defaultPlansData = [
   {
     id: 'pkg_15d',
@@ -318,7 +318,7 @@ export default function MembershipsPage() {
     }
 
     const accentBg = (planIcon === 'Crown' || (planBadge && planBadge.toLowerCase().includes('elite')))
-      ? 'linear-gradient(135deg, #EFF6FF 0%, #FFFFFF 100%)'
+      ? 'linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 100%)'
       : '#ffffff'; 
     const border = (planIcon === 'Crown' || (planBadge && planBadge.toLowerCase().includes('elite')))
       ? '1px solid rgba(191, 217, 245, 0.9)'
@@ -399,7 +399,7 @@ export default function MembershipsPage() {
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="Search by package name, duration, price, or status..."
-          className="w-full h-11 pl-10 pr-4 bg-white border border-slate-200 focus:border-[#EA580C] focus:ring-2 focus:ring-orange-500/20 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+          className="w-full h-11 pl-10 pr-4 bg-white border border-slate-200 focus:border-[#EA580C] focus:ring-2 focus:ring-orange-500/10 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 outline-none transition-all shadow-2xs"
         />
       </div>
 
@@ -411,7 +411,7 @@ export default function MembershipsPage() {
           const isInactive = plan.status === 'Inactive';
 
           // Badge theme logic: No purple/yellow/orange
-          let badgeBg = 'bg-[#FFF7ED] text-[#EA580C] border-orange-200/60';
+          let badgeBg = 'bg-orange-50 text-[#EA580C] border-orange-200/80';
           let badgeText = plan.badge || (isInactive ? 'Inactive' : null);
 
           if (isInactive) {
@@ -423,7 +423,7 @@ export default function MembershipsPage() {
             } else if (bLower.includes('best value')) {
               badgeBg = 'bg-emerald-50 text-emerald-700 border-emerald-200/80';
             } else if (bLower.includes('personal training') || bLower.includes('pt')) {
-              badgeBg = 'bg-indigo-50 text-indigo-700 border-indigo-200/80';
+              badgeBg = 'bg-orange-50 text-orange-700 border-orange-200/80';
             }
           }
 
@@ -434,14 +434,14 @@ export default function MembershipsPage() {
                 isInactive
                   ? 'bg-slate-50/70 border border-slate-200/80 opacity-80'
                   : isElite
-                  ? 'bg-gradient-to-br from-blue-50/90 via-white to-blue-50/50 border border-orange-200/60 shadow-sm shadow-orange-500/20 hover:border-[#EA580C]'
-                  : 'bg-white border border-slate-200/90 shadow-xs hover:shadow-md hover:shadow-orange-500/20 hover:border-[#EA580C]'
+                  ? 'bg-gradient-to-br from-orange-50/90 via-white to-orange-50/50 border border-orange-200/90 shadow-sm shadow-orange-500/5 hover:border-orange-300'
+                  : 'bg-white border border-slate-200/90 shadow-xs hover:shadow-md hover:shadow-orange-500/5 hover:border-orange-300'
               }`}
             >
               {/* Top Row: Icon + Badge */}
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                  isInactive ? 'bg-slate-200 text-slate-500 border border-slate-300' : 'bg-[#FFF7ED] border border-[#FED7AA] text-[#EA580C]'
+                  isInactive ? 'bg-slate-200 text-slate-500 border border-slate-300' : 'bg-orange-50 border border-orange-100 text-[#EA580C]'
                 }`}>
                   <Icon size={20} className={isInactive ? 'text-slate-500' : 'text-[#EA580C]'} />
                 </div>
@@ -492,7 +492,7 @@ export default function MembershipsPage() {
                 className={`w-full h-11 mt-3 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 border-none ${
                   isInactive 
                     ? 'bg-slate-500 hover:bg-slate-600' 
-                    : 'bg-[#EA580C] hover:bg-orange-700 active:bg-blue-800'
+                    : 'bg-[#EA580C] hover:bg-orange-700 active:bg-orange-800'
                 }`}
               >
                 {isInactive ? 'Edit Inactive Plan' : isElite ? 'Configure Elite Plan' : 'Configure Plan'}
@@ -607,7 +607,7 @@ export default function MembershipsPage() {
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs" onClick={() => setShowModal(false)} />
           <div className="relative w-full max-w-lg bg-white border border-slate-200 rounded-2xl shadow-2xl z-10 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-[#F97316] via-[#EA580C] to-[#C2410C] text-white">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-orange-600 to-amber-600 text-white">
               <div className="text-left">
                 <h3 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
                   <Shield size={18} /> {editingPlan ? 'Edit Membership Plan' : 'Create New Package'}

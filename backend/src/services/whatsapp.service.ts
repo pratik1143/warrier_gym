@@ -11,17 +11,19 @@ class WhatsAppService {
   private clientInfo: any = null;
 
   constructor() {
-    if (process.env.VERCEL) {
-      console.log('[WhatsApp] Vercel Serverless environment: automatic client startup disabled.');
-      return;
-    }
-    // Automatically attempt reconnection if initialized
-    setTimeout(() => {
-      this.initClient();
-    }, 2000);
+    // WhatsApp Web auto-launch disabled in favor of Meta Cloud API / Manual trigger
   }
 
   public async getStatus() {
+    if (process.env.ENABLE_WHATSAPP_WEB !== 'true') {
+      return {
+        status: 'Disabled',
+        qr: null,
+        profileName: 'Meta Cloud API Mode',
+        phoneNumber: null,
+        lastSync: new Date().toISOString(),
+      };
+    }
     return {
       status: this.status,
       qr: this.qrCode,
@@ -32,12 +34,10 @@ class WhatsAppService {
   }
 
   public async initClient() {
-    if (process.env.VERCEL) {
-      this.status = 'Disconnected';
-      console.log('[WhatsApp] WhatsApp Web client is disabled on Vercel Serverless.');
+    if (process.env.ENABLE_WHATSAPP_WEB !== 'true') {
+      console.log('[WhatsApp] Web Module disabled (Meta Cloud API selected).');
       return;
     }
-
     if (this.client && this.status === 'Connecting') {
       console.log('[WhatsApp] Initialization already in progress.');
       return;
@@ -82,18 +82,12 @@ class WhatsAppService {
       puppeteerOptions.executablePath = edgePath;
     }
 
-    try {
-      this.client = new Client({
-        authStrategy: new LocalAuth({
-          dataPath: authPath
-        }),
-        puppeteer: puppeteerOptions
-      });
-    } catch (createErr) {
-      console.warn('[WhatsApp] Failed to instantiate Client (headless browser missing):', createErr);
-      this.status = 'Disconnected';
-      return;
-    }
+    this.client = new Client({
+      authStrategy: new LocalAuth({
+        dataPath: authPath
+      }),
+      puppeteer: puppeteerOptions
+    });
 
     this.client.on('qr', async (qr) => {
       console.log('[WhatsApp] QR Code received. Generating data URL...');

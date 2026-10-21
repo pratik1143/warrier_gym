@@ -19,9 +19,9 @@ import MemberAvatar from '../../../components/MemberAvatar';
 import OfficialInvoiceReceipt from '../../../components/OfficialInvoiceReceipt';
 
 const PLANS = [
-  { id: '1m', name: '1 Month Standard', price: 2500, duration: 1, desc: 'Basic single month access' },
+  { id: '1m', name: '1 Month Standard', price: 2000, duration: 1, desc: 'Basic single month access' },
   { id: '3m', name: '3 Months Pro', price: 6500, duration: 3, desc: 'Quarterly membership saver' },
-  { id: '6m', name: '6 Months Elite', price: 11500, duration: 6, desc: 'Semi-annual transformation pack' },
+  { id: '6m', name: '6 Months Elite', price: 10000, duration: 6, desc: 'Semi-annual transformation pack' },
   { id: '12m', name: '12 Months VIP', price: 18000, duration: 12, desc: 'Annual ultimate access' },
   { id: '10d', name: '10 Days Pass', price: 1000, duration: 0.33, desc: '10 Days short trial pass' },
   { id: 'pt', name: 'Personal Training (PT)', price: 8000, duration: 1, desc: '1-on-1 personal trainer sessions' },
@@ -36,6 +36,12 @@ export default function RenewMembershipPage() {
   const params = useParams();
   const rawId = params?.id as string;
   const id = rawId ? decodeURIComponent(rawId) : '';
+
+  useEffect(() => {
+    if (id) {
+      router.replace(`/dashboard/billing/create?mode=renew&id=${encodeURIComponent(id)}`);
+    }
+  }, [id, router]);
 
   const { fetchMembers } = useGymStore();
   const [member, setMember] = useState<any>(null);
@@ -139,7 +145,7 @@ export default function RenewMembershipPage() {
 
   // Coupon calculations
   const getCouponDiscount = () => {
-    if (coupon.toUpperCase() === 'WARRIOR10' || coupon.toUpperCase() === 'ALPHA10') return Math.round(planPrice * 0.1);
+    if (coupon.toUpperCase() === 'ALPHA10') return Math.round(planPrice * 0.1);
     if (coupon.toUpperCase() === 'FIT20') return Math.round(planPrice * 0.2);
     return 0;
   };
@@ -186,56 +192,107 @@ export default function RenewMembershipPage() {
       const daysLeftCount = startDateVal > todayStr ? calculatedDuration : membershipEngine.calculateDaysLeft(newExpiryString);
       const computedMemberStatus = startDateVal > todayStr ? 'upcoming' : 'active';
 
-      const invoiceData = {
-        memberId: member.id,
-        memberName: member.name,
-        memberPhone: member.phone || '',
-        amount: totalAmount,
-        paid: totalAmount,
+      const payload = {
         plan: planName,
-        method: method,
-        discount: totalDiscount,
-        status: 'paid',
-        invoice: generatedInvoiceNum,
-        invoiceNumber: generatedInvoiceNum,
-        date: todayStr,
         startDate: startDateVal,
         expiryDate: newExpiryString,
-        createdAt: new Date().toISOString()
-      };
-
-      // Add to payments collection in Firestore
-      await addDoc(collection(db, 'payments'), invoiceData);
-      setGeneratedInvoiceData(invoiceData);
-
-      // Membership history item
-      const newHistoryItem = {
-        packageName: planName,
-        startDate: startDateVal,
-        expiryDate: newExpiryString,
-        amount: totalAmount,
+        packagePrice: planPrice,
+        baseAmount: planPrice,
+        discountType: 'fixed',
+        discountValue: totalDiscount,
+        discountAmount: totalDiscount,
+        taxAmount: gstAmount,
+        netPayable: totalAmount,
+        amountPaidToday: totalAmount,
+        amountPaid: totalAmount,
+        pendingAmount: 0,
+        remainingBalance: 0,
+        paymentMethod: method,
+        paymentStatus: 'Paid',
+        invoiceDate: todayStr,
         invoiceNumber: generatedInvoiceNum,
-        renewedAt: new Date().toISOString()
+        notes: `Renewed via workspace. Trainer: ${assignedTrainer || 'General'}`,
       };
 
-      const existingHistory = Array.isArray(member.membershipHistory) ? member.membershipHistory : [];
-      const updatedHistory = [newHistoryItem, ...existingHistory];
+      try {
+        const res = await API.post(`/members/${member.id}/renew`, payload);
+        if (res.data?.payment) {
+          setGeneratedInvoiceData(res.data.payment);
+        } else {
+          setGeneratedInvoiceData({
+            ...payload,
+            memberId: member.id,
+            memberName: member.name,
+            amount: totalAmount,
+            paid: totalAmount,
+            discount: totalDiscount,
+          });
+        }
+      } catch (apiErr: any) {
+        console.warn('API renew failed, falling back to direct write:', apiErr.message);
+        const invoiceData = {
+          memberId: member.id,
+          memberName: member.name,
+          memberPhone: member.phone || '',
+          amount: planPrice,
+          packagePrice: planPrice,
+          baseAmount: planPrice,
+          discountAmount: totalDiscount,
+          discount: totalDiscount,
+          netPayable: totalAmount,
+          amountPaidToday: totalAmount,
+          amountPaid: totalAmount,
+          paid: totalAmount,
+          pendingAmount: 0,
+          remainingBalance: 0,
+          plan: planName,
+          method: method,
+          paymentMethod: method,
+          status: 'paid',
+          paymentStatus: 'paid',
+          invoice: generatedInvoiceNum,
+          invoiceNumber: generatedInvoiceNum,
+          date: todayStr,
+          invoiceDate: todayStr,
+          startDate: startDateVal,
+          expiryDate: newExpiryString,
+          createdAt: new Date().toISOString()
+        };
 
-      // Update Member Document in Firestore
-      await updateDoc(doc(db, 'members', member.id), {
-        plan: planName,
-        price: planPrice,
-        amount: totalAmount,
-        totalBilled: totalAmount,
-        totalPaid: totalAmount,
-        expiryDate: newExpiryString,
-        daysLeft: daysLeftCount,
-        status: computedMemberStatus,
-        paymentStatus: 'paid',
-        trainer: assignedTrainer || member.trainer || '',
-        membershipHistory: updatedHistory,
-        updatedAt: new Date().toISOString()
-      });
+        await addDoc(collection(db, 'payments'), invoiceData);
+        setGeneratedInvoiceData(invoiceData);
+
+        const newHistoryItem = {
+          packageName: planName,
+          startDate: startDateVal,
+          expiryDate: newExpiryString,
+          amount: totalAmount,
+          amountPaid: totalAmount,
+          pendingAmount: 0,
+          discount: totalDiscount,
+          invoiceNumber: generatedInvoiceNum,
+          renewedAt: new Date().toISOString()
+        };
+
+        const existingHistory = Array.isArray(member.membershipHistory) ? member.membershipHistory : [];
+        const updatedHistory = [newHistoryItem, ...existingHistory];
+
+        await updateDoc(doc(db, 'members', member.id), {
+          plan: planName,
+          price: planPrice,
+          amount: totalAmount,
+          totalBilled: (Number(member.totalBilled) || 0) + totalAmount,
+          totalPaid: (Number(member.totalPaid) || 0) + totalAmount,
+          outstandingBalance: 0,
+          expiryDate: newExpiryString,
+          daysLeft: daysLeftCount,
+          status: computedMemberStatus,
+          paymentStatus: 'paid',
+          trainer: assignedTrainer || member.trainer || '',
+          membershipHistory: updatedHistory,
+          updatedAt: new Date().toISOString()
+        });
+      }
 
       setCompleteDone(true);
       fetchMembers();
@@ -251,7 +308,7 @@ export default function RenewMembershipPage() {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center">
         <div className="flex items-center gap-3">
-          <Activity size={24} className="text-[#EA580C] animate-spin" />
+          <Activity size={24} className="text-orange-600 animate-spin" />
           <span className="font-bold text-sm text-slate-600">Loading Member Renewal Workspace...</span>
         </div>
       </div>
@@ -271,7 +328,7 @@ export default function RenewMembershipPage() {
           </button>
           <div>
             <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <CreditCard className="text-[#EA580C]" size={22} />
+              <CreditCard className="text-orange-600" size={22} />
               Membership Renewal Workspace
             </h1>
             <p className="text-xs text-slate-500 font-medium mt-0.5">Select package, calculate discount, and generate tax receipt invoice.</p>
@@ -335,7 +392,7 @@ export default function RenewMembershipPage() {
                           onClick={() => setSelectedPlanId(plan.id)}
                           className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
                             isSelected
-                              ? 'bg-orange-50/60 border-2 border-[#EA580C] shadow-sm'
+                              ? 'bg-orange-50/80 border-2 border-orange-600 shadow-sm'
                               : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-slate-100/50'
                           }`}
                         >
@@ -345,14 +402,14 @@ export default function RenewMembershipPage() {
                               <p className="text-[11px] text-slate-500 mt-1">{plan.desc}</p>
                             </div>
                             <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-xs ${
-                              isSelected ? 'bg-[#EA580C] border-[#EA580C] text-white font-bold' : 'border-slate-300 bg-white'
+                              isSelected ? 'bg-orange-600 border-orange-600 text-white font-bold' : 'border-slate-300 bg-white'
                             }`}>
                               {isSelected ? '✓' : ''}
                             </div>
                           </div>
 
                           <div className="mt-4 flex justify-between items-end border-t border-slate-100 pt-3">
-                            <div className="text-lg font-black text-[#EA580C] font-mono">
+                            <div className="text-lg font-black text-orange-600 font-mono">
                               {plan.id === 'custom' ? 'Custom Pricing' : formatCurrency(plan.price)}
                             </div>
                             <span className="text-[10px] font-extrabold uppercase tracking-wider bg-slate-200/80 text-slate-700 px-2 py-0.5 rounded-lg">
@@ -374,7 +431,7 @@ export default function RenewMembershipPage() {
                             type="number" 
                             value={customPrice}
                             onChange={e => setCustomPrice(Number(e.target.value))}
-                            className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                            className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-orange-600"
                           />
                         </div>
                         <div>
@@ -383,7 +440,7 @@ export default function RenewMembershipPage() {
                             type="number" 
                             value={customDuration}
                             onChange={e => setCustomDuration(Number(e.target.value))}
-                            className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                            className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-orange-600"
                           />
                         </div>
                       </div>
@@ -393,7 +450,7 @@ export default function RenewMembershipPage() {
                   <div className="flex justify-end pt-2">
                     <button
                       onClick={() => setStep(2)}
-                      className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
+                      className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
                     >
                       Next: Pricing & Discount <ArrowRight size={16} />
                     </button>
@@ -417,7 +474,7 @@ export default function RenewMembershipPage() {
                         placeholder="0"
                         value={discount || ''}
                         onChange={e => setDiscount(Number(e.target.value))}
-                        className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-[#F97316]"
+                        className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-orange-600"
                       />
                     </div>
 
@@ -425,10 +482,10 @@ export default function RenewMembershipPage() {
                       <label className="text-[10px] font-black text-slate-500 uppercase block mb-1">Promo Coupon Code</label>
                       <input 
                         type="text"
-                        placeholder="e.g. WARRIOR10 or FIT20"
+                        placeholder="e.g. ALPHA10 or FIT20"
                         value={coupon}
                         onChange={e => setCoupon(e.target.value)}
-                        className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 uppercase tracking-wider focus:outline-none focus:border-[#F97316]"
+                        className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 uppercase tracking-wider focus:outline-none focus:border-orange-600"
                       />
                     </div>
                   </div>
@@ -441,7 +498,7 @@ export default function RenewMembershipPage() {
                         onClick={() => setStartDateOption('extend')}
                         className={`p-3 rounded-2xl border text-xs font-bold text-left cursor-pointer transition-all ${
                           startDateOption === 'extend'
-                            ? 'bg-[#FFF7ED] border-2 border-[#EA580C] text-blue-900 shadow-sm'
+                            ? 'bg-orange-50 border-2 border-orange-600 text-orange-900 shadow-sm'
                             : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
@@ -454,7 +511,7 @@ export default function RenewMembershipPage() {
                         onClick={() => setStartDateOption('today')}
                         className={`p-3 rounded-2xl border text-xs font-bold text-left cursor-pointer transition-all ${
                           startDateOption === 'today'
-                            ? 'bg-[#FFF7ED] border-2 border-[#EA580C] text-blue-900 shadow-sm'
+                            ? 'bg-orange-50 border-2 border-orange-600 text-orange-900 shadow-sm'
                             : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
@@ -467,7 +524,7 @@ export default function RenewMembershipPage() {
                         onClick={() => setStartDateOption('custom')}
                         className={`p-3 rounded-2xl border text-xs font-bold text-left cursor-pointer transition-all ${
                           startDateOption === 'custom'
-                            ? 'bg-[#FFF7ED] border-2 border-[#EA580C] text-blue-900 shadow-sm'
+                            ? 'bg-orange-50 border-2 border-orange-600 text-orange-900 shadow-sm'
                             : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                         }`}
                       >
@@ -480,19 +537,19 @@ export default function RenewMembershipPage() {
                       <motion.div
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
-                        className="mt-3 p-3.5 bg-orange-50/60 border border-[#FED7AA] rounded-2xl space-y-2"
+                        className="mt-3 p-3.5 bg-orange-50/70 border border-orange-200 rounded-2xl space-y-2"
                       >
                         <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-black text-blue-900 uppercase tracking-wider block">Custom Membership Start Date</label>
-                          <span className="text-[10px] font-bold text-[#EA580C]">Auto Calculates Below</span>
+                          <label className="text-[10px] font-black text-orange-900 uppercase tracking-wider block">Custom Membership Start Date</label>
+                          <span className="text-[10px] font-bold text-orange-600">Auto Calculates Below</span>
                         </div>
                         <input 
                           type="date"
                           value={customStartDate}
                           onChange={(e) => setCustomStartDate(e.target.value)}
-                          className="w-full p-2.5 bg-white border border-[#FDBA74] rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-200 cursor-pointer"
+                          className="w-full p-2.5 bg-white border border-orange-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
                         />
-                        <p className="text-[10px] text-[#C2410C] font-medium">
+                        <p className="text-[10px] text-orange-700 font-medium">
                           Starts on <span className="font-bold font-mono">{customStartDate}</span>. Expiry and days left update instantly.
                         </p>
                       </motion.div>
@@ -528,7 +585,7 @@ export default function RenewMembershipPage() {
                     </button>
                     <button
                       onClick={() => setStep(3)}
-                      className="px-6 py-3 bg-gradient-to-r from-[#FB923C] to-[#EA580C] hover:from-[#F97316] hover:to-[#C2410C] text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
+                      className="px-6 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black transition-all shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
                     >
                       Next: Trainer & Review <ArrowRight size={16} />
                     </button>
@@ -549,7 +606,7 @@ export default function RenewMembershipPage() {
                     <select
                       value={assignedTrainer}
                       onChange={e => setAssignedTrainer(e.target.value)}
-                      className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#F97316] cursor-pointer"
+                      className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-orange-600 cursor-pointer"
                     >
                       <option value="">Leave Unassigned / General Gym Access</option>
                       {trainers.map(t => (
@@ -603,8 +660,8 @@ export default function RenewMembershipPage() {
             <div className="space-y-6 text-left">
               <div className="bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-xl space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Live Calculation Preview</span>
-                  <Sparkles size={16} className="text-indigo-400" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Live Calculation Preview</span>
+                  <Sparkles size={16} className="text-orange-400" />
                 </div>
 
                 <div className="space-y-1">
@@ -622,11 +679,11 @@ export default function RenewMembershipPage() {
                   </div>
                   <div className="flex justify-between text-slate-300">
                     <span>Start Date:</span>
-                    <span className="font-bold text-indigo-300 font-mono">{effectiveStartDate}</span>
+                    <span className="font-bold text-orange-300 font-mono">{effectiveStartDate}</span>
                   </div>
                   <div className="flex justify-between text-slate-300">
                     <span>Selected Plan:</span>
-                    <span className="font-bold text-[#FB923C]">{currentPlan.name}</span>
+                    <span className="font-bold text-orange-400">{currentPlan.name}</span>
                   </div>
                   <div className="flex justify-between text-slate-300">
                     <span>Payment Method:</span>
